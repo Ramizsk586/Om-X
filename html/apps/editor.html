@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Screenshot Editor</title>
+  <link rel="stylesheet" href="../../css/base/reset.css">
+  <link rel="stylesheet" href="../../css/base/variables.css">
+  <link rel="stylesheet" href="../../css/base/base.css">
+  <link rel="stylesheet" href="../../css/apps/editor.css">
+</head>
+<body>
+  <div class="editor-layout">
+    <div class="editor-toolbar">
+      <div class="toolbar-section">
+        <button id="tool-crop" class="tool-btn" title="Crop (Coming Soon)">
+          <svg viewBox="0 0 24 24"><path d="M17 15h2V7c0-1.1-.9-2-2-2H9v2h8v8zM7 17V1H5v4H1v2h4v10c0 1.1.9 2 2 2h10v4h2v-4h4v-2H7z" fill="currentColor"/></svg>
+        </button>
+        <button id="tool-draw" class="tool-btn active" title="Draw">
+          <svg viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" fill="currentColor"/></svg>
+        </button>
+      </div>
+
+      <div class="toolbar-divider"></div>
+
+      <div class="toolbar-section">
+        <button id="filter-none" class="tool-btn" title="Normal">No Filter</button>
+        <button id="filter-grayscale" class="tool-btn" title="Grayscale">B&W</button>
+        <button id="filter-invert" class="tool-btn" title="Invert">Invert</button>
+        <button id="filter-sepia" class="tool-btn" title="Sepia">Sepia</button>
+      </div>
+
+      <div class="toolbar-divider"></div>
+
+      <div class="toolbar-section">
+        <button id="op-rotate" class="tool-btn" title="Rotate 90°">
+          <svg viewBox="0 0 24 24"><path d="M7.34 6.41L.86 12.9l6.49 6.48 6.49-6.48-6.5-6.49zM0 13l7.34-7.34L14.69 13l-7.35 7.34L0 13zm19 4h-2V7h2v10zm4 0h-2V7h2v10z" fill="currentColor"/></svg>
+        </button>
+        <button id="op-flip" class="tool-btn" title="Flip Horizontal">
+           <svg viewBox="0 0 24 24"><path d="M15 21h2v-2h-2v2zm4-12h2V7h-2v2zM3 5v14c0 1.1.9 2 2 2h4v-2H5V5h4V3H5c-1.1 0-2 .9-2 2zm16-2v2h2c0-1.1-.9-2-2-2zm-8 20h2V1h-2v22zm8-6h2v-2h-2v2zM15 5h2V3h-2v2zm4 8h2v-2h-2v2zm0 8c1.1 0 2-.9 2-2h-2v2z" fill="currentColor"/></svg>
+        </button>
+      </div>
+
+      <div class="spacer"></div>
+
+      <div class="toolbar-section">
+        <input type="color" id="color-picker" value="#7c4dff">
+        <input type="range" id="brush-size" min="1" max="20" value="3">
+      </div>
+
+      <div class="toolbar-divider"></div>
+
+      <div class="toolbar-section">
+        <button id="action-save" class="action-btn primary">Download</button>
+      </div>
+    </div>
+
+    <div class="canvas-container">
+      <canvas id="editor-canvas"></canvas>
+    </div>
+  </div>
+
+  <script src="../../java/apps/editor.js"></script>
+</body>
+</html>

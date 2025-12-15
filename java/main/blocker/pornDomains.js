@@ -1,0 +1,63 @@
+
+// Layer 1: Hardcoded Domain Blocking
+// A curated list of top explicit domains.
+// This is used by the Main Process to kill requests immediately.
+
+const PORN_DOMAINS = [
+  "pornhub.com", "phncdn.com",
+  "xvideos.com", "xvideos-cdn.com",
+  "xnxx.com",
+  "xhamster.com", "xhamsterlive.com",
+  "youporn.com",
+  "redtube.com",
+  "chaturbate.com",
+  "livejasmin.com",
+  "bongacams.com",
+  "onlyfans.com",
+  "brazzers.com",
+  "realitykings.com",
+  "mofos.com",
+  "bangbros.com",
+  "adultfriendfinder.com",
+  "stripchat.com",
+  "camsoda.com",
+  "myfreecams.com",
+  "eporner.com",
+  "hqporner.com",
+  "spankbang.com",
+  "tnaflix.com",
+  "drtuber.com",
+  "porn.com",
+  "tube8.com",
+  "beeg.com",
+  "youjizz.com",
+  "motherless.com",
+  "redgifs.com",
+  "rule34.xxx",
+  "gelbooru.com",
+  "hentai-foundry.com",
+  "nhentai.net",
+  "hanime.tv",
+  "literotica.com",
+  "sex.com",
+  "ashemaletube.com",
+  "playboy.com",
+  "penthouse.com",
+  "hustler.com",
+  "vivid.com",
+  "wicked.com",
+  "evilangel.com",
+  "kink.com",
+  "teamkeez.com",
+  "manyvids.com",
+  "clips4sale.com",
+  "iwantclips.com",
+  "4chan.org", // Often contains explicit content
+  "thepiratebay.org",
+  "1337x.to",
+  "rarbg.to",
+  "rutracker.org",
+  "fitgirl-repacks.site"
+];
+
+module.exports = { PORN_DOMAINS };

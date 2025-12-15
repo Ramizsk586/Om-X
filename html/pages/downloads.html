@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Downloads</title>
+  <link rel="stylesheet" href="../../css/base/reset.css">
+  <link rel="stylesheet" href="../../css/base/variables.css">
+  <link rel="stylesheet" href="../../css/base/base.css">
+  <link rel="stylesheet" href="../../css/pages/downloads.css">
+</head>
+<body>
+  <div class="downloads-container">
+    <div class="downloads-header">
+      <div class="header-title">
+        <svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z" fill="currentColor"/></svg>
+        Downloads
+      </div>
+      <button id="btn-clear-downloads" class="btn-clear">Clear List</button>
+    </div>
+
+    <div id="downloads-list" class="downloads-list">
+      <!-- Items injected via JS -->
+      <div class="empty-state">No downloads yet.</div>
+    </div>
+  </div>
+
+  <script type="module" src="../../java/renderer/downloadsRenderer.js"></script>
+</body>
+</html>

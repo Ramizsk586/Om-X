@@ -1,0 +1,214 @@
+body {
+  background: #050508;
+  color: #fff;
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+/* Background Gradients based on Theme */
+body::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  opacity: 0.15;
+  z-index: 0;
+  transition: background 0.5s ease;
+}
+
+/* Themes */
+body.theme-adult::before {
+  background: radial-gradient(circle at 50% 50%, #7c4dff, transparent 70%);
+}
+body.theme-malware::before {
+  background: radial-gradient(circle at 50% 50%, #ff1744, transparent 70%);
+}
+body.theme-phishing::before {
+  background: radial-gradient(circle at 50% 50%, #ff9100, transparent 70%);
+}
+body.theme-download::before {
+  background: radial-gradient(circle at 50% 50%, #ffea00, transparent 70%);
+}
+body.theme-policy::before {
+  background: radial-gradient(circle at 50% 50%, #00b0ff, transparent 70%);
+}
+
+.defense-container {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 540px;
+  padding: 20px;
+  perspective: 1000px;
+}
+
+.defense-card {
+  background: rgba(20, 20, 25, 0.8);
+  backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 24px;
+  padding: 48px 32px;
+  text-align: center;
+  box-shadow: 0 20px 50px rgba(0,0,0,0.3);
+  animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(40px) rotateX(10deg); }
+  to { opacity: 1; transform: translateY(0) rotateX(0); }
+}
+
+/* Icon Animation */
+.icon-stage {
+  position: relative;
+  width: 96px;
+  height: 96px;
+  margin: 0 auto 32px auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.shield-ring {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  border-radius: 50%;
+  border: 2px solid rgba(255,255,255,0.1);
+  animation: pulseRing 2s infinite;
+}
+
+.status-icon {
+  font-size: 40px;
+}
+
+@keyframes pulseRing {
+  0% { transform: scale(0.8); opacity: 0.5; }
+  100% { transform: scale(1.5); opacity: 0; }
+}
+
+h1 {
+  font-size: 28px;
+  font-weight: 700;
+  margin-bottom: 12px;
+  letter-spacing: -0.5px;
+}
+
+.reason-text {
+  font-size: 16px;
+  color: rgba(255, 255, 255, 0.6);
+  line-height: 1.5;
+  margin-bottom: 32px;
+}
+
+.meta-box {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 32px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  text-align: left;
+}
+
+.meta-row {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+.meta-row:last-child { margin-bottom: 0; }
+
+.meta-label {
+  color: rgba(255, 255, 255, 0.4);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-size: 11px;
+}
+
+.meta-value {
+  color: #fff;
+  font-family: monospace;
+  max-width: 250px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Actions */
+.actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
+
+.action-btn {
+  padding: 12px 24px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: none;
+}
+
+.action-btn.primary {
+  background: #fff;
+  color: #000;
+}
+.action-btn.primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 5px 15px rgba(255,255,255,0.2);
+}
+
+.action-btn.secondary {
+  background: rgba(255,255,255,0.05);
+  color: #fff;
+  border: 1px solid rgba(255,255,255,0.1);
+}
+.action-btn.secondary:hover {
+  background: rgba(255,255,255,0.1);
+}
+
+/* Details Section */
+.technical-details {
+  margin-top: 24px;
+  padding-top: 24px;
+  border-top: 1px solid rgba(255,255,255,0.1);
+  text-align: left;
+  font-size: 12px;
+  color: rgba(255,255,255,0.5);
+}
+.technical-details.hidden { display: none; }
+.technical-details p { margin-bottom: 6px; }
+.disclaimer { font-style: italic; opacity: 0.7; margin-top: 12px; }
+
+/* THEME SPECIFICS */
+
+/* 1. ADULT (Purple) */
+body.theme-adult .status-icon::before { content: "🔞"; }
+body.theme-adult h1 { color: #b388ff; }
+body.theme-adult .shield-ring { border-color: #b388ff; }
+
+/* 2. MALWARE (Red) */
+body.theme-malware .status-icon::before { content: "☣️"; }
+body.theme-malware h1 { color: #ff5252; }
+body.theme-malware .shield-ring { border-color: #ff5252; animation-duration: 0.5s; }
+
+/* 3. PHISHING (Orange) */
+body.theme-phishing .status-icon::before { content: "🎣"; }
+body.theme-phishing h1 { color: #ff9100; }
+body.theme-phishing .shield-ring { border-color: #ff9100; }
+
+/* 4. DOWNLOAD (Yellow) */
+body.theme-download .status-icon::before { content: "⚠️"; }
+body.theme-download h1 { color: #ffd740; }
+body.theme-download .shield-ring { border-color: #ffd740; }
+
+/* 5. POLICY (Blue) */
+body.theme-policy .status-icon::before { content: "🛡️"; }
+body.theme-policy h1 { color: #40c4ff; }
+body.theme-policy .shield-ring { border-color: #40c4ff; }
