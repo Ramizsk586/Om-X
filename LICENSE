@@ -1,28 +1,92 @@
-OM-X RESTRICTED LICENSE
+# OM-X RESTRICTED & PERMISSION-BASED LICENSE
 
 Copyright (c) 2025 Sk Abdul Ramiz
 All rights reserved.
 
-This software and associated files (the "Software") are the exclusive
-property of the author.
+---
 
-NO PERMISSION IS GRANTED to use, copy, modify, merge, publish, distribute,
-sublicense, or sell copies of the Software, in whole or in part, without
-explicit written permission from the author.
+## 1. Ownership
 
-PERMITTED USE (BY EXCEPTION ONLY):
-Permission may be granted ONLY if ALL of the following conditions are met:
+This software, including but not limited to its source code, binaries, assets, configuration files, documentation, and any associated materials (collectively, the "Software"), is the exclusive intellectual property of Sk Abdul Ramiz. No ownership rights are transferred by this license.
+
+---
+
+## 2. No Automatic Permission
+
+NO PERMISSION IS GRANTED to any individual or entity to use, copy, modify, merge, publish, distribute, sublicense, sell, reverse-engineer, or create derivative works of the Software, in whole or in part, without explicit written permission from the author.
+
+Any use of the Software without such permission is strictly prohibited.
+
+---
+
+## 3. Conditional / Permission-Based Use
+
+Permission to use the Software MAY be granted only if ALL of the following conditions are met:
+
 1. Explicit written permission is obtained from the author.
-2. The author (Sk Abdul Ramiz) is clearly credited.
-3. The original project name "Om-X" is preserved.
-4. Any redistribution clearly links back to the original repository.
+2. Clear and visible credit is given to the author (Sk Abdul Ramiz).
+3. The original project name "Om-X" is preserved and not renamed.
+4. Any redistribution includes a clear reference and link to the original GitHub repository: [https://github.com/Ramizsk586](https://github.com/Ramizsk586)
+5. The Software is not claimed as original work by another party.
 
-Any use that does not meet ALL conditions above is strictly prohibited.
+Failure to meet any one of these conditions immediately voids any granted permission.
 
-DISCLAIMER:
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.
-IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER
-LIABILITY ARISING FROM THE USE OF THE SOFTWARE.
+---
 
-CONTACT FOR PERMISSION:
-GitHub: https://github.com/Ramizsk586
+## 4. Prohibited Uses
+
+Without explicit written permission, the following actions are expressly forbidden:
+
+* Commercial use or monetization
+* Selling, licensing, or renting the Software
+* Publishing modified versions as separate projects
+* Redistributing compiled binaries or installers
+* Including the Software in other products or services
+* Removing, altering, or obscuring copyright notices
+
+---
+
+## 5. Disclaimer – Use at Your Own Risk
+
+THE SOFTWARE IS PROVIDED "AS IS" AND "AS AVAILABLE". USE OF THE SOFTWARE IS ENTIRELY AT YOUR OWN RISK.
+
+THE AUTHOR MAKES NO WARRANTIES, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, SECURITY, ACCURACY, RELIABILITY, OR NON-INFRINGEMENT.
+
+---
+
+## 6. Limitation of Liability
+
+IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY CLAIM, DAMAGES, LOSSES, OR OTHER LIABILITY, INCLUDING BUT NOT LIMITED TO DATA LOSS, SYSTEM FAILURE, SECURITY BREACHES, FINANCIAL LOSS, OR HARDWARE OR SOFTWARE DAMAGE, ARISING FROM OR IN CONNECTION WITH THE USE OF OR INABILITY TO USE THE SOFTWARE.
+
+THIS LIMITATION APPLIES WHETHER THE CLAIM ARISES IN CONTRACT, TORT, NEGLIGENCE, OR ANY OTHER LEGAL THEORY, EVEN IF THE AUTHOR HAS BEEN ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.
+
+THE USER ASSUMES FULL RESPONSIBILITY FOR ANY CONSEQUENCES RESULTING FROM THE USE OR MISUSE OF THE SOFTWARE.
+
+---
+
+## 7. Termination
+
+Any violation of this license automatically and immediately terminates any granted permission to use the Software. Upon termination, the user must cease all use and destroy all copies of the Software in their possession.
+
+---
+
+## 8. No Transfer of Rights
+
+This license does not grant any ownership, trademark, patent, or other intellectual property rights. All rights not expressly granted are reserved by the author.
+
+---
+
+## 9. Governing Law
+
+This license shall be governed and interpreted in accordance with applicable laws, without regard to conflict of law principles.
+
+---
+
+## 10. Contact for Permission
+
+For permission requests, licensing inquiries, or special usage approval, contact:
+
+Author: Sk Abdul Ramiz
+GitHub: [https://github.com/Ramizsk586](https://github.com/Ramizsk586)
+
+---
