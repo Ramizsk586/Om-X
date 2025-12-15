@@ -1,0 +1,702 @@
+
+
+:root {
+  /* Atom One Dark Inspired Colors */
+  --atom-bg: #282c34;
+  --atom-gutter: #21252b;
+  --atom-ui: #21252b;
+  --atom-border: #181a1f;
+  --atom-fg: #abb2bf;
+  --atom-accent: #528bff; /* Blue accent */
+  --atom-selection: #3e4451;
+  
+  /* Modern Explorer Colors */
+  --explorer-bg: #21252b; /* Slightly darker/distinct */
+  --explorer-header-bg: #1d1f23;
+  --explorer-hover: rgba(255, 255, 255, 0.05);
+  --explorer-active: rgba(82, 139, 255, 0.15);
+  
+  --omx-accent: #7c4dff; /* Brand accent kept for AI elements */
+  
+  --header-height: 40px;
+  --status-height: 24px;
+}
+
+body {
+  background: var(--atom-bg); /* Immediate background color */
+  color: var(--atom-fg);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  height: 100vh;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  user-select: none;
+  opacity: 0; /* Fade in effect */
+  animation: fadeIn 0.2s ease-out forwards;
+}
+
+@keyframes fadeIn {
+  to { opacity: 1; }
+}
+
+/* Loading Placeholder for Monaco */
+.monaco-loading {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--atom-bg);
+  color: rgba(255,255,255,0.3);
+  font-size: 13px;
+  z-index: 5;
+}
+
+/* --- Header / Toolbar (Atom Style) --- */
+.atom-header {
+  height: var(--header-height);
+  background: var(--atom-ui);
+  display: flex;
+  align-items: flex-end; /* Tabs sit at bottom */
+  padding: 0;
+  border-bottom: 1px solid #000;
+  flex-shrink: 0;
+  -webkit-app-region: drag; /* Draggable titlebar */
+}
+
+.brand-section {
+  display: flex;
+  height: 100%;
+  border-right: 1px solid var(--atom-border);
+  -webkit-app-region: no-drag;
+}
+
+.sidebar-toggle-btn {
+  width: 42px;
+  height: 100%;
+  background: transparent;
+  border: none;
+  color: var(--atom-fg);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  opacity: 0.8;
+}
+
+.sidebar-toggle-btn:hover {
+  background: rgba(255,255,255,0.08);
+  color: #fff;
+  opacity: 1;
+}
+
+.sidebar-toggle-btn svg {
+  width: 20px;
+  height: 20px;
+}
+
+.brand-icon {
+  width: 40px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.8;
+  border-left: 1px solid rgba(255,255,255,0.05);
+}
+
+.file-tab {
+  height: 100%;
+  background: var(--atom-bg);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
+  font-size: 13px;
+  border-right: 1px solid var(--atom-border);
+  position: relative;
+  -webkit-app-region: no-drag;
+  min-width: 120px;
+  justify-content: center;
+}
+
+/* Active tab look */
+.file-tab.active::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--atom-accent);
+}
+
+.file-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.file-unsaved-indicator {
+  margin-left: 8px;
+  font-size: 10px;
+  color: var(--atom-accent);
+  opacity: 0; /* Hidden by default */
+  transform: scale(0.8);
+}
+.file-tab.unsaved .file-unsaved-indicator {
+  opacity: 1;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.toolbar-actions {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  padding-right: 10px;
+  gap: 2px;
+  -webkit-app-region: no-drag;
+}
+
+/* Icon Buttons */
+.icon-btn {
+  width: 32px;
+  height: 32px;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: var(--atom-fg);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  margin-bottom: 4px; /* Align slightly vertically */
+}
+
+.icon-btn svg {
+  width: 18px;
+  height: 18px;
+  fill: currentColor;
+}
+
+.icon-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.icon-btn.ai-trigger {
+  color: var(--omx-accent);
+}
+.icon-btn.ai-trigger:hover {
+  background: rgba(124, 77, 255, 0.15);
+}
+
+.icon-btn.success {
+  color: #98c379; /* Atom Green */
+}
+.icon-btn.success:hover {
+  background: rgba(152, 195, 121, 0.15);
+}
+
+.divider {
+  width: 1px;
+  height: 16px;
+  background: rgba(255,255,255,0.1);
+  margin: 0 6px;
+  margin-bottom: 4px;
+}
+
+/* --- Main Layout: Sidebar + Workspace --- */
+.main-body-container {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  background: var(--atom-bg);
+  position: relative;
+}
+
+/* --- Explorer Sidebar (Modernized) --- */
+.explorer-sidebar {
+  width: 250px;
+  background: var(--explorer-bg);
+  border-right: 1px solid #181a1f;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  transition: width 0.3s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s ease;
+  overflow: hidden;
+  opacity: 1;
+  position: relative;
+  z-index: 20;
+  /* Optimization: Don't render contents if off-screen/collapsed */
+  content-visibility: auto; 
+}
+
+.explorer-sidebar.collapsed {
+  width: 0;
+  opacity: 0;
+  border-right: none;
+}
+
+.explorer-header {
+  height: 36px;
+  padding: 0 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  font-weight: 700;
+  color: rgba(255,255,255,0.4);
+  background: var(--explorer-header-bg);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+
+.explorer-actions {
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.explorer-header:hover .explorer-actions {
+  opacity: 1;
+}
+
+.explorer-btn {
+  background: transparent;
+  border: none;
+  color: var(--atom-fg);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+.explorer-btn:hover {
+  background: rgba(255,255,255,0.1);
+  color: #fff;
+}
+.explorer-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+.explorer-btn:disabled:hover {
+  background: transparent;
+  color: var(--atom-fg);
+}
+.explorer-btn svg {
+  width: 14px;
+  height: 14px;
+  fill: currentColor;
+}
+
+.explorer-tree {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 8px 0;
+  /* Optimization */
+  contain: layout style; 
+}
+
+.explorer-empty {
+  padding: 40px 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-size: 13px;
+  color: #777;
+  height: 100%;
+}
+
+.btn-sidebar-cta {
+  display: inline-block;
+  background: var(--atom-accent);
+  border: none;
+  color: #fff;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+.btn-sidebar-cta:hover { 
+  background: #689aff; 
+  transform: translateY(-1px);
+}
+
+/* Modern Tree Items */
+.tree-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 26px; /* Slightly taller for better touch target */
+  cursor: pointer;
+  color: var(--atom-fg);
+  font-size: 13px;
+  user-select: none;
+  border-left: 2px solid transparent;
+  transition: background 0.1s;
+  padding-right: 8px;
+}
+
+/* Indentation Guide Line (Optional sophisticated look) */
+.tree-item::before {
+  content: '';
+  position: absolute;
+  left: 10px; /* Offset based on depth */
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: transparent; /* Changed dynamically via JS if needed, or kept simple */
+}
+
+.tree-item:hover {
+  background: var(--explorer-hover);
+  color: #d7dae0;
+}
+.tree-item.active {
+  background: var(--explorer-active);
+  color: #fff;
+  border-left-color: var(--atom-accent);
+}
+
+.tree-indent {
+  width: 12px;
+  height: 100%;
+  flex-shrink: 0;
+}
+
+.tree-arrow {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 2px;
+  opacity: 0.7;
+  transition: transform 0.2s;
+}
+.tree-arrow svg { width: 10px; height: 10px; fill: currentColor; }
+.tree-arrow.expanded { transform: rotate(90deg); color: #fff; }
+.tree-arrow.hidden { opacity: 0; pointer-events: none; }
+
+.tree-icon {
+  width: 16px;
+  height: 16px;
+  margin-right: 6px;
+  flex-shrink: 0;
+  fill: currentColor;
+  opacity: 0.9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Enhanced Folder/File Colors */
+.tree-icon.folder { color: #dcb67a; }
+.tree-icon.file { color: var(--atom-fg); }
+.tree-icon.js { color: #f1e05a; }
+.tree-icon.html { color: #e34c26; }
+.tree-icon.css { color: #563d7c; }
+.tree-icon.json { color: #f1e05a; }
+.tree-icon.md { color: #083fa1; }
+.tree-icon.ts { color: #2b7489; }
+.tree-icon.py { color: #3572a5; }
+
+.tree-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 26px;
+  flex: 1;
+}
+
+/* --- Workspace --- */
+.editor-workspace {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  position: relative;
+  background: var(--atom-bg);
+}
+
+/* Editor Container (Code + Terminal) */
+.editor-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column; /* Changed to column to stack editor and terminal */
+  position: relative;
+  overflow: hidden;
+}
+
+/* Wrapper for Code Views to take remaining space */
+.code-view-wrapper {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  min-height: 0; /* Crucial for nested flex scrolling */
+  will-change: height; /* Perf optimization for resizing */
+}
+
+#monaco-editor-root, #diff-editor-root {
+  width: 100%;
+  height: 100%;
+  position: absolute;
+  top: 0; left: 0;
+}
+
+/* --- Terminal Resizer --- */
+.terminal-resizer {
+  height: 4px;
+  width: 100%;
+  background: var(--atom-border);
+  cursor: ns-resize;
+  flex-shrink: 0;
+  z-index: 100;
+  transition: background 0.2s;
+}
+
+.terminal-resizer:hover, .terminal-resizer.active {
+  background: var(--atom-accent);
+}
+
+.terminal-resizer.hidden {
+  display: none;
+}
+
+/* --- Terminal Panel --- */
+.terminal-panel {
+  height: 200px; /* Initial height, JS modifies this */
+  min-height: 50px;
+  max-height: 80vh;
+  background: #1e1e1e; /* VS Code Terminal BG */
+  border-top: 1px solid var(--atom-border);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  will-change: height; /* Perf optimization */
+}
+
+.terminal-panel.hidden {
+  display: none;
+}
+
+.terminal-header {
+  height: 32px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 16px;
+  background: #252526;
+}
+
+.terminal-tabs {
+  display: flex;
+  gap: 20px;
+}
+
+.term-tab {
+  font-size: 11px;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.5);
+  cursor: pointer;
+  position: relative;
+  line-height: 32px;
+  font-weight: 600;
+}
+
+.term-tab.active {
+  color: #fff;
+  border-bottom: 1px solid #fff;
+}
+
+.terminal-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.terminal-actions button {
+  background: transparent;
+  border: none;
+  color: #ccc;
+  cursor: pointer;
+  padding: 2px;
+  display: flex;
+  align-items: center;
+  border-radius: 4px;
+}
+.terminal-actions button:hover { background: rgba(255,255,255,0.1); }
+.terminal-actions button svg { width: 14px; height: 14px; fill: currentColor; }
+
+.terminal-body {
+  flex: 1;
+  overflow: hidden;
+  padding: 4px 0 0 8px; /* Padding for xterm */
+  background: #1e1e1e;
+  /* Optimization */
+  contain: strict; 
+}
+
+/* Output Panel Style (Shares same space as terminal) */
+#output-panel {
+  overflow-y: auto;
+  color: #d4d4d4;
+  font-family: Consolas, 'Courier New', monospace;
+  font-size: 12px;
+  padding: 8px;
+  background: #1e1e1e;
+}
+
+.hidden { display: none !important; }
+
+/* --- Status Bar --- */
+.status-bar {
+  height: var(--status-height);
+  background: var(--atom-ui);
+  border-top: 1px solid #000;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 12px;
+  font-size: 11px;
+  color: #9da5b4;
+  flex-shrink: 0;
+  z-index: 50;
+}
+
+.status-left, .status-right {
+  display: flex;
+  gap: 16px;
+}
+
+.status-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* --- Review Controls --- */
+.review-controls {
+  position: absolute;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--atom-ui);
+  border: 1px solid var(--atom-border);
+  padding: 10px 20px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  z-index: 100;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+}
+
+.review-label {
+  font-size: 13px;
+  color: #fff;
+}
+
+.btn-review {
+  border: none;
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.btn-review.accept { background: #98c379; color: #000; font-weight: 600; }
+.btn-review.reject { background: #e06c75; color: #fff; }
+
+/* --- AI Sidebar (Tweaked for Atom look) --- */
+.ai-sidebar {
+  width: 320px;
+  background: var(--atom-ui);
+  border-left: 1px solid #000;
+  display: flex;
+  flex-direction: column;
+  z-index: 10;
+  /* Optimization */
+  contain: layout style;
+}
+
+.ai-sidebar-header {
+  height: 40px;
+  padding: 0 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--atom-border);
+  background: #1d1f23;
+}
+
+.ai-identity { display: flex; align-items: center; gap: 8px; }
+.ai-avatar-icon { width: 24px; height: 24px; border-radius: 4px; background: var(--omx-accent); display: flex; align-items: center; justify-content: center; color: white; }
+.ai-avatar-icon svg { width: 14px; height: 14px; }
+.ai-identity-text { display: flex; flex-direction: column; line-height: 1.1; }
+.ai-name { font-size: 13px; color: #fff; font-weight: 600; }
+.ai-status { font-size: 10px; color: #777; }
+
+.btn-icon-small {
+  background: none; border: none; color: #777; cursor: pointer; font-size: 18px;
+}
+.btn-icon-small:hover { color: #fff; }
+
+.ai-tools { padding: 12px; border-bottom: 1px solid var(--atom-border); }
+.ai-action-btn {
+  width: 100%; background: #2c313a; border: 1px solid #181a1f; color: var(--atom-fg);
+  padding: 8px; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 12px;
+}
+.ai-action-btn:hover { background: #353b45; color: #fff; }
+
+.ai-chat-output {
+  flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px;
+  /* Optimization */
+  content-visibility: auto;
+}
+
+.ai-msg { display: flex; gap: 8px; font-size: 12px; line-height: 1.5; }
+.ai-msg.user { flex-direction: row-reverse; }
+.ai-avatar { width: 20px; height: 20px; border-radius: 50%; background: #3e4451; display: flex; align-items: center; justify-content: center; font-size: 9px; color: #fff; flex-shrink: 0; }
+.ai-msg.model .ai-avatar { background: var(--omx-accent); }
+
+.ai-bubble {
+  padding: 8px 12px; border-radius: 8px; background: #2c313a; color: #d7dae0; max-width: 90%;
+}
+.ai-msg.user .ai-bubble { background: var(--omx-accent); color: #fff; }
+
+.ai-code-block {
+  background: #1d1f23; padding: 8px; border-radius: 4px; font-family: 'Fira Code', Consolas, monospace; font-size: 11px; margin-top: 6px; overflow-x: auto;
+}
+
+.ai-input-area {
+  padding: 12px; background: #1d1f23; border-top: 1px solid #000; display: flex; gap: 8px; align-items: flex-end;
+}
+#ai-prompt-input {
+  flex: 1; background: #282c34; border: 1px solid #181a1f; color: #fff; border-radius: 4px; padding: 8px; font-family: inherit; font-size: 12px; resize: none; min-height: 32px; outline: none;
+}
+#ai-prompt-input:focus { border-color: #3e4451; }
+#btn-ai-submit {
+  background: var(--omx-accent); color: #fff; border: none; border-radius: 4px; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; cursor: pointer;
+}
+
+/* Drag Overlay */
+.drag-overlay {
+  position: absolute; inset: 10px; border: 2px dashed #528bff; background: rgba(40, 44, 52, 0.9); z-index: 500;
+  display: flex; align-items: center; justify-content: center; border-radius: 8px; pointer-events: none;
+}
+.drag-message { font-size: 16px; color: #528bff; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.drag-icon { width: 40px; height: 40px; }

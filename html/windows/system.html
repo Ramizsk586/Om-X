@@ -1,0 +1,482 @@
+
+
+
+
+
+
+
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://esm.sh; style-src 'self' 'unsafe-inline'; connect-src 'self' https://esm.sh https://generativelanguage.googleapis.com https://openrouter.ai https://api.groq.com; img-src 'self' data: https: http:;">
+  <title>Om-X System</title>
+  <link rel="stylesheet" href="../../css/base/reset.css">
+  <link rel="stylesheet" href="../../css/base/variables.css">
+  <link rel="stylesheet" href="../../css/base/base.css">
+  <link rel="stylesheet" href="../../css/layout/system.css">
+  <script type="importmap">
+  {
+    "imports": {
+      "@google/genai": "https://esm.sh/@google/genai"
+    }
+  }
+  </script>
+  <style>
+    /* Update Panel Specific Styles */
+    .update-status-bar {
+      padding: 16px;
+      background: rgba(255,255,255,0.05);
+      border-radius: 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 24px;
+    }
+    .update-status-text { font-size: 14px; color: #fff; }
+    .update-progress { width: 100%; height: 4px; background: rgba(255,255,255,0.1); margin-top: 8px; border-radius: 2px; overflow: hidden; display: none; }
+    .update-progress-bar { height: 100%; background: var(--accent-color); width: 0%; transition: width 0.2s; }
+    
+    .version-timeline {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      position: relative;
+    }
+    .version-timeline::before {
+      content: '';
+      position: absolute;
+      left: 14px;
+      top: 10px;
+      bottom: 10px;
+      width: 2px;
+      background: rgba(255,255,255,0.1);
+      z-index: 0;
+    }
+    .version-item {
+      display: flex;
+      gap: 20px;
+      position: relative;
+      z-index: 1;
+      padding: 12px;
+      background: rgba(255,255,255,0.03);
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,0.05);
+    }
+    .version-item.current {
+      border-color: var(--accent-color);
+      background: rgba(124, 77, 255, 0.1);
+    }
+    .version-dot {
+      width: 10px;
+      height: 10px;
+      background: #555;
+      border-radius: 50%;
+      margin-top: 6px;
+      border: 2px solid #19191e;
+      box-sizing: content-box;
+    }
+    .version-item.current .version-dot { background: var(--accent-color); box-shadow: 0 0 10px var(--accent-color); }
+    .version-info { flex: 1; }
+    .version-number { font-size: 16px; font-weight: 600; color: #fff; }
+    .version-date { font-size: 12px; color: rgba(255,255,255,0.4); margin-bottom: 4px; }
+    .version-action { align-self: center; }
+    .btn-rollback { background: transparent; border: 1px solid rgba(255,255,255,0.2); color: rgba(255,255,255,0.8); padding: 6px 12px; border-radius: 6px; font-size: 12px; cursor: pointer; transition: all 0.2s; }
+    .btn-rollback:hover { background: rgba(255,255,255,0.1); border-color: #fff; color: #fff; }
+    .btn-rollback:disabled { opacity: 0.3; cursor: not-allowed; }
+  </style>
+</head>
+<body>
+  <div class="system-backdrop"></div>
+  
+  <div class="system-layout">
+    <!-- Sidebar Navigation -->
+    <div class="system-sidebar">
+      <div class="system-brand">Om-X System</div>
+      <div class="nav-menu">
+        <button class="sys-nav-item active" data-target="panel-api">API Panel</button>
+        <button class="sys-nav-item" data-target="panel-ai">Omni AI Config</button>
+        <button class="sys-nav-item" data-target="panel-search">Search Engine</button>
+        <button class="sys-nav-item" data-target="panel-features">Features</button>
+        <button class="sys-nav-item" data-target="panel-browser">Browser Settings</button>
+        <button class="sys-nav-item" data-target="panel-updates">Updates</button> <!-- NEW -->
+        <button class="sys-nav-item" data-target="panel-build">Build & Verify</button>
+      </div>
+      <div class="sys-footer">
+        v1.1.0 Beta
+      </div>
+    </div>
+
+    <!-- Content Area -->
+    <div class="system-content-area">
+      
+      <div class="system-header-mobile">
+        <div id="clock-time" class="clock-time">00:00</div>
+      </div>
+
+      <!-- Section 1: API Panel -->
+      <div id="panel-api" class="settings-panel active">
+        <div class="panel-header">
+          <h2>API Connection</h2>
+          <p>Configure the brain behind Omni.</p>
+        </div>
+        
+        <div class="settings-form">
+          <div class="form-group">
+            <label for="provider-select">AI Operator Provider</label>
+            <div class="select-wrapper">
+              <select id="provider-select">
+                <option value="google">Google Gemini</option>
+                <option value="openrouter">OpenRouter</option>
+                <option value="groq">Groq</option>
+              </select>
+              <div class="select-arrow">▼</div>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="api-key-input">API Secret Key</label>
+            <input type="password" id="api-key-input" placeholder="Paste your API key here..." autocomplete="off">
+          </div>
+
+          <div class="form-group">
+            <label for="model-select">Target Model</label>
+            <div class="select-wrapper">
+              <select id="model-select">
+                <!-- Populated dynamically -->
+              </select>
+              <div class="select-arrow">▼</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Section 2: AI Config -->
+      <div id="panel-ai" class="settings-panel">
+        <div class="panel-header">
+          <h2>Omni Capabilities</h2>
+          <p>Grant or revoke permissions for the AI agent.</p>
+        </div>
+
+        <div class="settings-form">
+          <div class="toggle-group">
+            <div class="toggle-info">
+              <span class="toggle-title">Page Vision</span>
+              <span class="toggle-desc">Allow Omni to read the text content of the currently active tab.</span>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="toggle-vision" checked>
+              <span class="slider round"></span>
+            </label>
+          </div>
+
+          <div class="toggle-group">
+            <div class="toggle-info">
+              <span class="toggle-title">Web Scraping</span>
+              <span class="toggle-desc">Enable extraction of structured data from websites.</span>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="toggle-scraping" checked>
+              <span class="slider round"></span>
+            </label>
+          </div>
+
+          <div class="toggle-group">
+            <div class="toggle-info">
+              <span class="toggle-title">Browser Control</span>
+              <span class="toggle-desc">Allow Omni to scroll pages and interact with simple elements.</span>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="toggle-control" checked>
+              <span class="slider round"></span>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <!-- Section 3: Search Engine Panel -->
+      <div id="panel-search" class="settings-panel">
+        <div class="panel-header">
+          <h2>Search Engine</h2>
+          <p>Choose your default search provider.</p>
+        </div>
+        
+        <div id="search-engine-cards" class="search-cards-grid">
+          <!-- Cards injected dynamically -->
+        </div>
+
+        <div class="panel-section" style="margin-top: 40px;">
+          <div class="panel-header">
+            <h2>Custom Engines</h2>
+            <p>Manage search shortcuts and custom providers.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Section 4: Features Panel -->
+      <div id="panel-features" class="settings-panel">
+        <div class="panel-header">
+          <h2>Advanced Features</h2>
+          <p>Toggle and configure extra browser capabilities.</p>
+        </div>
+
+        <div class="settings-form">
+          
+          <div class="toggle-group">
+            <div class="toggle-info">
+              <span class="toggle-title">Ad & Tracker Blocker</span>
+              <span class="toggle-desc">Native, memory-efficient network blocking of high-impact ads.</span>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="toggle-adblock" checked>
+              <span class="slider round"></span>
+            </label>
+          </div>
+
+          <div class="toggle-group">
+            <div class="toggle-info">
+              <span class="toggle-title">Safe Search (AI Filter)</span>
+              <span class="toggle-desc">Block explicit content and verify links using AI. Disabling this removes all protections.</span>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="toggle-safe-search" checked>
+              <span class="slider round"></span>
+            </label>
+          </div>
+          
+          <div class="toggle-group">
+            <div class="toggle-info">
+              <span class="toggle-title">History Tracking</span>
+              <span class="toggle-desc">Save browsing history locally. Turning this off hides the History button.</span>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="toggle-history" checked>
+              <span class="slider round"></span>
+            </label>
+          </div>
+
+          <div class="toggle-group">
+            <div class="toggle-info">
+              <span class="toggle-title">Screenshot Studio</span>
+              <span class="toggle-desc">Capture webpages and edit them in a built-in image studio.</span>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="toggle-screenshot" checked>
+              <span class="slider round"></span>
+            </label>
+          </div>
+          
+          <div class="toggle-group">
+            <div class="toggle-info">
+              <span class="toggle-title">Text Studio (Monaco Engine)</span>
+              <span class="toggle-desc">Enable the advanced code editor. Disabling this removes it from the sidebar.</span>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="toggle-text-studio" checked>
+              <span class="slider round"></span>
+            </label>
+          </div>
+
+          <div class="shortcuts-grid">
+            <div class="shortcut-row">
+              <label>Take Screenshot</label>
+              <input type="text" class="shortcut-input" data-action="take-screenshot" value="Ctrl+Shift+S">
+            </div>
+            <div class="shortcut-row">
+              <label>Open Image Studio</label>
+              <input type="text" class="shortcut-input" data-action="open-studio" value="Ctrl+Shift+E">
+            </div>
+            <div class="shortcut-row">
+              <label>Open Text Studio</label>
+              <input type="text" class="shortcut-input" data-action="open-text-studio" value="Ctrl+Shift+X">
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Section 5: Browser Settings -->
+      <div id="panel-browser" class="settings-panel">
+        
+        <!-- Subsection: Shortcuts -->
+        <div class="panel-section">
+          <div class="panel-header">
+            <h2>General Shortcuts</h2>
+            <p>Customize your keyboard commands.</p>
+          </div>
+          
+          <div class="shortcuts-grid">
+            <div class="shortcut-row">
+              <label>New Tab</label>
+              <input type="text" class="shortcut-input" data-action="new-tab" value="Ctrl+T">
+            </div>
+            <div class="shortcut-row">
+              <label>Close Tab</label>
+              <input type="text" class="shortcut-input" data-action="close-tab" value="Ctrl+W">
+            </div>
+            <div class="shortcut-row">
+              <label>Toggle Sidebar</label>
+              <input type="text" class="shortcut-input" data-action="toggle-sidebar" value="Ctrl+[">
+            </div>
+            <div class="shortcut-row">
+              <label>Omni Chat</label>
+              <input type="text" class="shortcut-input" data-action="toggle-ai" value="Ctrl+Space">
+            </div>
+            <div class="shortcut-row">
+              <label>System Page</label>
+              <input type="text" class="shortcut-input" data-action="toggle-system" value="Alt+S">
+            </div>
+             <div class="shortcut-row">
+              <label>DevTools</label>
+              <input type="text" class="shortcut-input" data-action="toggle-devtools" value="Ctrl+B">
+            </div>
+            <div class="shortcut-row">
+              <label>Toggle Bookmarks</label>
+              <input type="text" class="shortcut-input" data-action="toggle-bookmarks" value="Ctrl+Shift+B">
+            </div>
+          </div>
+        </div>
+
+        <!-- Subsection: Search Engines Shortcuts -->
+        <div class="panel-section" style="margin-top: 40px;">
+          <div class="panel-header">
+            <h2>Search Shortcuts</h2>
+            <p>Create shortcuts to search specific sites directly.</p>
+          </div>
+
+          <div id="search-engines-list" class="shortcuts-grid">
+            <!-- Dynamic List -->
+          </div>
+
+          <div class="add-engine-form">
+            <h3>Add New Shortcut</h3>
+            <div class="form-row">
+              <input type="text" id="se-name" placeholder="Name (e.g. YouTube)" style="flex: 1;">
+              <input type="text" id="se-trigger" placeholder="Key (e.g. Ctrl+Y)" style="width: 120px;">
+            </div>
+            <div class="form-row">
+              <input type="text" id="se-url" placeholder="Search URL (use %s for query)" style="flex: 2;">
+              <input type="text" id="se-icon" placeholder="Icon URL (PNG/SVG)" style="flex: 1;">
+            </div>
+            <button id="btn-add-engine" class="btn-secondary">Add Engine</button>
+          </div>
+        </div>
+
+        <!-- Subsection: Browser Config -->
+        <div class="panel-section" style="margin-top: 40px;">
+          <div class="panel-header">
+            <h2>Advanced</h2>
+          </div>
+          
+          <div class="toggle-group">
+            <div class="toggle-info">
+              <span class="toggle-title">Developer Mode</span>
+              <span class="toggle-desc">Automatically open DevTools when a new tab starts.</span>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="devtools-toggle">
+              <span class="slider round"></span>
+            </label>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- NEW SECTION: Updates Panel -->
+      <div id="panel-updates" class="settings-panel">
+        <div class="panel-header">
+          <h2>Application Updates</h2>
+          <p>Manage versions and rollbacks.</p>
+        </div>
+
+        <div class="update-status-bar" id="update-status-container">
+           <div>
+             <div class="update-status-text" id="update-msg">Checking for updates...</div>
+             <div class="update-progress" id="update-progress">
+               <div class="update-progress-bar" id="update-bar"></div>
+             </div>
+           </div>
+           <button id="btn-check-updates" class="btn-secondary">Check Now</button>
+           <button id="btn-download-update" class="btn-primary" style="display:none;">Download</button>
+           <button id="btn-restart-update" class="btn-primary" style="display:none; background:#00e676; color:#000;">Restart to Update</button>
+        </div>
+
+        <div class="panel-section">
+           <h3 style="color:white; font-size:14px; margin-bottom:16px;">Version History</h3>
+           <div id="version-list" class="version-timeline">
+              <!-- Injected by JS -->
+           </div>
+        </div>
+      </div>
+
+      <!-- Section 6: Build & Verify -->
+      <div id="panel-build" class="settings-panel">
+        <div class="panel-header">
+          <h2>Build & Verification</h2>
+          <p>Diagnostics and Safety Lab.</p>
+        </div>
+
+        <div class="settings-form">
+          
+          <!-- Lab Key Configuration -->
+          <div class="panel-section" style="background: rgba(124, 77, 255, 0.05); padding: 20px; border-radius: 12px; border: 1px solid rgba(124, 77, 255, 0.2); margin-bottom: 30px;">
+            <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
+               <svg viewBox="0 0 24 24" width="20" height="20" fill="#7c4dff"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14z"/><path d="M7 10h2v7h-2zm4-3h2v10h-2zm4 6h2v4h-2z"/></svg>
+               <h3 style="color:white; font-size:15px; font-weight:600;">Lab Environment</h3>
+            </div>
+            <p style="font-size:13px; color:rgba(255,255,255,0.7); margin-bottom:15px; line-height:1.4;">
+              Enter a <strong>separate Gemini API Key</strong> for testing purposes. This key is isolated from your main browser configuration and is used strictly for the diagnostics below.
+            </p>
+            <div class="form-group">
+                <label for="lab-api-key" style="color:#b388ff;">Lab API Key (Gemini Only)</label>
+                <input type="password" id="lab-api-key" placeholder="Paste verification key..." autocomplete="off" style="border-color: rgba(124, 77, 255, 0.3);">
+            </div>
+          </div>
+
+          <!-- API Connectivity -->
+          <div class="panel-section">
+            <h3 style="color:white; margin-bottom:10px; font-size:14px;">Connectivity Check</h3>
+            <p style="font-size:12px; color:rgba(255,255,255,0.5); margin-bottom:15px;">
+              Verifies the Lab Key against the Gemini Flash model.
+            </p>
+            <button id="btn-verify-api" class="btn-secondary" style="width:auto;">Verify Lab Key</button>
+            <div id="api-verify-result" style="margin-top:10px; font-size:13px; font-family:monospace; min-height:20px;"></div>
+          </div>
+
+          <!-- Safe Search Tester -->
+          <div class="panel-section" style="margin-top:30px; border-top:1px solid rgba(255,255,255,0.1); padding-top:20px;">
+            <h3 style="color:white; margin-bottom:10px; font-size:14px;">Safety Classifier Simulation</h3>
+            <p style="font-size:12px; color:rgba(255,255,255,0.5); margin-bottom:15px;">
+              Test how the AI Agent classifies a URL using the Lab Key.
+            </p>
+            <div class="form-group">
+              <label>Target URL</label>
+              <input type="text" id="test-url-input" placeholder="e.g. https://example.com" value="https://google.com">
+            </div>
+            <button id="btn-test-classifier" class="btn-secondary" style="width:auto; margin-top:10px;">Run Classification</button>
+            
+            <div id="classifier-result" style="margin-top:15px; background:rgba(0,0,0,0.3); padding:15px; border-radius:8px; display:none;">
+              <div style="display:flex; justify-content:space-between; margin-bottom:5px;">
+                 <span style="color:rgba(255,255,255,0.5); font-size:12px;">Classification:</span>
+                 <span id="clf-status" style="font-weight:bold;">PENDING</span>
+              </div>
+              <div id="clf-reason" style="font-size:13px; color:#ddd; white-space:pre-wrap;"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Actions Footer -->
+      <div class="actions-footer">
+        <button id="btn-save-settings" class="btn-primary">
+          Save Changes
+        </button>
+        <div id="save-status" class="save-status"></div>
+      </div>
+
+    </div>
+  </div>
+
+  <script type="module" src="../../java/renderer/systemRenderer.js"></script>
+</body>
+</html>

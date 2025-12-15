@@ -1,0 +1,73 @@
+{
+  "name": "om-x",
+  "productName": "Om-X",
+  "version": "1.1.0",
+  "description": "A futuristic Electron-based browser with AI tools and offline games",
+  "main": "main.js",
+  "author": "Sk Abdul Ramiz",
+  "license": "SEE LICENSE IN LICENSE",
+
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder"
+  },
+
+  "dependencies": {
+    "electron-updater": "^6.1.7"
+  },
+
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8"
+  },
+
+  "build": {
+    "appId": "com.omx.browser",
+    "productName": "Om-X",
+
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "Ramizsk586",
+        "repo": "Om-X"
+      }
+    ],
+
+    "directories": {
+      "output": "dist"
+    },
+
+    "files": [
+      "**/*",
+      "!dist/*",
+      "!**/*.ts",
+      "!**/*.map"
+    ],
+
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icons/app.ico"
+    },
+
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Om-X",
+      "deleteAppDataOnUninstall": false,
+      "perMachine": false
+    },
+
+    "mac": {
+      "target": "dmg",
+      "icon": "assets/icons/app.icns"
+    },
+
+    "linux": {
+      "target": "AppImage",
+      "icon": "assets/icons/icon.png",
+      "category": "Network"
+    }
+  }
+}

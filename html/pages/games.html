@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Games</title>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://esm.sh; style-src 'self' 'unsafe-inline'; connect-src 'self' https://esm.sh https://generativelanguage.googleapis.com;">
+  <link rel="stylesheet" href="../../css/base/reset.css">
+  <link rel="stylesheet" href="../../css/base/variables.css">
+  <link rel="stylesheet" href="../../css/base/base.css">
+  <link rel="stylesheet" href="../../css/pages/games.css">
+  <script type="importmap">
+  {
+    "imports": {
+      "@google/genai": "https://esm.sh/@google/genai@^0.1.2"
+    }
+  }
+  </script>
+</head>
+<body>
+  
+  <div class="games-layout">
+    
+    <!-- MENU VIEW -->
+    <div id="view-menu" class="view-section">
+      <div class="menu-header">
+        <h1>Arcade</h1>
+        <p>Offline Brain Training • AI Powered</p>
+      </div>
+      
+      <div class="game-cards-grid">
+        <div class="game-card" data-game="visual">
+          <div class="card-icon visual-icon">👁</div>
+          <h3>Imagining</h3>
+          <p>AI-generated visual reconstruction puzzles.</p>
+        </div>
+        <div class="game-card" data-game="math">
+          <div class="card-icon math-icon">∑</div>
+          <h3>Calculation</h3>
+          <p>Solve falling math problems.</p>
+        </div>
+        <div class="game-card" data-game="memory">
+          <div class="card-icon mem-icon">❖</div>
+          <h3>Memory</h3>
+          <p>Match pairs of symbols.</p>
+        </div>
+        <div class="game-card" data-game="logic">
+          <div class="card-icon logic-icon">?</div>
+          <h3>Logic</h3>
+          <p>Solve critical thinking puzzles.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- GAME VIEW WRAPPER -->
+    <div id="view-game" class="view-section hidden">
+      <!-- HUD -->
+      <div class="game-header">
+        <div class="header-left">
+          <button id="btn-back-menu" class="btn-icon">
+            <svg viewBox="0 0 24 24"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z" fill="currentColor"/></svg>
+          </button>
+          <div class="game-info-group">
+             <div class="game-title" id="active-game-title">Game Title</div>
+             <div class="level-badge" id="level-indicator">Level 1</div>
+          </div>
+        </div>
+        
+        <div class="header-center" id="hud-center">
+           <!-- Dynamic HUD content like Timer/Score -->
+           <span id="hud-score">0</span>
+        </div>
+
+        <div class="header-right" id="hud-right">
+           <!-- Dynamic HUD content like Hearts -->
+        </div>
+      </div>
+
+      <!-- GAME CONTAINERS -->
+      <div class="game-stage">
+        
+        <!-- Loading State for AI -->
+        <div id="ai-loading" class="ai-loader hidden">
+           <div class="loader-spinner"></div>
+           <div class="loader-text">Omni is generating next level...</div>
+        </div>
+
+        <!-- Canvas Layer (Math/Visual) -->
+        <canvas id="game-canvas" class="hidden"></canvas>
+        
+        <!-- DOM Layer (Memory/Logic) -->
+        <div id="game-dom-layer" class="game-dom-layer hidden">
+           <!-- Memory Grid -->
+           <div id="memory-grid" class="memory-grid hidden"></div>
+           
+           <!-- Logic Quiz -->
+           <div id="logic-quiz" class="logic-quiz hidden">
+              <div class="quiz-card">
+                 <div id="quiz-question">Question text?</div>
+                 <div id="quiz-options" class="quiz-options"></div>
+              </div>
+           </div>
+        </div>
+
+        <!-- Overlays -->
+        <div id="game-overlay" class="game-overlay hidden">
+          <div class="overlay-content">
+            <h1 id="overlay-title">Ready?</h1>
+            <p id="overlay-desc">Game Description</p>
+            <button id="btn-start" class="btn-primary">Start Game</button>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Input Area (Math Game Only) -->
+      <div id="input-area" class="input-area hidden">
+        <div class="input-wrapper">
+          <span class="input-icon">></span>
+          <input type="number" id="game-input" placeholder="Type answer..." autocomplete="off">
+          <div class="input-hint">Enter</div>
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+
+  <script type="module" src="../../java/renderer/gamesRenderer.js"></script>
+</body>
+</html>
