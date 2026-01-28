@@ -1,0 +1,177 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Omni AI Chat</title>
+  <link rel="stylesheet" href="../../css/base/reset.css">
+  <link rel="stylesheet" href="../../css/base/variables.css">
+  <link rel="stylesheet" href="../../css/base/base.css">
+  <link rel="stylesheet" href="../../css/pages/omni-chat.css">
+  <link rel="stylesheet" href="https://esm.sh/katex@0.16.11/dist/katex.min.css">
+  <style>
+      .asset-tray {
+          display: flex; gap: 12px; padding: 10px 14px;
+          background: rgba(255, 255, 255, 0.03); border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+          border-radius: 12px 12px 0 0;
+      }
+      .asset-tray.hidden { display: none; }
+      .asset-preview {
+          position: relative; width: 60px; height: 60px; border-radius: 8px;
+          overflow: hidden; border: 1px solid var(--accent-color);
+          box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      }
+      .asset-preview img { width: 100%; height: 100%; object-fit: cover; }
+      
+      .text-asset-preview {
+          transition: transform 0.2s;
+          cursor: default;
+      }
+      .text-asset-preview:hover {
+          transform: translateY(-2px);
+      }
+
+      .btn-remove-asset {
+          position: absolute; top: 2px; right: 2px; width: 16px; height: 16px;
+          background: rgba(0,0,0,0.7); color: #fff; border-radius: 50%;
+          display: flex; align-items: center; justify-content: center; font-size: 10px; cursor: pointer;
+      }
+      .abilities-popup {
+          position: absolute; bottom: 85px; left: 0; width: 240px;
+          background: rgba(15, 15, 18, 0.98); backdrop-filter: blur(30px);
+          border: 1px solid rgba(255,255,255,0.1); border-radius: 20px;
+          padding: 8px; display: flex; flex-direction: column; gap: 4px;
+          z-index: 1100; box-shadow: 0 25px 60px rgba(0,0,0,0.8);
+          transform-origin: bottom left; animation: popupScaleIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+      }
+      @keyframes popupScaleIn { from { transform: scale(0.9) translateY(10px); opacity: 0; } to { transform: scale(1) translateY(0); opacity: 1; } }
+      .abilities-popup.hidden { display: none; }
+      .ability-item {
+          display: flex; align-items: center; gap: 12px; padding: 12px 16px;
+          border-radius: 14px; cursor: pointer; transition: all 0.2s;
+          color: rgba(255, 255, 255, 0.5); font-size: 12px; font-weight: 600;
+      }
+      .ability-item:hover { background: rgba(255, 255, 255, 0.06); color: #fff; }
+      .ability-item svg { width: 18px; height: 18px; opacity: 0.7; }
+      .ability-item.active { background: rgba(124, 77, 255, 0.12); color: #fff; }
+      .ability-item.active svg { opacity: 1; color: var(--accent-color); }
+
+      .brand { display: flex; align-items: center; gap: 12px; }
+      .brand-icon { 
+          width: 32px; height: 32px; background: rgba(255,255,255,0.03); 
+          border-radius: 10px; display: flex; align-items: center; justify-content: center;
+          color: var(--accent-color); border: 1px solid rgba(255,255,255,0.05);
+      }
+      .brand-details { display: flex; flex-direction: column; }
+      .top-actions { display: flex; align-items: center; gap: 8px; }
+      .icon-btn { 
+          width: 36px; height: 36px; border-radius: 10px; 
+          display: flex; align-items: center; justify-content: center; 
+          color: rgba(255,255,255,0.6); transition: all 0.2s;
+          background: transparent; border: none; cursor: pointer;
+      }
+      .icon-btn:hover { background: rgba(255,255,255,0.08); color: #fff; }
+  </style>
+</head>
+<body class="theme-midnight">
+  <div class="chat-layout">
+    <main class="chat-main">
+      <header class="chat-top-bar">
+        <div class="brand">
+          <div class="brand-icon" title="Omni Core">
+             <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M21 16.5C21 16.88 20.79 17.21 20.47 17.38L12.57 21.82C12.41 21.94 12.21 22 12 22C11.79 22 11.59 21.94 11.43 21.82L3.53 17.38C3.21 17.21 3 16.88 3 16.5V7.5C3 7.12 3.21 6.79 3.53 6.62L11.43 2.18C11.59 2.06 11.79 2 12 2C12.21 2 12.41 2.06 12.57 2.18L20.47 6.62C20.79 6.79 21 7.12 21 7.5V16.5Z"/></svg>
+          </div>
+          <div class="brand-details">
+            <span class="brand-text">Omni</span>
+            <span class="brand-tag">Neural Station</span>
+          </div>
+        </div>
+        <div class="top-actions">
+           <button id="btn-open-llama-web" class="icon-btn" title="Open llama.cpp Web UI">
+             <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M19,3H5C3.89,3 3,3.89 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V5C21,3.89 20.11,3 19,3M19,19H5V5H19V19M7,12H17V13H7V12M7,10H17V11H7V10M7,8H17V9H7V8M7,14H17V15H7V14M7,16H17V17H7V16Z"/></svg>
+           </button>
+           <button id="btn-new-chat" class="icon-btn" title="New Session">
+             <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+           </button>
+           <button id="btn-chat-settings" class="icon-btn" title="AI Neural Settings">
+             <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 15.5c-1.93 0-3.5-1.57-3.5-3.5s1.57-3.5 3.5-3.5 3.5 1.57 3.5 3.5-1.57 3.5-3.5 3.5zm7.43-2.53c.04-.32.07-.64.07-.97 0-.33-.03-.66-.07-1l2.11-1.65c.19-.15.24-.42.12-.64l-2-3.46c-.12-.22-.39-.31-.61-.22l-2.49 1c-.52-.4-1.08-.73-1.69-.98l-.38-2.65C14.46 2.18 14.25 2 14 2h-4c-.25 0-.46.18-.49.42l-.38 2.65c-.61.25-1.17.59-1.69.98l-2.49-1c-.22-.09-.49 0-.61.22l-2 3.46c-.13.22-.07.49.12.64L4.57 11c-.04.34-.07.67-.07 1s.03.65.07.97l-2.11 1.65c-.19.15-.24.42-.12.64l2 3.46c.12.22.39.31.61.22l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.03.24.24.42.49.42h4c.25 0 .46-.18.49-.42l.38-2.65c.61-.25 1.17-.59 1.69-.98l2.49 1c.22.09.49 0 .61-.22l2-3.46c.12-.22.07-.49-.12-.64l-2.11-1.65z"/></svg>
+           </button>
+        </div>
+      </header>
+
+      <div id="chat-messages" class="messages-container">
+        <div class="welcome-container" id="welcome-screen" style="margin-top: 100px; text-align: center; opacity: 0.3;">
+          <div style="font-size: 64px; font-weight: 900; color: #fff; letter-spacing: -2px;">OMNI</div>
+          <div style="font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 4px;">Neural Pulse Synchronized</div>
+        </div>
+      </div>
+
+      <div class="input-area-wrapper">
+        <div class="chat-input-box">
+          <div id="mode-capsule" class="mode-capsule">
+            <div class="dot"></div>
+            <span id="mode-nickname">Protocol Active</span>
+          </div>
+
+          <div id="abilities-popup" class="abilities-popup hidden">
+            <div id="btn-ability-nothing" class="ability-item active">
+                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.47 2 2 6.47 2 12s4.47 10 10 10 10-4.47 10-10S17.53 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/></svg>
+                Core Engine
+            </div>
+            <div id="btn-toggle-quick-search" class="ability-item">
+                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+                Quick Retrieval
+            </div>
+            <div id="btn-toggle-search" class="ability-item">
+                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+                Deep Intelligence
+            </div>
+            <div id="btn-toggle-video" class="ability-item">
+                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"/></svg>
+                Video Discover
+            </div>
+            <div id="btn-toggle-wiki" class="ability-item">
+                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L4.5 20.29l.71.71L12 18l6.79 3 .71-.71L12 2z"/></svg>
+                Wiki Brain
+            </div>
+            <div id="btn-enhance-popup" class="ability-item">
+                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 2v3h3v2H7v3H5V7H2V5h3V2h2zm11 10h3v2h-3v3h-2v-3h-3v-2h3V7h2v5zM12 11c1.66 0 3-1.34 3-3V5c0-1.1-.9-2-2-2S9 3.34 9 5v3c0 1.66 1.34 3 3 3z"/></svg>
+                Prompt Enhance
+            </div>
+            <div id="btn-attach-popup" class="ability-item">
+                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg>
+                Attach Visual
+            </div>
+          </div>
+
+          <div id="neural-asset-tray" class="asset-tray hidden"></div>
+
+          <div class="input-top-row">
+            <button id="btn-abilities-plus" class="btn-plus">
+              <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+            </button>
+            <textarea id="chat-input" placeholder="Neural interface active..." rows="1" autofocus></textarea>
+            <button id="btn-send" class="send-btn" disabled>
+               <svg id="icon-send" viewBox="0 0 24 24" width="20" height="20" fill="currentColor" style="transform: rotate(-90deg);"><path d="M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z"/></svg>
+               <svg id="icon-stop" class="hidden" viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M6 6h12v12H6z"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <div id="wiki-url-modal" class="modal-overlay hidden">
+        <div class="modal-card">
+            <div class="modal-title">Wiki Brain Link</div>
+            <input type="text" id="wiki-url-input" class="modal-input" placeholder="https://wikipedia.org/wiki/..." autofocus>
+            <div class="modal-actions">
+                <button id="btn-wiki-cancel" class="btn-cancel">CANCEL</button>
+                <button id="btn-wiki-confirm" class="btn-confirm">LINK NODE</button>
+            </div>
+        </div>
+    </div>
+
+  </div>
+  <script type="module" src="../../java/renderer/omniChatRenderer.js"></script>
+</body>
+</html>

@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Security Defense</title>
+  <link rel="stylesheet" href="../../css/base/reset.css">
+  <link rel="stylesheet" href="../../css/base/variables.css">
+  <link rel="stylesheet" href="../../css/base/base.css">
+  <link rel="stylesheet" href="../../css/pages/security-defense.css">
+</head>
+<body>
+  <div class="defense-container">
+    <div class="defense-card">
+      <div class="icon-stage">
+        <div class="shield-ring"></div>
+        <div class="status-icon"></div>
+      </div>
+      
+      <h1 id="defense-title">Access Blocked</h1>
+      <p id="defense-reason" class="reason-text">The connection was terminated by Omni Defense systems.</p>
+      
+      <div class="meta-box">
+        <div class="meta-row">
+          <span class="meta-label">THREAT TYPE</span>
+          <span id="threat-type" class="meta-value">Unknown</span>
+        </div>
+        <div class="meta-row">
+          <span class="meta-label">TARGET</span>
+          <span id="target-url" class="meta-value">...</span>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button id="btn-back" class="action-btn primary">Return to Safety</button>
+        <button id="btn-details" class="action-btn secondary">View Details</button>
+      </div>
+      
+      <div id="technical-details" class="technical-details hidden">
+        <p><strong>Defense Protocol:</strong> <span id="detail-protocol">Standard</span></p>
+        <p><strong>Timestamp:</strong> <span id="detail-time"></span></p>
+        <p class="disclaimer">This block was enforced locally by Om-X. No data was sent to the target server.</p>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="../../java/renderer/securityDefenseRenderer.js"></script>
+</body>
+</html>

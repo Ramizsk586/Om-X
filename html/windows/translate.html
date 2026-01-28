@@ -1,0 +1,67 @@
+<div class="translator-root">
+    <div class="panel-header">
+        <h2>Translator Engine</h2>
+        <p>Configure the high-fidelity neural layer for viewport-aware translations.</p>
+    </div>
+
+    <!-- Intelligence Configuration -->
+    <section class="settings-section-card">
+        <span class="card-title">Active Intelligence Engine</span>
+        <span class="card-subtitle">Select the provider used for high-fidelity translation repairs.</span>
+        
+        <div style="background: #121214; border: 1px solid #1c1c1f; border-radius: 16px; padding: 24px; margin-top: 16px;">
+            <div class="form-group">
+                <label>Provider</label>
+                <div class="select-wrapper">
+                    <select id="trans-provider-select">
+                        <option value="google">Google Gemini</option>
+                        <option value="groq">Groq</option>
+                        <option value="openrouter">OpenRouter</option>
+                        <option value="mistral">Mistral AI</option>
+                        <option value="cohere">Cohere</option>
+                        <option value="ollama">Ollama (Local)</option>
+                    </select>
+                </div>
+            </div>
+
+            <div id="trans-api-key-group" class="form-group">
+                <label>API Access Token</label>
+                <input type="password" id="trans-api-key" placeholder="••••••••••••••••">
+            </div>
+
+            <div class="form-group">
+                <label>Model Configuration</label>
+                <div class="select-wrapper">
+                    <select id="trans-model-select"></select>
+                </div>
+                <input type="text" id="trans-custom-model" class="hidden" style="margin-top: 8px; background: #000; border: 1px solid rgba(255,255,255,0.1); color: #fff; padding: 10px; border-radius: 8px; width: 100%; font-size: 12px;" placeholder="Custom model ID (e.g. command-r-plus)">
+            </div>
+
+            <div style="margin-top: 20px; display: flex; gap: 12px; align-items: center;">
+                <button id="btn-verify-trans" class="btn-primary" style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: #fff; width: 140px; height: 38px; font-size: 11px;">VERIFY LINK</button>
+                <span id="trans-verify-status" style="font-size: 10px; font-weight: 800; text-transform: uppercase;"></span>
+            </div>
+        </div>
+    </section>
+
+    <!-- Global Parameters -->
+    <section class="settings-section-card">
+        <span class="card-title">Default Target Language</span>
+        <div class="form-group" style="margin-top: 12px;">
+            <div class="select-wrapper">
+                <select id="trans-default-lang">
+                    <option value="en">English</option>
+                    <option value="hi">Hindi</option>
+                    <option value="bn">Bengali</option>
+                    <option value="es">Spanish</option>
+                    <option value="fr">French</option>
+                    <option value="ja">Japanese</option>
+                    <option value="zh">Chinese</option>
+                </select>
+            </div>
+        </div>
+    </section>
+    
+    <div id="trans-status" class="save-status" style="display:none"></div>
+    <button id="btn-save-translator" class="hidden"></button>
+</div>

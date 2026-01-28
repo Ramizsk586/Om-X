@@ -1,0 +1,125 @@
+/* Om-X Curated Theme System - Exactly 10 Themes */
+
+/* --- Primary --- */
+/* 1. Default (Midnight) */
+body.theme-midnight { 
+  --bg-app: #09090b; 
+  --glass-bg: rgba(24, 24, 27, 0.9); 
+  --glass-border: 1px solid rgba(255,255,255,0.06); 
+  --text-main: #fafafa; 
+  --text-secondary: #a1a1aa; 
+  --accent-color: #7c4dff; 
+  --glass-blur: blur(30px); 
+}
+
+/* 2. Grass Green */
+body.theme-grass-green { 
+  --bg-app: #0d210d; 
+  --glass-bg: rgba(26, 46, 26, 0.85); 
+  --glass-border: 1px solid rgba(0,255,0,0.1); 
+  --text-main: #e8f5e9; 
+  --text-secondary: #81c784; 
+  --accent-color: #4caf50; 
+  --glass-blur: blur(20px); 
+}
+
+/* 3. Deep Dark Black */
+body.theme-deep-black { 
+  --bg-app: #000000; 
+  --glass-bg: rgba(10, 10, 10, 0.95); 
+  --glass-border: 1px solid #222; 
+  --text-main: #ffffff; 
+  --text-secondary: #444; 
+  --accent-color: #333; 
+  --glass-blur: none; 
+}
+
+/* 4. Dark Gray */
+body.theme-dark-gray { 
+  --bg-app: #18181b; 
+  --glass-bg: rgba(39, 39, 42, 0.9); 
+  --glass-border: 1px solid rgba(255,255,255,0.08); 
+  --text-main: #f4f4f5; 
+  --text-secondary: #71717a; 
+  --accent-color: #52525b; 
+  --glass-blur: blur(24px); 
+}
+
+/* 5. Light Gray */
+body.theme-light-gray { 
+  --bg-app: #f4f4f5; 
+  --glass-bg: rgba(255, 255, 255, 0.85); 
+  --glass-border: 1px solid rgba(0,0,0,0.08); 
+  --text-main: #18181b; 
+  --text-secondary: #71717a; 
+  --accent-color: #a1a1aa; 
+  --glass-blur: blur(20px); 
+}
+
+/* 6. Sky Pink */
+body.theme-sky-pink { 
+  --bg-app: #fdf2f8; 
+  --glass-bg: rgba(255, 241, 242, 0.8); 
+  --glass-border: 1px solid rgba(251,113,133,0.1); 
+  --text-main: #881337; 
+  --text-secondary: #fb7185; 
+  --accent-color: #f472b6; 
+  --glass-blur: blur(15px); 
+}
+
+/* --- Calm --- */
+/* 7. Zen Minimal */
+body.theme-zen-minimal { 
+  --bg-app: #fafafa; 
+  --glass-bg: rgba(255, 255, 255, 0.9); 
+  --glass-border: 1px solid #eee; 
+  --text-main: #222; 
+  --text-secondary: #999; 
+  --accent-color: #d1d1d1; 
+  --glass-blur: blur(30px); 
+}
+
+/* 8. Matcha Calm */
+body.theme-matcha { 
+  --bg-app: #f1f5f1; 
+  --glass-bg: rgba(225, 235, 225, 0.7); 
+  --glass-border: 1px solid rgba(100,120,100,0.1); 
+  --text-main: #2d342d; 
+  --text-secondary: #5a6b5a; 
+  --accent-color: #a5c4a5; 
+  --glass-blur: blur(15px); 
+}
+
+/* 9. Lavender Dream */
+body.theme-lavender { 
+  --bg-app: #f5f3ff; 
+  --glass-bg: rgba(237, 233, 254, 0.7); 
+  --glass-border: 1px solid rgba(139,92,246,0.1); 
+  --text-main: #4c1d95; 
+  --text-secondary: #8b5cf6; 
+  --accent-color: #a78bfa; 
+  --glass-blur: blur(15px); 
+}
+
+/* 10. Deep Ocean */
+body.theme-ocean { 
+  --bg-app: #082f49; 
+  --glass-bg: rgba(12, 74, 110, 0.85); 
+  --glass-border: 1px solid rgba(14,165,233,0.1); 
+  --text-main: #f0f9ff; 
+  --text-secondary: #7dd3fc; 
+  --accent-color: #0ea5e9; 
+  --glass-blur: blur(20px); 
+}
+
+/* Theme Previews */
+.preview-midnight { background: #09090b; border: 1px solid #27272a; }
+.preview-grass-green { background: #0d210d; border: 1px solid #1a2e1a; }
+.preview-deep-black { background: #000; border: 1px solid #111; }
+.preview-dark-gray { background: #18181b; border: 1px solid #27272a; }
+.preview-light-gray { background: #f4f4f5; border: 1px solid #e4e4e7; }
+.preview-sky-pink { background: #fdf2f8; border: 1px solid #fce7f3; }
+.preview-zen-minimal { background: #fafafa; border: 1px solid #eee; }
+.preview-matcha { background: #f1f5f1; border: 1px solid #e1e9e1; }
+.preview-lavender { background: #f5f3ff; border: 1px solid #ede9fe; }
+.preview-ocean { background: #082f49; border: 1px solid #0c4a6e; }

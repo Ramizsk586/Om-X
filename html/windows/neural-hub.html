@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Omni Neural Hub</title>
+  <link rel="stylesheet" href="../../css/base/reset.css">
+  <link rel="stylesheet" href="../../css/base/variables.css">
+  <link rel="stylesheet" href="../../css/base/base.css">
+  <link rel="stylesheet" href="../../css/themes/all-themes.css">
+  <link rel="stylesheet" href="../../css/layout/system.css">
+  <style>
+    /* Specialized Hub Overrides to match system.css */
+    .telemetry-banner {
+      background: rgba(24, 24, 27, 0.5);
+      border: 1px solid #18181b;
+      border-radius: 16px;
+      padding: 24px;
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      margin-bottom: 32px;
+      position: relative;
+      overflow: hidden;
+    }
+    .telemetry-banner::after {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; width: 4px; height: 100%;
+      background: var(--accent-color);
+    }
+    .hub-status-ring {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      background: rgba(124, 77, 255, 0.1);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--accent-color);
+      flex-shrink: 0;
+      position: relative;
+    }
+    .hub-status-ring::after {
+      content: '';
+      position: absolute;
+      inset: -4px;
+      border-radius: 50%;
+      border: 1px solid var(--accent-color);
+      opacity: 0.3;
+      animation: pulseIn 2s infinite;
+    }
+    @keyframes pulseIn {
+      0% { transform: scale(0.9); opacity: 0.5; }
+      100% { transform: scale(1.2); opacity: 0; }
+    }
+    .status-content { flex: 1; }
+    .status-content h3 { font-size: 15px; font-weight: 700; color: #fff; margin-bottom: 2px; }
+    .status-content p { font-size: 12px; color: #71717a; }
+    
+    .telemetry-grid-mini {
+      display: flex;
+      gap: 24px;
+      margin-top: 12px;
+    }
+    .tele-stat {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .tele-stat span:first-child { font-size: 9px; font-weight: 800; color: #52525b; text-transform: uppercase; letter-spacing: 0.5px; }
+    .tele-stat span:last-child { font-size: 13px; font-700: 700; color: #fff; font-family: 'JetBrains Mono', monospace; }
+
+    /* Fix for sub-panel mounting */
+    #translator-ui-container, #writer-ui-container {
+        width: 100%;
+    }
+    
+    /* Ensure action footer matches system settings */
+    .hub-footer {
+        position: sticky;
+        bottom: 0;
+        background: #09090b;
+        padding: 24px 0;
+        border-top: 1px solid #18181b;
+        margin-top: 40px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        z-index: 10;
+    }
+
+    /* --- NEW SYNC ANIMATIONS --- */
+    #save-notif {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: #10b981;
+        font-weight: 800;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 1.5px;
+        opacity: 0;
+        transform: translateY(10px);
+        transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+        pointer-events: none;
+    }
+    #save-notif.visible {
+        opacity: 1;
+        transform: translateY(0);
+        text-shadow: 0 0 10px rgba(16, 185, 129, 0.4);
+    }
+    #save-notif .sync-dot {
+        width: 6px;
+        height: 6px;
+        background: #10b981;
+        border-radius: 50%;
+        box-shadow: 0 0 8px #10b981;
+    }
+
+    #btn-save-all {
+        min-width: 140px;
+        transition: all 0.3s var(--ease-out-expo);
+        position: relative;
+        overflow: hidden;
+    }
+    #btn-save-all:active {
+        transform: scale(0.95);
+    }
+    #btn-save-all.syncing {
+        background: #27272a;
+        color: #71717a;
+        pointer-events: none;
+    }
+    
+    .global-sync-flash {
+        position: fixed;
+        inset: 0;
+        background: var(--accent-color);
+        opacity: 0;
+        pointer-events: none;
+        z-index: 9999;
+        transition: opacity 0.5s;
+    }
+  </style>
+</head>
+<body class="theme-midnight">
+  <div class="global-sync-flash" id="sync-flash"></div>
+
+  <div class="system-layout">
+    <!-- Hub Sidebar -->
+    <div class="system-sidebar">
+      <div class="system-brand">Neural Hub</div>
+      <div class="nav-menu">
+        <button class="sys-nav-item active" data-target="panel-hub-dashboard">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+          Dashboard
+        </button>
+        <button class="sys-nav-item" data-target="panel-hub-translator">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 8l6 6M4 14l6-6M2 5h12M7 2h1M22 22l-5-10-5 10M14 18h6"/></svg>
+          Translator
+        </button>
+        <button class="sys-nav-item" data-target="panel-hub-writer">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          Syntactic Writer
+        </button>
+      </div>
+      <div class="sys-footer">Neural Link Stable</div>
+    </div>
+
+    <!-- Hub Content -->
+    <div class="system-content-area">
+      
+      <!-- Tab: Dashboard -->
+      <div id="panel-hub-dashboard" class="settings-panel active">
+        <div class="panel-header">
+          <h2>Neural Command Center</h2>
+          <p>Real-time telemetry and global intelligence orchestration.</p>
+        </div>
+
+        <div class="telemetry-banner">
+            <div class="hub-status-ring">
+                <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M21 16.5L12 21.5L3 16.5V7.5L12 2.5L21 7.5V16.5Z"/></svg>
+            </div>
+            <div class="status-content">
+                <h3 id="val-active-engine">Syncing Core...</h3>
+                <p>Primary Intelligence Engine is active and responding.</p>
+                <div class="telemetry-grid-mini">
+                    <div class="tele-stat">
+                        <span>Latency</span>
+                        <span id="val-latency">~0ms</span>
+                    </div>
+                    <div class="tele-stat">
+                        <span>Uptime</span>
+                        <span id="val-uptime">00:00:00</span>
+                    </div>
+                    <div class="tele-stat">
+                        <span>Status</span>
+                        <span style="color: #10b981;">Online</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="settings-section-card">
+            <span class="card-title">Orchestration Info</span>
+            <p class="toggle-desc">The Neural Hub manages background tasks like viewport translation and syntactic rewriting. Changes here synchronize across all active browser windows.</p>
+        </div>
+      </div>
+
+      <!-- Tab: Translator -->
+      <div id="panel-hub-translator" class="settings-panel">
+        <div id="translator-ui-container"></div>
+      </div>
+
+      <!-- Tab: Writer -->
+      <div id="panel-hub-writer" class="settings-panel">
+        <div id="writer-ui-container"></div>
+      </div>
+
+      <!-- Unified Footer for Global Context -->
+      <div class="hub-footer" id="hub-global-footer">
+        <div id="save-notif">
+            <div class="sync-dot"></div>
+            Neural Link Synchronized
+        </div>
+        <button id="btn-save-all" class="btn-primary">Apply Changes</button>
+      </div>
+
+    </div>
+  </div>
+
+  <script type="module" src="../../java/renderer/neuralHubRenderer.js"></script>
+</body>
+</html>

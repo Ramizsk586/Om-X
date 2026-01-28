@@ -1,0 +1,58 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Downloads</title>
+  <link rel="stylesheet" href="../../css/base/reset.css">
+  <link rel="stylesheet" href="../../css/base/variables.css">
+  <link rel="stylesheet" href="../../css/base/base.css">
+  <link rel="stylesheet" href="../../css/themes/all-themes.css">
+  <link rel="stylesheet" href="../../css/pages/downloads.css">
+</head>
+<body>
+  <div class="downloads-container">
+    <div class="downloads-header">
+      <div class="header-title">
+        <svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z" fill="currentColor"/></svg>
+        Downloads
+      </div>
+      <div class="header-actions">
+        <button id="btn-dl-settings" class="btn-secondary" title="Download Settings">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.56-1.62.94l2.39-.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47.12-.61l2.03 1.58c-.05.3-.07.63-.07.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.03-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>
+        </button>
+        <button id="btn-clear-downloads" class="btn-clear">Clear List</button>
+      </div>
+    </div>
+
+    <div id="downloads-list" class="downloads-list">
+      <div class="empty-state">No downloads yet.</div>
+    </div>
+  </div>
+
+  <!-- Settings Modal -->
+  <div id="dl-settings-modal" class="modal-overlay hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>Download Settings</h3>
+        <button id="btn-close-modal" class="btn-icon">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>Default Download Path</label>
+          <div class="path-input-group">
+            <input type="text" id="input-dl-path" readonly placeholder="System default downloads folder">
+            <button id="btn-browse-path" class="btn-primary">Browse...</button>
+          </div>
+          <p class="form-hint">All future downloads will be saved to this location.</p>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="btn-save-dl-settings" class="btn-primary large">Save Changes</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="../../java/renderer/downloadsRenderer.js"></script>
+</body>
+</html>

@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Local AI Management</title>
+  <link rel="stylesheet" href="../../css/base/reset.css">
+  <link rel="stylesheet" href="../../css/base/variables.css">
+  <link rel="stylesheet" href="../../css/base/base.css">
+  <link rel="stylesheet" href="../../css/pages/local-ai-manager.css">
+  <style>
+      .hero-stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 24px; }
+      .hero-stat-card { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05); padding: 16px; border-radius: 12px; }
+      .stat-label { font-size: 10px; font-weight: 800; color: #52525b; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
+      .stat-value { font-size: 18px; font-weight: 800; color: #fff; font-family: 'JetBrains Mono', monospace; }
+      .btn-cancel { background: #ef4444 !important; color: #fff !important; }
+      .status-pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 20px; font-size: 10px; font-weight: 800; background: rgba(255,255,255,0.05); }
+      .status-pill.active { background: rgba(16, 185, 129, 0.1); color: #10b981; }
+  </style>
+</head>
+<body>
+  <div class="manager-container">
+    <header class="header">
+      <div>
+        <h1>Neural Hardware Station</h1>
+        <p>Isolated workspace for private model execution.</p>
+      </div>
+      <div id="engine-global-status" class="status-pill">ENGINE: OFFLINE</div>
+    </header>
+
+    <div class="grid">
+      <section class="card">
+        <span class="card-title">System Architecture</span>
+        <div class="hero-stat-grid">
+            <div class="hero-stat-card">
+                <div class="stat-label">Host CPU</div>
+                <div id="cpu-info" class="stat-value">---</div>
+            </div>
+            <div class="hero-stat-card">
+                <div class="stat-label">GPU Memory</div>
+                <div id="vram-total" class="stat-value">0 GB</div>
+            </div>
+        </div>
+        
+        <div style="margin-top: 24px; padding: 20px; background: rgba(0,0,0,0.2); border-radius: 16px; border: 1px solid rgba(255,255,255,0.03);">
+            <span class="card-title" style="margin-bottom: 12px;">Inference Kernel</span>
+            <div id="engine-area">
+                <div id="engine-not-installed">
+                    <p style="font-size: 11px; color: #71717a; margin-bottom: 12px; line-height: 1.4;">The execution core is required for GGUF acceleration.</p>
+                    <button id="btn-install-engine" class="btn-action">Provision Engine</button>
+                </div>
+                <div id="engine-downloading" class="hidden">
+                    <p style="font-size: 10px; color: #3b82f6; font-weight: 800; margin-bottom: 8px;">DOWNLOADING STABLE KERNEL...</p>
+                    <div class="progress-container"><div id="engine-progress-fill" class="progress-fill" style="width: 0%; background: #3b82f6;"></div></div>
+                </div>
+                <div id="engine-extracting" class="hidden">
+                    <p style="font-size: 10px; color: #fbbf24; font-weight: 800; margin-bottom: 8px;">INTEGRATING BINARIES...</p>
+                    <div class="progress-container"><div class="progress-fill" style="width: 100%; background: #fbbf24; animation: pulse 1s infinite;"></div></div>
+                </div>
+                <div id="engine-installed" class="hidden">
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <div style="width:8px; height:8px; border-radius:50%; background:#10b981;"></div>
+                        <span style="font-size:11px; font-weight:800; color:#10b981;">KERNEL READY</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div style="margin-top: 24px;">
+            <span class="card-title" style="margin-bottom: 12px;">GPU Load Tracker</span>
+            <canvas id="gpu-graph"></canvas>
+            <div style="display:flex; justify-content:space-between; margin-top:8px; font-size:10px; color:#52525b; font-weight:800;">
+                <span id="vram-used">0 MB USED</span>
+                <span id="current-load-text">0% LOAD</span>
+            </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <span class="card-title">Approved Neural Weights</span>
+        <div id="preset-list">
+            <!-- Gemma 3 Injected Here -->
+        </div>
+
+        <div id="global-eject-area" class="hidden" style="margin-top: 20px; padding: 20px; border-radius: 16px; background: rgba(239, 68, 68, 0.05); border: 1px solid rgba(239, 68, 68, 0.1);">
+            <div style="font-size:10px; color:#ef4444; font-weight:900; margin-bottom:12px; letter-spacing:1px;">ACTIVE EXECUTION IN PROGRESS</div>
+            <button id="btn-global-unload" class="btn-action secondary" style="border-color: #ef4444; color: #ef4444;">Eject GPU & Terminate</button>
+        </div>
+      </section>
+    </div>
+  </div>
+  <script type="module" src="../../java/renderer/localAiManagerRenderer.js"></script>
+</body>
+</html>

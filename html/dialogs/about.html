@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>About Om-X</title>
+  <link rel="stylesheet" href="../../css/base/reset.css">
+  <link rel="stylesheet" href="../../css/base/variables.css">
+  <link rel="stylesheet" href="../../css/base/base.css">
+  <style>
+    body {
+        background: #101014;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        height: 100vh;
+        color: white;
+        user-select: none;
+        -webkit-app-region: drag;
+    }
+    .logo {
+        width: 80px;
+        height: 80px;
+        background: var(--accent-color);
+        border-radius: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 40px;
+        font-weight: bold;
+        margin-bottom: 20px;
+        box-shadow: 0 10px 30px rgba(124, 77, 255, 0.3);
+    }
+    h1 { font-size: 24px; font-weight: 600; margin-bottom: 8px; }
+    p { color: rgba(255,255,255,0.5); font-size: 13px; margin-bottom: 20px; }
+    .versions {
+        background: rgba(255,255,255,0.05);
+        padding: 16px;
+        border-radius: 12px;
+        font-family: monospace;
+        font-size: 11px;
+        text-align: left;
+        width: 80%;
+    }
+    .v-row { display: flex; justify-content: space-between; margin-bottom: 4px; }
+    .v-row:last-child { margin-bottom: 0; }
+    .btn-close {
+        margin-top: 30px;
+        background: rgba(255,255,255,0.1);
+        padding: 8px 24px;
+        border-radius: 6px;
+        color: white;
+        font-size: 12px;
+        cursor: pointer;
+        -webkit-app-region: no-drag;
+    }
+    .btn-close:hover { background: rgba(255,255,255,0.2); }
+  </style>
+</head>
+<body>
+  <div class="logo">O</div>
+  <h1>Om-X Browser</h1>
+  <p>The AI-First Browsing Experience</p>
+  
+  <div class="versions">
+    <div class="v-row"><span>Node</span> <span id="node-ver">25.2.1</span></div>
+    <div class="v-row"><span>Version</span> <span id="app-ver">1.6.0</span></div>
+    <div class="v-row"><span>groq-sdk</span> <span id="node-ver">0.3.3</span></div>
+    <div class="v-row"><span>Electron</span> <span id="electron-ver">33.4.11</span></div>
+    <div class="v-row"><span>google/genai</span> <span id="node-ver">1.34.0</span></div>
+    <div class="v-row"><span>electron-builder</span> <span id="chrome-ver">25.1.8</span></div>
+    <div class="v-row"><span>electron-updater</span> <span id="node-ver">6.6.2</span></div>
+  </div>
+
+  <button class="btn-close" onclick="window.close()">Close</button>
+
+  <script>
+    document.getElementById('electron-ver').textContent = process.versions.electron;
+    document.getElementById('chrome-ver').textContent = process.versions.chrome;
+    document.getElementById('node-ver').textContent = process.versions.node;
+  </script>
+</body>
+</html>

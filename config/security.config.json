@@ -1,0 +1,12 @@
+{
+  "policies": {
+    "enableAdBlocker": true,
+    "enableMalwareProtection": true,
+    "httpsOnly": false,
+    "blockThirdPartyCookies": true
+  },
+  "blocklists": {
+    "domains": ["example-malware.com", "bad-site.org"],
+    "keywords": ["malware", "phishing"]
+  }
+}

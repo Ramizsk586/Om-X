@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>Om-X Neural Chess</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body class="theme-midnight">
+  <!-- Sidebar Eval Bar (Toggleable) -->
+  <div id="neural-eval-bar" class="eval-bar-container hidden">
+    <div class="eval-label">EVAL</div>
+    <div class="eval-track">
+      <div id="eval-fill" class="eval-fill" style="height: 50%;"></div>
+    </div>
+    <div id="eval-value" class="eval-num">0.0</div>
+  </div>
+
+  <div id="app-bar">
+    <div id="app-title">Neural Chess</div>
+    <div id="app-actions">
+      <button id="startGame">New Game</button>
+      <button id="stopGame" style="display:none;">Resign</button>
+      <button id="settingsBtn">Sub-Process Config</button>
+    </div>
+  </div>
+
+  <div id="board-container">
+    <div id="board" data-theme="midnight"></div>
+    
+    <div id="modal-overlay" class="hidden">
+      
+      <!-- New Game Modal -->
+      <div id="new-game-modal" class="hidden glass-modal">
+        <h3>PROTOCOL SELECTION</h3>
+        <p class="modal-hint">Choose your combat engagement parameters.</p>
+        
+        <div class="engagement-options">
+            <label class="radio-card">
+                <input type="radio" name="mode" value="human" checked>
+                <div class="card-content">
+                    <span class="mode-title">Human vs Human</span>
+                    <p>Direct neural synchronization with local peer.</p>
+                </div>
+            </label>
+            <label class="radio-card">
+                <input type="radio" name="mode" value="engine">
+                <div class="card-content">
+                    <span class="mode-title">Neural Engine</span>
+                    <p>Match intellect against the Omni sub-processors.</p>
+                </div>
+            </label>
+        </div>
+
+        <div id="engine-config" class="hidden">
+            <div class="config-row">
+                <label>Side Protocol</label>
+                <div class="side-selector">
+                    <button class="side-btn active" data-side="w">White</button>
+                    <button class="side-btn" data-side="b">Black</button>
+                </div>
+            </div>
+            <div class="config-row">
+                <label>Engine Complexity</label>
+                <select id="engine-level">
+                    <option value="1">Sub-Process Alpha (EASY)</option>
+                    <option value="2">Sub-Process Beta (MEDIUM)</option>
+                    <option value="3" selected>Sub-Process Gamma (PRO)</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="modal-actions-footer">
+            <button id="btn-cancel-new" class="btn-secondary">Abort</button>
+            <button id="btn-confirm-new" class="btn-primary">Initiate Match</button>
+        </div>
+      </div>
+
+      <!-- Sub-Process Config (Settings) Modal -->
+      <div id="settings-modal" class="hidden glass-modal">
+        <h3>NEURAL PARAMETERS</h3>
+        <p class="modal-hint">Configure background telemetry and aesthetics.</p>
+        
+        <div class="settings-list">
+            <div class="config-row">
+                <label>Board Aesthetic</label>
+                <select id="theme-selector">
+                    <option value="midnight">Midnight Zinc (Default)</option>
+                    <option value="cyber">Cyber Neon</option>
+                    <option value="matcha">Matcha Zen</option>
+                    <option value="ocean">Oceanic Blue</option>
+                    <option value="rustic">Rustic Wood</option>
+                </select>
+            </div>
+
+            <div class="config-row">
+                <label>Engine Binary Path</label>
+                <input type="text" id="engine-path-input" class="text-input" placeholder="C:/Engines/stockfish.exe">
+                <p style="font-size: 10px; color: var(--text-dim); margin-top: 4px;">Local executable path for deep logic processing.</p>
+            </div>
+
+            <div class="setting-item">
+                <div class="setting-info">
+                    <span class="setting-name">Telemetry Bar (Eval)</span>
+                    <p>Live advantage visualization.</p>
+                </div>
+                <label class="switch">
+                    <input type="checkbox" id="toggle-eval">
+                    <span class="slider"></span>
+                </label>
+            </div>
+        </div>
+
+        <button id="btn-close-settings" class="btn-primary">Sync & Close</button>
+      </div>
+
+      <!-- Promotion Modal -->
+      <div id="promotion-modal" class="hidden glass-modal">
+        <h3>UNIT EVOLUTION</h3>
+        <p class="modal-hint">Select neural upgrade path.</p>
+        <div class="promotion-options">
+          <div class="promo-option" data-type="Q"></div>
+          <div class="promo-option" data-type="R"></div>
+          <div class="promo-option" data-type="B"></div>
+          <div class="promo-option" data-type="N"></div>
+        </div>
+      </div>
+
+      <!-- Game Over Modal -->
+      <div id="game-over-modal" class="hidden glass-modal">
+        <h2 id="game-over-title">LINK TERMINATED</h2>
+        <p id="game-over-reason">Reason</p>
+        <button id="close-modal-btn">ACKNOWLEDGE</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>

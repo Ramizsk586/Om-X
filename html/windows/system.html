@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://esm.sh; style-src 'self' 'unsafe-inline'; connect-src 'self' https://esm.sh https://generativelanguage.googleapis.com https://openrouter.ai https://api.groq.com https://api.mistral.ai https://api.cohere.ai https://api.github.com http://localhost:11434; img-src 'self' data: https: blob:;">
+  <title>Settings</title>
+  <link rel="stylesheet" href="../../css/base/reset.css">
+  <link rel="stylesheet" href="../../css/base/variables.css">
+  <link rel="stylesheet" href="../../css/base/base.css">
+  <link rel="stylesheet" href="../../css/themes/all-themes.css">
+  <link rel="stylesheet" href="../../css/layout/system.css">
+  <style>
+    /* About Panel Specific Styling */
+    .about-hero {
+      text-align: center;
+      padding: 20px 0 40px 0;
+      border-bottom: 1px solid #18181b;
+      margin-bottom: 30px;
+    }
+    .about-logo {
+      width: 64px;
+      height: 64px;
+      background: var(--accent-color);
+      color: white;
+      border-radius: 16px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 32px;
+      font-weight: 800;
+      margin-bottom: 16px;
+      box-shadow: 0 10px 30px rgba(124, 77, 255, 0.2);
+    }
+    .about-name { font-size: 24px; font-weight: 700; color: #fff; margin-bottom: 4px; }
+    .about-tagline { font-size: 13px; color: #71717a; margin-bottom: 20px; }
+    
+    .version-table {
+      width: 100%;
+      background: #121214;
+      border-radius: 12px;
+      border: 1px solid #1c1c1f;
+      overflow: hidden;
+      margin-top: 10px;
+    }
+    .v-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 12px 20px;
+      border-bottom: 1px solid #1c1c1f;
+      font-size: 13px;
+    }
+    .v-row:last-child { border-bottom: none; }
+    .v-label { color: #71717a; font-weight: 500; }
+    .v-value { color: #fff; font-family: 'JetBrains Mono', monospace; font-size: 12px; }
+    
+    .about-footer-links {
+      display: flex;
+      gap: 20px;
+      justify-content: center;
+      margin-top: 30px;
+    }
+    .about-link {
+      color: var(--accent-color);
+      font-size: 12px;
+      text-decoration: none;
+      font-weight: 600;
+      transition: color 0.2s;
+    }
+    .about-link:hover { color: #fff; text-decoration: underline; }
+
+    /* Matrix Default Button */
+    .btn-matrix-default {
+      background: transparent;
+      border: none;
+      color: #71717a;
+      cursor: pointer;
+      padding: 4px;
+      display: flex;
+      align-items: center;
+      transition: all 0.2s;
+    }
+    .btn-matrix-default.is-default {
+      color: #fbbf24; /* Gold star */
+    }
+    .btn-matrix-default:hover:not(.is-default) {
+      color: #fff;
+    }
+  </style>
+  <script type="importmap">
+  {
+    "imports": {
+      "@google/genai": "https://esm.sh/@google/genai"
+    }
+  }
+  </script>
+</head>
+<body>
+  
+  <div class="system-layout">
+    <div class="system-sidebar">
+      <div class="system-brand">Om-X</div>
+      <div class="nav-menu">
+        <button class="sys-nav-item active" data-target="panel-system">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path d="M9 22V12h6v10"/></svg>
+          System
+        </button>
+        <button class="sys-nav-item" data-target="panel-security">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          Security
+        </button>
+        <button class="sys-nav-item" data-target="panel-password-vault">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          Passwords
+        </button>
+        <button class="sys-nav-item" data-target="panel-appearance">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/></svg>
+          Appearance
+        </button>
+        <button class="sys-nav-item" data-target="panel-shortcuts">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2" ry="2"/><path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M6 12h.01M10 12h.01M14 12h.01M18 12h.01M7 16h10"/></svg>
+          Shortcuts
+        </button>
+        <button class="sys-nav-item" data-target="panel-search-matrix">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 21l-4.35-4.35M19 11a8 8 0 11-16 0 8 8 0 0116 0z"/><path d="M11 8v6m-3-3h6" opacity="0.5"/></svg>
+          Search Matrix
+        </button>
+        <button class="sys-nav-item" data-target="panel-adblocker">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M4.93 4.93l14.14 14.14"/></svg>
+          Ad Shield
+        </button>
+        <button class="sys-nav-item" data-target="panel-advanced">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 20h.01M7 20h.01M12 20h.01M17 20h.01M22 20h.01M2 16h20M2 12h20M2 8h20M2 4h20"/></svg>
+          Advanced
+        </button>
+        <button class="sys-nav-item" data-target="panel-creator">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          Creator
+        </button>
+        <button class="sys-nav-item" data-target="panel-about">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+          About
+        </button>
+      </div>
+      <div class="sys-footer">v1.6.0 Stable</div>
+    </div>
+
+    <div class="system-content-area">
+      <!-- Section: System -->
+      <div id="panel-system" class="settings-panel active">
+        <div class="panel-header">
+          <h2>General Configuration</h2>
+          <p>Core browser behaviors and identity.</p>
+        </div>
+        <div class="settings-section-card">
+          <div class="form-group">
+            <label>Homepage URL</label>
+            <input type="text" id="sys-home-url" placeholder="https://...">
+          </div>
+          <div class="form-group">
+            <label>Custom User Agent</label>
+            <input type="text" id="sys-user-agent" placeholder="Default browser identity">
+          </div>
+          <div class="toggle-row">
+            <div class="toggle-info">
+              <span class="toggle-title">Enable Browsing History</span>
+              <span class="toggle-desc">Save your visited pages locally for quick access later.</span>
+            </div>
+            <label class="switch"><input type="checkbox" id="feat-history" checked><span class="slider"></span></label>
+          </div>
+          <div class="toggle-row">
+            <div class="toggle-info">
+              <span class="toggle-title">Show Search Loading Animation</span>
+              <span class="toggle-desc">Toggle the neural transition effect when searching.</span>
+            </div>
+            <label class="switch"><input type="checkbox" id="feat-loading-anim" checked><span class="slider"></span></label>
+          </div>
+          <div class="toggle-row">
+            <div class="toggle-info">
+              <span class="toggle-title">AI Chat Quick Access</span>
+              <span class="toggle-desc">Show a dedicated AI Chat button in the sidebar and hub.</span>
+            </div>
+            <label class="switch"><input type="checkbox" id="feat-ai-chat-btn" checked><span class="slider"></span></label>
+          </div>
+          <div class="toggle-row">
+            <div class="toggle-info">
+              <span class="toggle-title">Open Inspector on Launch</span>
+              <span class="toggle-desc">Automatically open devtools for every new tab.</span>
+            </div>
+            <label class="switch"><input type="checkbox" id="devtools-toggle"><span class="slider"></span></label>
+          </div>
+        </div>
+      </div>
+
+      <!-- Section: Security -->
+      <div id="panel-security" class="settings-panel">
+        <div class="panel-header">
+          <h2>Security & Defense</h2>
+          <p>Protect your browsing experience with advanced filtering.</p>
+        </div>
+        <div class="settings-section-card">
+          <span class="card-title">Threat Intelligence</span>
+          <div class="toggle-row">
+            <div class="toggle-info">
+              <span class="toggle-title">Web Firewall</span>
+              <span class="toggle-desc">Network-level protection against malicious domains and phishing attempts.</span>
+            </div>
+            <label class="switch"><input type="checkbox" id="feat-firewall"><span class="slider"></span></label>
+          </div>
+          <div class="toggle-row">
+            <div class="toggle-info">
+              <span class="toggle-title">Antivirus Protection</span>
+              <span class="toggle-desc">Real-time heuristic scanning of downloaded files.</span>
+            </div>
+            <label class="switch"><input type="checkbox" id="feat-antivirus" checked><span class="slider"></span></label>
+          </div>
+        </div>
+      </div>
+
+      <!-- Section: Password Vault -->
+      <div id="panel-password-vault" class="settings-panel">
+         <!-- Content dynamically loaded from vault.html -->
+      </div>
+
+      <!-- Section: Appearance -->
+      <div id="panel-appearance" class="settings-panel">
+        <div class="panel-header">
+          <h2>Visual Aesthetic</h2>
+          <p>Customize themes and UI behavior.</p>
+        </div>
+        <div id="theme-categories-container">
+            <!-- Dynamically populated categories -->
+        </div>
+      </div>
+
+      <!-- Section: Shortcuts -->
+      <div id="panel-shortcuts" class="settings-panel">
+        <div class="panel-header">
+          <h2>Keyboard Shortcuts</h2>
+          <p>Click a shortcut and press the key combination to record.</p>
+        </div>
+        <div class="settings-section-card" id="shortcuts-container">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+
+      <!-- Section: Search Matrix -->
+      <div id="panel-search-matrix" class="settings-panel">
+        <!-- Content dynamically loaded from matrix-search.html -->
+      </div>
+
+      <!-- Section: Ad Shield -->
+      <div id="panel-adblocker" class="settings-panel">
+        <div class="panel-header">
+          <h2>Ad Shield</h2>
+          <p>Network-level filtering for trackers, ads, and malicious scripts.</p>
+        </div>
+        <div class="settings-section-card">
+          <div class="toggle-row">
+            <div class="toggle-info">
+              <span class="toggle-title">Block Ads & Popups</span>
+              <span class="toggle-desc">Global filtering of advertisement networks and annoying popups.</span>
+            </div>
+            <label class="switch"><input type="checkbox" id="toggle-adblock-master" checked><span class="slider"></span></label>
+          </div>
+          <div class="toggle-row">
+            <div class="toggle-info">
+              <span class="toggle-title">Block Trackers & Analytics</span>
+              <span class="toggle-desc">Prevent data harvesting from analytics engines and user tracking scripts.</span>
+            </div>
+            <label class="switch"><input type="checkbox" id="toggle-adblock-trackers" checked><span class="slider"></span></label>
+          </div>
+          <div class="toggle-row">
+            <div class="toggle-info">
+              <span class="toggle-title">Block Social Media Widgets</span>
+              <span class="toggle-desc">Hide tracking pixels and "Like/Share" buttons from social networks.</span>
+            </div>
+            <label class="switch"><input type="checkbox" id="toggle-adblock-social" checked><span class="slider"></span></label>
+          </div>
+          <div class="toggle-row">
+            <div class="toggle-info">
+              <span class="toggle-title">Block Cryptominers</span>
+              <span class="toggle-desc">Terminate scripts that use your CPU to mine cryptocurrency in the background.</span>
+            </div>
+            <label class="switch"><input type="checkbox" id="toggle-adblock-miners" checked><span class="slider"></span></label>
+          </div>
+          <div class="toggle-row">
+            <div class="toggle-info">
+              <span class="toggle-title">Cosmetic Filtering</span>
+              <span class="toggle-desc">Automatically hide blank spaces and remnants left by blocked ads.</span>
+            </div>
+            <label class="switch"><input type="checkbox" id="toggle-adblock-cosmetic" checked><span class="slider"></span></label>
+          </div>
+          <div class="form-group" style="margin-top: 20px;">
+            <label>Custom Block Rules (Domains)</label>
+            <textarea id="adblock-custom-rules" rows="4" placeholder="ads.example.com"></textarea>
+          </div>
+        </div>
+      </div>
+
+      <!-- Section: Advanced -->
+      <div id="panel-advanced" class="settings-panel">
+        <div class="panel-header">
+          <h2>System Intelligence</h2>
+          <p>Version control, update channels, and environment settings.</p>
+        </div>
+        
+        <!-- Redesigned Update Banner -->
+        <div class="update-status-banner">
+            <div class="status-icon-ring uptodate" id="banner-status-ring">
+                <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+            </div>
+            <div class="status-details">
+                <h3 id="banner-status-title">System Up to Date</h3>
+                <p id="banner-status-desc">Om-X is running the latest intelligence core (v1.6.0).</p>
+            </div>
+            <button id="btn-check-updates" class="btn-update-action secondary">Check for Updates</button>
+        </div>
+
+        <div class="settings-section-card">
+          <span class="card-title">Release Lineage</span>
+          <span class="card-subtitle">Manage rollbacks or perform manual updates to previous stable builds.</span>
+          <div id="update-history-container" class="update-history-list">
+             <!-- Rendered dynamically -->
+          </div>
+        </div>
+      </div>
+
+      <!-- Section: Creator -->
+      <div id="panel-creator" class="settings-panel">
+        <div class="panel-header">
+          <h2>Architect Profile</h2>
+          <p>The vision and engineering behind the Om-X ecosystem.</p>
+        </div>
+        <div class="settings-section-card creator-panel-content">
+          <div class="creator-header-compact">
+            <img src="https://github.com/Ramizsk586.png" class="creator-avatar-sq" alt="Sk Abdul Ramiz">
+            <div class="creator-meta-compact">
+                <h3 class="creator-name-compact">Sk Abdul Ramiz</h3>
+                <div class="creator-role-compact">Lead Systems Architect</div>
+                <div class="creator-social-row">
+                    <div class="social-btn-compact" onclick="window.browserAPI.openTab('https://github.com/Ramizsk586')" title="GitHub">
+                        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+                    </div>
+                    <div class="social-btn-compact" onclick="window.browserAPI.openTab('https://www.instagram.com/skabdulramiz2004/')" title="Instagram">
+                        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/></svg>
+                    </div>
+                    <div class="social-btn-compact" onclick="window.browserAPI.openTab('https://www.facebook.com/skabdulramiz2004')" title="Facebook">
+                        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M22.675 0h-21.35c-.732 0-1.325.593-1.325 1.325v21.351c0 .731.593 1.324 1.325 1.324h11.495v-9.294h-3.128v-3.622h3.128v-2.671c0-3.1 1.893-4.788 4.659-4.788 1.325 0 2.463.099 2.795.143v3.24l-1.918.001c-1.504 0-1.795.715-1.795 1.763v2.313h3.587l-.467 3.622h-3.12v9.293h6.116c.73 0 1.323-.593 1.323-1.325v-21.35c0-.732-.593-1.325-1.325-1.325z"/></svg>
+                    </div>
+                </div>
+                <div class="stats-grid-compact">
+                    <div class="stat-box-compact"><span class="label">Repos</span><span class="value">--</span></div>
+                    <div class="stat-box-compact"><span class="label">Followers</span><span class="value">--</span></div>
+                    <div class="stat-box-compact"><span class="label">Status</span><span class="value" style="color: #10b981;">Stable</span></div>
+                </div>
+            </div>
+          </div>
+          
+          <span class="portfolio-section-title">Development Roadmap & Modules</span>
+          <div class="projects-grid-compact" id="creator-projects-grid">
+              <!-- Rendered by systemRenderer.js -->
+          </div>
+        </div>
+      </div>
+
+      <!-- Section: About -->
+      <div id="panel-about" class="settings-panel">
+        <div class="panel-header">
+          <h2>About Om-X</h2>
+          <p>Software information and system specifications.</p>
+        </div>
+        
+        <div class="settings-section-card">
+          <div class="about-hero">
+            <div class="about-logo">O</div>
+            <h1 class="about-name">Om-X Browser</h1>
+            <p class="about-tagline">The AI-First Browsing Experience</p>
+            <div class="about-status-chip" style="display:inline-block; background:rgba(124,77,255,0.1); color:var(--accent-color); padding:6px 16px; border-radius:20px; font-size:11px; font-weight:700; border:1px solid rgba(124,77,255,0.2);">STABLE RELEASE</div>
+          </div>
+
+          <span class="card-title">Application Details</span>
+          <div class="version-table">
+            <div class="v-row">
+              <span class="v-label">Version</span>
+              <span class="v-value">1.6.0</span>
+            </div>
+            <div class="v-row">
+              <span class="v-label">Channel</span>
+              <span class="v-value">Stable (x64)</span>
+            </div>
+            <div class="v-row">
+              <span class="v-label">Electron</span>
+              <span class="v-value" id="about-v-electron">...</span>
+            </div>
+            <div class="v-row">
+              <span class="v-label">Chromium</span>
+              <span class="v-value" id="about-v-chrome">...</span>
+            </div>
+            <div class="v-row">
+              <span class="v-label">Node.js</span>
+              <span class="v-value" id="about-v-node">...</span>
+            </div>
+            <div class="v-row">
+              <span class="v-label">V8 Engine</span>
+              <span class="v-value" id="about-v-v8">...</span>
+            </div>
+          </div>
+
+          <div class="about-footer-links">
+            <a href="https://github.com/Ramizsk586/Om-X" class="about-link" target="_blank">Project Website</a>
+            <a href="https://github.com/Ramizsk586/Om-X/blob/main/LICENSE" class="about-link" target="_blank">License Information</a>
+            <a href="#" class="about-link" id="btn-about-check-updates">Check for Updates</a>
+          </div>
+        </div>
+      </div>
+
+      <div class="actions-footer">
+        <div id="save-status" class="save-status">Settings applied</div>
+        <button id="btn-save-settings" class="btn-primary">Save Changes</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="../../java/renderer/systemRenderer.js"></script>
+</body>
+</html>

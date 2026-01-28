@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Omni AI Settings</title>
+  <link rel="stylesheet" href="../../css/base/reset.css">
+  <link rel="stylesheet" href="../../css/base/variables.css">
+  <link rel="stylesheet" href="../../css/base/base.css">
+  <link rel="stylesheet" href="../../css/pages/ai-settings.css">
+  <style>
+    .color-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    .color-input-group { 
+      background: rgba(0,0,0,0.2); 
+      padding: 16px; 
+      border-radius: 12px; 
+      border: 1px solid rgba(255,255,255,0.05);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .color-picker-wrapper { display: flex; align-items: center; gap: 12px; }
+    input[type="color"] {
+      width: 32px; height: 32px; border: none; background: none; cursor: pointer;
+    }
+    input[type="color"]::-webkit-color-swatch { border-radius: 6px; border: 1px solid rgba(255,255,255,0.2); }
+    
+    /* Global Verification Styles */
+    .verify-row { display: flex; gap: 10px; align-items: flex-end; }
+    .verify-row .form-group { flex: 1; margin-bottom: 0; }
+    
+    .btn-verify-action { 
+      height: 45px; width: 120px; font-size: 11px; font-weight: 800; 
+      background: rgba(255,255,255,0.05); color: #fff; border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 10px; cursor: pointer; transition: all 0.2s;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .btn-verify-action:hover:not(:disabled) { background: rgba(255,255,255,0.1); border-color: #fff; }
+    .btn-verify-action.success { background: #10b981; border-color: #10b981; color: #fff; }
+    .btn-verify-action.fail { background: #ef4444; border-color: #ef4444; color: #fff; }
+    .btn-verify-action:disabled { opacity: 0.3; cursor: not-allowed; }
+
+    /* Compact Profile Cards */
+    .profiles-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; margin-top: 24px; }
+    .profile-card {
+      background: #18181b; border: 1px solid #27272a; border-radius: 12px; padding: 16px;
+      cursor: pointer; transition: all 0.2s; position: relative; overflow: hidden;
+    }
+    .profile-card:hover { border-color: var(--accent-color); transform: translateY(-2px); }
+    .profile-card.active { border-color: #fff; background: rgba(255,255,255,0.02); box-shadow: 0 0 15px rgba(255,255,255,0.05); }
+    .profile-card.active::before {
+      content: 'DEFAULT'; position: absolute; top: 0; right: 0; background: var(--accent-color);
+      color: #fff; font-size: 8px; font-weight: 900; padding: 2px 6px; border-radius: 0 0 0 8px;
+    }
+    .p-provider { font-size: 9px; font-weight: 900; color: #71717a; text-transform: uppercase; letter-spacing: 1px; }
+    .p-model { font-size: 13px; font-weight: 700; color: #fff; margin-top: 4px; display: block; overflow: hidden; text-overflow: ellipsis; }
+    .btn-delete-profile {
+      position: absolute; bottom: 8px; right: 8px; opacity: 0; transition: opacity 0.2s;
+      color: #ef4444; font-size: 14px; background: none; border: none; cursor: pointer;
+    }
+    .profile-card:hover .btn-delete-profile { opacity: 1; }
+
+    .ollama-status { font-size: 10px; font-weight: 800; margin-top: 8px; display: block; }
+    .status-online { color: #10b981; }
+    .status-offline { color: #ef4444; }
+
+    /* Quota Pill */
+    .quota-badge {
+        display: inline-flex; align-items: center; gap: 6px;
+        background: rgba(124, 77, 255, 0.1); border: 1px solid rgba(124, 77, 255, 0.2);
+        padding: 4px 10px; border-radius: 20px; font-size: 10px; font-weight: 900;
+        color: var(--accent-color); margin-top: 12px;
+    }
+
+    /* New Section Styling */
+    .link-config-block {
+      margin-top: 24px;
+      padding-top: 24px;
+      border-top: 1px solid #27272a;
+    }
+
+    /* Scraper & Viewer Overlays */
+    .panel-cap { position: relative; display: flex; align-items: center; justify-content: space-between; }
+    .header-action-icon { 
+        background: transparent; border: none; color: #71717a; cursor: pointer; 
+        padding: 4px; border-radius: 6px; display: flex; align-items: center; justify-content: center;
+        transition: all 0.2s;
+    }
+    .header-action-icon:hover { color: #fff; background: rgba(255,255,255,0.05); }
+
+    .scraper-overlay {
+        position: fixed; inset: 0; background: rgba(9,9,11,0.98); z-index: 10000;
+        display: flex; flex-direction: column; padding: 60px 10%; overflow-y: auto;
+        animation: fadeIn 0.3s ease;
+    }
+    .scraper-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 40px; }
+    .scraper-input-row { display: flex; gap: 12px; background: #121214; padding: 8px; border-radius: 16px; border: 1px solid #1c1c1f; }
+    .scraper-input-row input { flex: 1; background: transparent; border: none; color: #fff; padding: 12px 16px; outline: none; }
+    .scraper-results { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; margin-top: 40px; }
+    
+    .scraper-img-card { 
+        aspect-ratio: 1/1; border-radius: 16px; overflow: hidden; background: #000; 
+        border: 1px solid rgba(255,255,255,0.05); cursor: pointer; position: relative;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.3); transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .scraper-img-card:hover { transform: translateY(-4px) scale(1.02); border-color: var(--accent-color); }
+    .scraper-img-card img { width: 100%; height: 100%; object-fit: cover; transition: transform 0.5s; }
+    .scraper-img-card:hover img { transform: scale(1.05); }
+    
+    .scraper-dl-overlay { 
+        position: absolute; inset: 0; background: rgba(0,0,0,0.6); opacity: 0; transition: opacity 0.2s;
+        display: flex; align-items: center; justify-content: center; backdrop-filter: blur(4px);
+    }
+    .scraper-img-card:hover .scraper-dl-overlay { opacity: 1; }
+
+    .viewer-overlay {
+        position: fixed; inset: 0; background: rgba(0,0,0,0.95); z-index: 20000;
+        display: flex; align-items: center; justify-content: center; animation: fadeIn 0.2s ease;
+    }
+    .viewer-content { position: relative; max-width: 90%; max-height: 90%; }
+    .viewer-content img { max-width: 100%; max-height: 100%; border-radius: 8px; box-shadow: 0 0 50px rgba(0,0,0,0.5); }
+    .btn-close-viewer { position: absolute; top: -40px; right: 0; color: #fff; font-size: 24px; cursor: pointer; }
+
+    /* PDF Hub Specific */
+    .pdf-launcher-card {
+        background: linear-gradient(135deg, rgba(255, 82, 82, 0.05) 0%, rgba(0,0,0,0) 100%);
+        border: 1px dashed rgba(255, 82, 82, 0.2);
+    }
+    .pdf-launcher-card:hover {
+        border-color: #ff5252;
+        background: linear-gradient(135deg, rgba(255, 82, 82, 0.1) 0%, rgba(0,0,0,0) 100%);
+    }
+
+    .scraper-results-header {
+        display: flex; justify-content: space-between; align-items: center; margin-top: 40px;
+        padding-bottom: 12px; border-bottom: 1px solid rgba(255,255,255,0.05);
+    }
+    .btn-batch-action {
+        background: rgba(124, 77, 255, 0.1); color: var(--accent-color); border: 1px solid rgba(124, 77, 255, 0.2);
+        padding: 8px 16px; border-radius: 20px; font-size: 11px; font-weight: 800; cursor: pointer; transition: all 0.2s;
+    }
+    .btn-batch-action:hover { background: var(--accent-color); color: #fff; }
+  </style>
+</head>
+<body class="theme-dark">
+  <div class="settings-container">
+    <header class="settings-header">
+      <div class="brand-section">
+        <div class="ai-logo">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M21 16.5C21 16.88 20.79 17.21 20.47 17.38L12.57 21.82C12.41 21.94 12.21 22 12 22C11.79 22 11.59 21.94 11.43 21.82L3.53 17.38C3.21 17.21 3 16.88 3 16.5V7.5C3 7.12 3.21 6.79 3.53 6.62L11.43 2.18C11.59 2.06 11.79 2 12 2C12.21 2 12.41 2.06 12.57 2.18L20.47 6.62C20.79 6.79 21 7.12 21 7.5V16.5Z"/></svg>
+        </div>
+        <div>
+          <h1>Intelligence Configuration</h1>
+          <p>Global parameters for the Omni AI subsystem.</p>
+        </div>
+      </div>
+      <div class="header-actions">
+        <button id="btn-save" class="btn-primary" disabled>Save</button>
+      </div>
+    </header>
+
+    <main class="settings-grid">
+      <!-- Panel 1: Intelligence Core -->
+      <section class="settings-panel">
+        <div class="panel-cap">INTELLIGENCE CORE</div>
+        <div class="panel-body">
+          <div class="form-group">
+            <label>Intelligence Provider</label>
+            <select id="provider-select">
+              <option value="google">Google Gemini (Native)</option>
+              <option value="lmstudio">LM Studio (Local)</option>
+              <option value="openrouter">OpenRouter (Unified)</option>
+              <option value="groq">Groq (Ultra-Fast)</option>
+              <option value="mistral">Mistral AI</option>
+              <option value="openai-compatible">OpenAI Compatible (Local/Proxy)</option>
+            </select>
+          </div>
+
+          <div id="openai-url-group" class="form-group hidden">
+            <label>Server Base URL</label>
+            <div class="verify-row">
+              <input type="text" id="openai-base-url" placeholder="http://localhost:1234/v1" style="flex: 1; font-family: monospace;">
+              <button id="btn-scan-local" class="btn-verify-action" style="width: 100px;">SCAN HOST</button>
+            </div>
+          </div>
+
+          <!-- LM Studio Specific Group -->
+          <div id="lmstudio-group" class="form-group hidden">
+              <label>LM Studio Endpoint</label>
+              <div class="verify-row">
+                  <input type="text" id="lmstudio-base-url" placeholder="http://localhost:1234/v1" style="flex: 1; font-family: monospace;">
+                  <button id="btn-scan-lm" class="btn-verify-action" style="width: 100px;">SCAN LM</button>
+              </div>
+              
+              <div class="sub-config-area" style="margin-top:16px;">
+                  <div class="setting-row">
+                      <div class="setting-info">
+                          <label>Neural Image Discovery</label>
+                          <p>Enable automatic image scraping for local models.</p>
+                      </div>
+                      <label class="switch"><input type="checkbox" id="lm-enable-image-scrape"><span class="slider"></span></label>
+                  </div>
+                  <div class="form-group" style="margin-top:12px;">
+                      <label>Scrape Density</label>
+                      <select id="lm-image-scrape-count">
+                          <option value="1">Minimal (1 Image)</option>
+                          <option value="3" selected>Balanced (3 Images)</option>
+                          <option value="5">Deep (5 Images)</option>
+                      </select>
+                  </div>
+              </div>
+          </div>
+          
+          <div class="verify-row">
+            <div class="form-group">
+              <label>API Access Token</label>
+              <input type="password" id="api-key-input" placeholder="••••••••••••••••" autocomplete="off">
+            </div>
+            <button id="btn-verify-ai" class="btn-verify-action">VERIFY LINK</button>
+          </div>
+
+          <div class="form-group" style="margin-top: 24px;">
+            <label>Model Configuration</label>
+            <select id="model-select"></select>
+            <input type="text" id="model-custom-input" class="hidden" style="margin-top: 8px;" placeholder="Custom model ID (e.g. llama-3.3-70b-versatile)">
+          </div>
+
+          <!-- New llama.cpp Link Section -->
+          <div class="link-config-block">
+            <div class="form-group">
+              <label>Llama.cpp Web UI Address</label>
+              <p style="font-size: 11px; color: #71717a; margin-bottom: 8px;">The local address where the llama.cpp server is hosting its graphical interface.</p>
+              <input type="text" id="llama-web-url" placeholder="http://localhost:8081" style="font-family: monospace;">
+            </div>
+          </div>
+
+          <div style="height: 1px; background: #27272a; margin: 32px 0;"></div>
+          
+          <label class="panel-cap" style="padding: 0; margin-bottom: 12px; display: block; border: none;">VERIFIED INTELLIGENCE CARDS</label>
+          <div id="profiles-container" class="profiles-grid">
+              <!-- AI Profile Cards -->
+          </div>
+        </div>
+      </section>
+
+      <!-- Panel 2: Web Scraping Protocol -->
+      <section class="settings-panel">
+        <div class="panel-cap">
+            WEB SCRAPING PROTOCOL
+            <button id="btn-open-scraper" class="header-action-icon" title="Open Neural Scraper Tool">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+            </button>
+        </div>
+        <div class="panel-body">
+            <div class="setting-row">
+                <div class="setting-info">
+                    <label>Deep Image Extraction</label>
+                    <p>Use SerpAPI to find and attach high-fidelity visual context to responses.</p>
+                </div>
+                <label class="switch"><input type="checkbox" id="scrape-images-enabled" checked><span class="slider"></span></label>
+            </div>
+
+            <div class="form-group" style="margin-top: 16px;">
+                <label>SerpAPI Access Key (Dedicated)</label>
+                <input type="password" id="scrape-serp-key" placeholder="Enter key for image scraping...">
+            </div>
+
+            <div class="setting-row">
+                <div class="setting-info">
+                    <label>4K Ultra-HD Resolution</label>
+                    <p>Force the engine to seek 4K resolution images whenever possible.</p>
+                </div>
+                <label class="switch"><input type="checkbox" id="scrape-4k-enabled"><span class="slider"></span></label>
+            </div>
+
+            <div class="form-group">
+                <label>Visual Count Target</label>
+                <select id="scrape-image-count">
+                    <option value="1">Minimal (1 Asset)</option>
+                    <option value="2">Standard (2 Assets)</option>
+                    <option value="4" selected>Deep (4 Assets)</option>
+                </select>
+            </div>
+        </div>
+      </section>
+
+      <!-- Panel 3: Omni Persona -->
+      <section class="settings-panel">
+        <div class="panel-cap">OMNI PERSONA</div>
+        <div class="panel-body">
+            <div class="form-group">
+                <label>Response Style</label>
+                <select id="persona-style">
+                    <option value="standard">Clinical (Concise & Plain)</option>
+                    <option value="enhanced">High-Fidelity (Vibrant & Structured)</option>
+                </select>
+                <p style="font-size: 11px; color: #71717a; margin-top: 6px;">Enhanced mode uses semantic color highlighting for topics.</p>
+            </div>
+            
+            <div class="setting-row">
+                <div class="setting-info">
+                    <label>Neural Emojis</label>
+                    <p>Incorporate contextually relevant icons into responses.</p>
+                </div>
+                <label class="switch"><input type="checkbox" id="persona-emojis" checked><span class="slider"></span></label>
+            </div>
+
+            <div class="setting-row">
+                <div class="setting-info">
+                    <label>Show Citations & Sources</label>
+                    <p>Explicitly list verification URLs for factual claims.</p>
+                </div>
+                <label class="switch"><input type="checkbox" id="persona-sources" checked><span class="slider"></span></label>
+            </div>
+
+            <div class="setting-row">
+                <div class="setting-info">
+                    <label>Safe Video Discovery</label>
+                    <p>Incorporate vetted video content from verified hosts.</p>
+                </div>
+                <label class="switch"><input type="checkbox" id="persona-videos" checked><span class="slider"></span></label>
+            </div>
+        </div>
+      </section>
+
+      <!-- Panel 4: Engine Performance & Search -->
+      <section class="settings-panel">
+        <div class="panel-cap">SEARCH ENGINE PIPELINE</div>
+        <div class="panel-body">
+          <div class="setting-row">
+            <div class="setting-info">
+              <label>Web Search Grounding</label>
+              <p>Allow Omni to retrieve real-time data from the internet.</p>
+            </div>
+            <label class="switch"><input type="checkbox" id="web-search-toggle"><span class="slider"></span></label>
+          </div>
+
+          <div id="search-config" class="sub-config-area disabled">
+            <div class="form-group">
+              <label>Search Protocol</label>
+              <select id="search-provider-select">
+                <option value="native">Google Search (Native)</option>
+                <option value="duckduckgo">DuckDuckGo (Privacy)</option>
+                <option value="google_pse">Google Programmable Search (PSE)</option>
+                <option value="serpapi">SerpApi (Advanced)</option>
+              </select>
+            </div>
+            <div id="provider-fields">
+              <div class="form-group provider-field hidden" data-provider="serpapi">
+                <div class="verify-row">
+                   <div class="form-group">
+                      <label>SerpApi Key</label>
+                      <input type="password" id="serpapi-key" placeholder="Enter key...">
+                   </div>
+                   <button id="btn-verify-serp" class="btn-verify-action">VERIFY</button>
+                </div>
+                <div class="quota-badge hidden">
+                    <span id="serp-quota-count">--- SEARCHES LEFT</span>
+                </div>
+              </div>
+              <div class="form-group provider-field hidden" data-provider="google_pse">
+                <label>Search Engine ID (CX)</label>
+                <input type="text" id="google-pse-cx" placeholder="0123456789:abcdefghij" style="margin-bottom:12px;">
+                <div class="verify-row">
+                   <div class="form-group">
+                      <label>Google Cloud API Key</label>
+                      <input type="password" id="google-pse-key" placeholder="AIza...">
+                   </div>
+                   <button id="btn-verify-pse" class="btn-verify-action">VERIFY</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Panel 5: Aesthetic -->
+      <section class="settings-panel">
+        <div class="panel-cap">AESTHETIC PROTOCOL</div>
+        <div class="panel-body">
+          <div class="theme-selector" style="margin-bottom: 24px;">
+              <button class="theme-chip active" data-theme="dark">Zinc</button>
+              <button class="theme-chip" data-theme="glass">Glass</button>
+              <button class="theme-chip" data-theme="cyber">Cyber</button>
+          </div>
+
+          <div class="setting-row">
+            <div class="setting-info">
+              <label>Interface Animations</label>
+              <p>Enable smooth transitions and neural pulse effects.</p>
+            </div>
+            <label class="switch"><input type="checkbox" id="animations-toggle" checked><span class="slider"></span></label>
+          </div>
+
+          <div class="form-group">
+            <label>Typography Profile</label>
+            <select id="font-select">
+                <option value="sans">Modern Sans (SF Pro)</option>
+                <option value="mono">Developer Mono (JetBrains)</option>
+                <option value="serif">Classic Serif (Georgia)</option>
+            </select>
+          </div>
+          
+          <div class="setting-row" style="flex-direction: column; align-items: stretch;">
+            <div class="setting-info" style="margin-bottom: 16px;">
+              <label>Neural Chromatics</label>
+              <p>Custom data signatures for user and AI responses.</p>
+            </div>
+            <div class="color-grid">
+                <div class="color-input-group">
+                    <span style="font-size: 10px; font-weight: 800; color: #52525b; text-transform: uppercase;">User Signature</span>
+                    <div class="color-picker-wrapper">
+                        <input type="color" id="color-user-text" value="#ffffff">
+                        <span style="font-size: 12px; color: #fff;">Human Input</span>
+                    </div>
+                </div>
+                <div class="color-input-group">
+                    <span style="font-size: 10px; font-weight: 800; color: #52525b; text-transform: uppercase;">Omni Response</span>
+                    <div class="color-picker-wrapper">
+                        <input type="color" id="color-ai-text" value="#e4e4e7">
+                        <span style="font-size: 12px; color: #fff;">Machine Output</span>
+                    </div>
+                </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Panel 6: PDF Intelligence Station (NEW) -->
+      <section class="settings-panel pdf-launcher-card">
+        <div class="panel-cap">PDF NEURAL STATION</div>
+        <div class="panel-body">
+            <div class="setting-row">
+                <div class="setting-info">
+                    <label>PDF Intelligence Engine</label>
+                    <p>Analyze, summarize, and converse with local PDF documents using specialized neural vision and context layers.</p>
+                </div>
+                <div class="brand-section">
+                    <div class="ai-logo" style="background:#ff5252;">
+                        <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M14,2L6,2C4.9,2 4,2.9 4,4L4,20C4,21.1 4.9,22 6,22L18,22C19.1,22 20,21.1 20,20L20,8L14,2ZM18,20L6,20L6,4L13,4L13,9L18,9L18,20ZM10,18L10,12L11,12C11.5,12 12,12.5 12,13L12,13C12,13.5 11.5,14 11,14L10,14L10,18L10,18ZM14,18L14,12L15,12C15.5,12 16,12.5 16,13L16,15C16,15.5 15.5,16 15,16L14,16L14,18L14,18Z"/></svg>
+                    </div>
+                </div>
+            </div>
+            <button id="btn-launch-pdf-station" class="btn-primary" style="width:100%; background:#ff5252; color:#fff; border-radius:12px; margin-top:12px;">LAUNCH PDF STATION</button>
+        </div>
+      </section>
+    </main>
+
+    <!-- NEW: NEURAL SCRAPER OVERLAY -->
+    <div id="neural-scraper-panel" class="scraper-overlay hidden">
+        <div class="scraper-header">
+            <div>
+                <h1 id="scraper-title">Neural Scraper Sandbox</h1>
+                <p id="scraper-subtitle">Manual visual asset collection subsystem.</p>
+            </div>
+            <div style="display:flex; gap:10px;">
+                <button id="btn-view-saved-gallery" class="btn-batch-action">SAVED COLLECTIONS</button>
+                <button id="btn-close-scraper" class="btn-verify-action" style="width:100px;">EXIT</button>
+            </div>
+        </div>
+
+        <div class="scraper-input-row" id="scraper-controls">
+            <input type="text" id="scraper-query" placeholder="Enter search topic for images..." autofocus>
+            <select id="scraper-count" style="background:transparent; border:none; color:#fff; font-weight:700; width:120px; outline:none; border-left:1px solid #1c1c1f;">
+                <option value="4">4 Assets</option>
+                <option value="8">8 Assets</option>
+                <option value="12">12 Assets</option>
+                <option value="20">20 Assets</option>
+            </select>
+            <button id="btn-start-scrape" class="btn-primary" style="padding:0 24px; border-radius:12px;">SCRAPE</button>
+        </div>
+
+        <div class="scraper-results-header hidden" id="scraper-results-toolbar">
+            <div style="font-size:12px; font-weight:800; color:rgba(255,255,255,0.4);" id="results-count-label">0 ASSETS DISCOVERED</div>
+            <button id="btn-save-all-desktop" class="btn-batch-action">SAVE ALL TO DESKTOP</button>
+        </div>
+
+        <div id="scraper-results" class="scraper-results">
+            <!-- Results will appear here -->
+        </div>
+    </div>
+
+    <!-- NEW: IMAGE VIEWER OVERLAY -->
+    <div id="scraper-image-viewer" class="viewer-overlay hidden">
+        <div class="viewer-content">
+            <span id="btn-close-viewer" class="btn-close-viewer">✕</span>
+            <img id="viewer-img" src="">
+            <button id="btn-viewer-dl" class="btn-primary" style="position:absolute; bottom:-60px; left:50%; transform:translateX(-50%); width:200px;">DOWNLOAD</button>
+        </div>
+    </div>
+    
+    <div id="save-status" class="save-status">Settings Saved</div>
+  </div>
+
+  <script type="module" src="../../java/renderer/aiSettingsRenderer.js"></script>
+</body>
+</html>

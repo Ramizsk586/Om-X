@@ -1,0 +1,126 @@
+<div class="vault-panel-root restricted-sensitive" data-ai-ignore="true">
+    
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 32px;">
+        <div class="panel-header" style="margin:0;">
+            <h2 id="vault-title-dynamic" style="font-size: 24px; font-weight: 900; letter-spacing: -0.5px;">Security Vault</h2>
+            <p id="vault-desc-dynamic" style="font-size: 13px; color: var(--v-text-muted);">AES-256 Authenticated Environment</p>
+        </div>
+        <div style="display: flex; gap: 12px; align-items: center;">
+            <button id="btn-lock-vault-global" class="v-circle-btn" title="Lock All Sessions" style="background: rgba(255,82,82,0.1); color: #ff5252; border-color: rgba(255,82,82,0.2);">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zM9 6c0-1.66 1.34-3 3-3s3 1.34 3 3v2H9V6z"/></svg>
+            </button>
+            <div class="neural-badge">
+                <div class="dot-pulse"></div>
+                NEURAL ISOLATION ACTIVE
+            </div>
+        </div>
+    </div>
+
+    <!-- Master Unlock Screen -->
+    <div id="vault-unlock-screen" class="vault-auth-container" style="max-width: 420px; margin: 60px auto; text-align: center;">
+        <div class="vault-lock-icon" style="margin-bottom: 24px; color: #52525b;">
+            <svg viewBox="0 0 24 24" width="64" height="64" fill="currentColor"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zM9 6c0-1.66 1.34-3 3-3s3 1.34 3 3v2H9V6zm9 14H6V10h12v10zm-6-3c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2z"/></svg>
+        </div>
+        <h3 style="font-size: 22px; font-weight: 800; color: #fff; margin-bottom: 12px;">Decryption Required</h3>
+        <p style="color: var(--v-text-muted); font-size: 14px; margin-bottom: 32px; line-height: 1.6;">Omni Privacy Shield has isolated this workspace. Please provide your master authorization key to continue.</p>
+        <div style="display:flex; gap:12px; background: #0d0d0f; padding: 12px; border-radius: 16px; border: 1px solid #18181b;">
+            <input type="password" id="vault-master-input" class="v-input" placeholder="Enter Master Key" style="padding-left: 20px; flex: 1; border-radius: 10px;" autofocus>
+            <button id="btn-vault-unlock" class="v-circle-btn" style="width: 50px; height: 48px; background: #fff; color: #000; border: none; border-radius: 10px;">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14.5v-9l6 4.5-6 4.5z"/></svg>
+            </button>
+        </div>
+        <div id="vault-auth-error" style="color: #ef4444; font-size: 12px; font-weight: 700; margin-top: 16px;"></div>
+    </div>
+
+    <!-- Main Content -->
+    <div id="vault-main-content" class="hidden">
+        
+        <div class="module-selector">
+            <button class="mod-btn active" data-tab="ai-keys">Intelligence Keys</button>
+            <button class="mod-btn" data-tab="passkey">Master Config</button>
+        </div>
+
+        <!-- AI KEYS MODULE -->
+        <div id="module-ai-keys">
+            <div class="secure-card" style="border-color: var(--accent-color);">
+                <div class="secure-card-header">
+                    <div>
+                        <h3>Neural Intelligence Key</h3>
+                    </div>
+                </div>
+                
+                <div class="id-input-grid">
+                    <div class="v-field">
+                        <label class="v-label">Provider</label>
+                        <div class="v-input-wrap">
+                            <select id="v-in-ai-provider" class="v-input" style="padding-left: 16px; appearance: none;">
+                                <option value="google">Google Gemini</option>
+                                <option value="groq">Groq</option>
+                                <option value="openrouter">OpenRouter</option>
+                                <option value="mistral">Mistral AI</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="v-field">
+                        <label class="v-label">Model Target</label>
+                        <div class="v-input-wrap">
+                            <input type="text" id="v-in-ai-model" class="v-input" placeholder="e.g. gemini-3-flash" style="padding-left: 16px;">
+                        </div>
+                    </div>
+                    <div class="v-field">
+                        <label class="v-label">Associated Gmail/Email</label>
+                        <div class="v-input-wrap">
+                            <input type="text" id="v-in-ai-gmail" class="v-input" placeholder="user@gmail.com" style="padding-left: 16px;">
+                        </div>
+                    </div>
+                    <div class="v-field">
+                        <label class="v-label">Access Token</label>
+                        <div class="v-input-wrap">
+                            <input type="password" id="v-in-ai-key" class="v-input" placeholder="AIza..." style="padding-left: 16px;">
+                        </div>
+                    </div>
+                </div>
+                
+                <div style="margin-top: 24px;">
+                    <button id="btn-save-ai-key" class="mod-btn active" style="width: 100%; font-size: 13px; height: 48px; background: var(--accent-color); color: #fff;">Register Intelligence Key</button>
+                </div>
+            </div>
+
+            <div id="ai-list-render" class="list-container" style="margin-top: 20px;">
+                <!-- AI Key items injected here -->
+            </div>
+        </div>
+
+        <!-- PASSKEY MODULE -->
+        <div id="module-passkey" class="hidden">
+            <div class="secure-card">
+                <div class="secure-card-header">
+                    <div>
+                        <h3>Passkey Rotation</h3>
+                    </div>
+                </div>
+
+                <div class="id-input-grid">
+                    <div class="v-field" style="grid-column: span 2;">
+                        <label class="v-label">Current Master Key</label>
+                        <input type="password" id="v-in-curr-pass" class="v-input" placeholder="••••" style="padding-left: 16px;">
+                    </div>
+                    <div class="v-field">
+                        <label class="v-label">New Master Key</label>
+                        <input type="password" id="v-in-next-pass" class="v-input" placeholder="NEW KEY" style="padding-left: 16px;">
+                    </div>
+                    <div class="v-field">
+                        <label class="v-label">Confirm New Key</label>
+                        <input type="password" id="v-in-confirm-pass" class="v-input" placeholder="CONFIRM" style="padding-left: 16px;">
+                    </div>
+                </div>
+
+                <div style="margin-top: 24px;">
+                    <button id="btn-update-passkey" class="mod-btn active" style="width: 100%; height: 48px; background: #fff; color: #000; font-weight: 800;">Update Neural Link</button>
+                </div>
+                <div id="passkey-status-msg" style="margin-top: 12px; text-align: center; font-size: 11px; font-weight: 800; text-transform: uppercase;"></div>
+            </div>
+        </div>
+
+    </div>
+</div>

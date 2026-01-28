@@ -1,0 +1,107 @@
+
+/* Theme Definitions */
+
+/* --- DARK (Default) --- */
+body.theme-dark {
+  --bg-app: #101014;
+  --glass-bg: rgba(25, 25, 30, 0.90);
+  --glass-border: 1px solid rgba(255, 255, 255, 0.06);
+  --glass-highlight: rgba(255, 255, 255, 0.04);
+  --glass-blur: blur(24px);
+  
+  --text-main: #ffffff;
+  --text-secondary: rgba(255, 255, 255, 0.5);
+  
+  --accent-color: #7c4dff;
+  --accent-hover: #996bff;
+  
+  --input-bg: rgba(0, 0, 0, 0.2);
+  --input-focus-bg: rgba(0, 0, 0, 0.3);
+  --input-text: #fff;
+  --input-placeholder: rgba(255, 255, 255, 0.3);
+  --input-border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* --- LIGHT --- */
+body.theme-light {
+  --bg-app: #f5f5f7;
+  --glass-bg: rgba(255, 255, 255, 0.85);
+  --glass-border: 1px solid rgba(0, 0, 0, 0.08);
+  --glass-highlight: rgba(0, 0, 0, 0.04);
+  --glass-blur: blur(20px);
+  
+  --text-main: #1d1d1f;
+  --text-secondary: rgba(0, 0, 0, 0.6);
+  
+  --accent-color: #007aff;
+  --accent-hover: #005ecb;
+  
+  --input-bg: rgba(0, 0, 0, 0.05);
+  --input-focus-bg: rgba(0, 0, 0, 0.08);
+  --input-text: #000;
+  --input-placeholder: rgba(0, 0, 0, 0.4);
+  --input-border: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+/* --- MIDNIGHT (Deep Blue) --- */
+body.theme-midnight {
+  --bg-app: #050510;
+  --glass-bg: rgba(10, 10, 25, 0.9);
+  --glass-border: 1px solid rgba(100, 100, 255, 0.15);
+  --glass-highlight: rgba(100, 100, 255, 0.08);
+  --glass-blur: blur(30px);
+  
+  --text-main: #e0e0ff;
+  --text-secondary: rgba(160, 160, 255, 0.6);
+  
+  --accent-color: #2979ff;
+  --accent-hover: #5393ff;
+  
+  --input-bg: rgba(20, 20, 50, 0.4);
+  --input-focus-bg: rgba(30, 30, 80, 0.6);
+  --input-text: #e0e0ff;
+  --input-placeholder: rgba(160, 160, 255, 0.4);
+  --input-border: 1px solid rgba(100, 100, 255, 0.2);
+}
+
+/* --- CYBER (High Contrast Neon) --- */
+body.theme-cyber {
+  --bg-app: #000000;
+  --glass-bg: rgba(0, 0, 0, 0.95);
+  --glass-border: 1px solid #00ff41;
+  --glass-highlight: rgba(0, 255, 65, 0.1);
+  --glass-blur: none;
+  
+  --text-main: #00ff41;
+  --text-secondary: #008f11;
+  
+  --accent-color: #00ff41;
+  --accent-hover: #50ff7f;
+  
+  --input-bg: #0d0d0d;
+  --input-focus-bg: #1a1a1a;
+  --input-text: #00ff41;
+  --input-placeholder: #005500;
+  --input-border: 1px solid #00ff41;
+}
+
+/* --- GLASS (Transparent) --- */
+body.theme-glass {
+  --bg-app: transparent;
+  --glass-bg: rgba(40, 40, 45, 0.3); 
+  --glass-border: 1px solid rgba(255, 255, 255, 0.1);
+  --glass-highlight: rgba(255, 255, 255, 0.1);
+  --glass-blur: blur(10px);
+  
+  --text-main: #ffffff;
+  --text-secondary: rgba(255, 255, 255, 0.7);
+  
+  --accent-color: #ff4081;
+  --accent-hover: #ff79b0;
+  
+  --input-bg: rgba(255, 255, 255, 0.1);
+  --input-focus-bg: rgba(255, 255, 255, 0.2);
+  --input-text: #fff;
+  --input-placeholder: rgba(255, 255, 255, 0.5);
+  --input-border: 1px solid rgba(255, 255, 255, 0.15);
+}

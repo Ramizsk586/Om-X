@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Omni PDF Station</title>
+  <link rel="stylesheet" href="../../css/base/reset.css">
+  <link rel="stylesheet" href="../../css/base/variables.css">
+  <link rel="stylesheet" href="../../css/base/base.css">
+  <link rel="stylesheet" href="../../css/themes/all-themes.css">
+  <style>
+    body { background: #09090b; height: 100vh; display: flex; flex-direction: column; overflow: hidden; font-family: 'Inter', sans-serif; }
+    
+    /* Layout */
+    .app-shell { display: flex; flex: 1; overflow: hidden; position: relative; }
+    
+    /* Toolbar */
+    .pdf-toolbar { 
+        height: 56px; background: rgba(18,18,20,0.8); backdrop-filter: blur(20px);
+        border-bottom: 1px solid rgba(255,255,255,0.05); display: flex; align-items: center;
+        justify-content: space-between; padding: 0 16px; z-index: 1000;
+    }
+    .tool-group { display: flex; align-items: center; gap: 8px; }
+    .icon-btn { 
+        width: 36px; height: 36px; border-radius: 8px; background: transparent; border: none;
+        color: rgba(255,255,255,0.6); cursor: pointer; display: flex; align-items: center;
+        justify-content: center; transition: all 0.2s;
+    }
+    .icon-btn:hover { background: rgba(255,255,255,0.08); color: #fff; }
+    .icon-btn.active { color: #ff5252; background: rgba(255, 82, 82, 0.1); }
+    .icon-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+    
+    .divider { width: 1px; height: 24px; background: rgba(255,255,255,0.1); margin: 0 8px; }
+    
+    /* Sidebar */
+    .pdf-sidebar { 
+        width: 200px; background: rgba(12,12,14,0.9); border-right: 1px solid rgba(255,255,255,0.05);
+        display: flex; flex-direction: column; padding: 12px; overflow-y: auto; flex-shrink: 0;
+    }
+    .thumb-card { 
+        width: 100%; border-radius: 8px; border: 2px solid transparent; background: #000;
+        margin-bottom: 12px; cursor: pointer; transition: all 0.2s; overflow: hidden;
+        display: flex; flex-direction: column; align-items: center;
+    }
+    .thumb-card.active { border-color: #ff5252; box-shadow: 0 0 15px rgba(255, 82, 82, 0.2); }
+    .thumb-card canvas { width: 100%; height: auto; display: block; }
+    .thumb-label { font-size: 10px; font-weight: 800; color: #52525b; padding: 4px; }
+    
+    /* Viewport */
+    .pdf-main { flex: 1; position: relative; background: #000; overflow: auto; display: flex; justify-content: center; align-items: flex-start; padding: 40px; }
+    .canvas-container { position: relative; box-shadow: 0 30px 100px rgba(0,0,0,0.8); border-radius: 4px; overflow: hidden; }
+    
+    /* AI Panel - INCREASED WIDTH TO 1200px (3x original 400px) */
+    .ai-panel { 
+        width: 1200px; max-width: 80vw; background: rgba(18,18,20,0.98); border-left: 1px solid rgba(255,255,255,0.08);
+        display: flex; flex-direction: column; z-index: 1000; transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+        box-shadow: -20px 0 50px rgba(0,0,0,0.5);
+    }
+    .ai-panel.hidden { transform: translateX(100%); display: none; }
+    .ai-panel-header { padding: 20px 24px; border-bottom: 1px solid rgba(255,255,255,0.05); display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.2); }
+    .ai-panel-title { font-size: 10px; font-weight: 900; letter-spacing: 2.5px; color: rgba(255,255,255,0.6); text-transform: uppercase; }
+    
+    .ai-chat-area { flex: 1; overflow-y: auto; padding: 32px 40px; display: flex; flex-direction: column; gap: 32px; }
+    
+    @keyframes messageReveal {
+        from { opacity: 0; transform: translateY(20px) scale(0.99); }
+        to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    .ai-msg { 
+        padding: 20px 24px; border-radius: 24px; font-size: 14.5px; line-height: 1.75; 
+        position: relative; max-width: 85%; animation: messageReveal 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        box-shadow: 0 8px 30px rgba(0,0,0,0.15);
+    }
+    .ai-msg.user { 
+        align-self: flex-end; background: #fff; color: #000; font-weight: 500; 
+        border-bottom-right-radius: 4px; 
+    }
+    .ai-msg.ai { 
+        align-self: flex-start; background: rgba(255,255,255,0.03); color: #e4e4e7; 
+        border: 1px solid rgba(255,255,255,0.08); border-bottom-left-radius: 4px; 
+    }
+    
+    /* Thought Container Styles */
+    .thought-container {
+        margin-bottom: 20px;
+        background: rgba(255, 255, 255, 0.02);
+        border: 1px solid rgba(255, 255, 255, 0.05);
+        border-radius: 16px;
+        overflow: hidden;
+        transition: all 0.3s ease;
+    }
+    .thought-header {
+        padding: 12px 16px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        cursor: pointer;
+        background: rgba(255, 255, 255, 0.03);
+        transition: background 0.2s;
+    }
+    .thought-header:hover { background: rgba(255, 255, 255, 0.05); }
+    .thought-title-wrap {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 11px;
+        font-weight: 800;
+        color: var(--accent-color);
+        text-transform: uppercase;
+        letter-spacing: 1.2px;
+    }
+    .thought-arrow {
+        width: 14px; height: 14px; transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1); opacity: 0.6;
+    }
+    .thought-container.collapsed .thought-arrow { transform: rotate(-90deg); }
+    .thought-content {
+        padding: 20px;
+        font-size: 13.5px;
+        color: #a1a1aa;
+        line-height: 1.7;
+        font-style: italic;
+        background: transparent;
+        border-top: 1px solid rgba(255, 255, 255, 0.03);
+        white-space: pre-wrap;
+    }
+    .thought-container.collapsed .thought-content { display: none; }
+
+    .typewriter-cursor {
+        display: inline-block;
+        width: 2px;
+        height: 1.1em;
+        background: var(--accent-color);
+        margin-left: 2px;
+        vertical-align: middle;
+        animation: cursorBlink 1s infinite;
+    }
+    @keyframes cursorBlink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+
+    .neural-loader {
+        display: flex; align-items: center; gap: 12px; color: var(--accent-color);
+        font-size: 11px; font-weight: 900; text-transform: uppercase; letter-spacing: 2px;
+    }
+    .pulse-dot { width: 8px; height: 8px; background: currentColor; border-radius: 50%; animation: loaderPulse 1.2s infinite; }
+    @keyframes loaderPulse { 0%, 100% { opacity: 0.3; transform: scale(1); } 50% { opacity: 1; transform: scale(1.4); } }
+
+    .ai-input-wrapper { padding: 32px 40px; border-top: 1px solid rgba(255,255,255,0.05); background: rgba(0,0,0,0.3); }
+    .ai-input-box { display: flex; gap: 16px; background: rgba(0,0,0,0.4); padding: 12px 20px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.1); align-items: center; transition: border-color 0.3s; }
+    .ai-input-box:focus-within { border-color: var(--accent-color); box-shadow: 0 0 20px rgba(124, 77, 255, 0.1); }
+    .ai-input-box input { flex: 1; background: transparent; border: none; color: #fff; font-size: 15px; outline: none; height: 44px; }
+    
+    /* Config Panel Overlay */
+    .config-panel {
+        position: fixed; inset: 0; background: rgba(0,0,0,0.85); backdrop-filter: blur(12px);
+        z-index: 2000; display: flex; align-items: center; justify-content: center;
+    }
+    .config-card {
+        width: 440px; background: #121214; border: 1px solid rgba(255,255,255,0.1);
+        border-radius: 32px; padding: 40px; box-shadow: 0 40px 100px rgba(0,0,0,0.8);
+    }
+    .config-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 32px; }
+    .config-header h3 { font-size: 20px; font-weight: 800; color: #fff; letter-spacing: -0.5px; }
+    
+    .form-group { margin-bottom: 24px; display: flex; flex-direction: column; gap: 10px; }
+    .form-group label { font-size: 10px; font-weight: 900; color: #71717a; text-transform: uppercase; letter-spacing: 1.5px; }
+    .form-group input, .form-group select {
+        background: #000; border: 1px solid #27272a; border-radius: 12px; padding: 14px;
+        color: #fff; font-size: 14px; outline: none; transition: all 0.2s;
+    }
+    .form-group input:focus { border-color: #ff5252; box-shadow: 0 0 10px rgba(255, 82, 82, 0.1); }
+    .btn-save-config {
+        width: 100%; padding: 14px; background: #fff; color: #000; border: none;
+        border-radius: 14px; font-weight: 800; font-size: 13px; cursor: pointer; transition: all 0.2s;
+    }
+    .btn-save-config:hover { transform: translateY(-2px); box-shadow: 0 10px 25px rgba(255, 255, 255, 0.1); }
+
+    /* Overlays */
+    .reading-highlight { position: absolute; background: rgba(255, 255, 0, 0.25); border-radius: 2px; pointer-events: none; transition: all 0.1s linear; }
+    .selection-overlay { position: absolute; border: 2px solid #ff5252; background: rgba(255, 82, 82, 0.1); display: none; pointer-events: none; }
+    .scanner-line { position: absolute; left: 0; right: 0; height: 2px; background: #ff5252; box-shadow: 0 0 15px #ff5252; display: none; z-index: 10; pointer-events: none; }
+
+    /* Page Navigation Overlay */
+    .page-indicator { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); background: rgba(18,18,20,0.6); backdrop-filter: blur(20px); padding: 10px 24px; border-radius: 30px; color: #fff; font-size: 12px; font-weight: 800; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 10px 30px rgba(0,0,0,0.4); }
+    
+    .ai-msg strong { font-weight: 800; color: #fff; }
+    .ai-msg ul { padding-left: 20px; margin: 16px 0; }
+    .ai-msg li { list-style: disc; margin-bottom: 8px; }
+    .ai-msg h3, .ai-msg h4 { font-weight: 900; color: #fff; text-transform: uppercase; font-size: 12px; letter-spacing: 1.8px; margin-top: 24px; margin-bottom: 12px; }
+    
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body class="theme-midnight">
+  <header class="pdf-toolbar">
+    <div class="tool-group">
+      <div class="divider"></div>
+      <button id="btn-thumbnails" class="icon-btn" title="Toggle Thumbnails">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M3 5h5v5H3V5zm0 7h5v5H3v-5zm7-7h5v5h-5V5zm0 7h5v5h-5v-5zm7-7h5v5h-5V5zm0 7h5v5h-5v-5z"/></svg>
+      </button>
+      <div class="divider"></div>
+      <span id="pdf-filename" style="font-size: 13px; font-weight: 700; color: #fff; max-width: 200px; overflow: hidden; text-overflow: ellipsis;">Loading Neural Hub...</span>
+    </div>
+
+    <div class="tool-group">
+      <button id="btn-prev" class="icon-btn"><svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg></button>
+      <span style="font-size:12px; font-weight:800;"><span id="curr-page">1</span> / <span id="total-pages">--</span></span>
+      <button id="btn-next" class="icon-btn"><svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg></button>
+      <div class="divider"></div>
+      <button id="btn-zoom-out" class="icon-btn"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M19 13H5v-2h14v2z"/></svg></button>
+      <span id="zoom-val" style="font-size:11px; font-weight:900; width:40px; text-align:center;">100%</span>
+      <button id="btn-zoom-in" class="icon-btn"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg></button>
+    </div>
+
+    <div class="tool-group">
+      <button id="btn-read" class="icon-btn" title="Neural Reading Protocol">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.1-.9-2-2-2s-2 .9-2 2v6c0 1.1.9 2 2 2z M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>
+      </button>
+      <button id="btn-select-area" class="icon-btn" title="Deep Visual Analysis">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M3 5v4h2V5h4V3H5c-1.1 0-2 .9-2 2zm2 10H3v4c0 1.1.9 2 2 2h4v-2H5v-4zm14 4h-4v2h4c1.1 0 2-.9 2-2v-4h-2v4zm0-16h-4v2h4v4h2V5c0-1.1-.9-2-2-2z"/></svg>
+      </button>
+      <div class="divider"></div>
+      <button id="btn-summarize" class="icon-btn" title="Neural Summary">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M14,17H7V15H14V17ZM17,13H7V11H17V13ZM17,9H7V7H17V9ZM19,3H5C3.89,3,3,3.89,3,5V19A2,2,0,0,0,5,21H19a2,2,0,0,0,2-2V5A2,2,0,0,0,19,3Z"/></svg>
+      </button>
+      <button id="btn-toggle-ai" class="icon-btn" title="AI Intelligence Sidebar">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M21 16.5C21 16.88 20.79 17.21 20.47 17.38L12.57 21.82C12.41 21.94 12.21 22 12 22C11.79 22 11.59 21.94 11.43 21.82L3.53 17.38C3.21 17.21 3 16.88 3 16.5V7.5C3 7.12 3.21 6.79 3.53 6.62L11.43 2.18C11.59 2.06 11.79 2 12 2C12.21 2 12.41 2.06 12.57 2.18L20.47 6.62C20.79 6.79 21 7.12 21 7.5V16.5Z"/></svg>
+      </button>
+      <div class="divider"></div>
+      <button id="btn-open-config" class="icon-btn" title="Intelligence Configuration">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.56-1.62.94l2.39-.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47.12-.61l2.03 1.58c-.05.3-.07.63-.07.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.03-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="app-shell">
+    <aside id="pdf-sidebar" class="pdf-sidebar hidden">
+      <!-- Thumbs injected -->
+    </aside>
+
+    <main id="pdf-container" class="pdf-main">
+      <div id="canvas-wrapper" class="canvas-container">
+        <canvas id="pdf-render-canvas"></canvas>
+        <div id="reading-box" class="reading-highlight" style="display:none;"></div>
+        <div id="selection-box" class="selection-overlay"></div>
+        <div id="scanner-line" class="scanner-line"></div>
+      </div>
+    </main>
+
+    <aside id="ai-panel" class="ai-panel hidden">
+      <div class="ai-panel-header">
+        <span class="ai-panel-title">Intelligence Core</span>
+        <div style="display:flex; gap: 12px;">
+          <button id="btn-clear-chat" class="icon-btn" title="Reset Session" style="width:28px; height:28px;">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+          </button>
+          <button id="btn-close-ai" class="icon-btn" style="width:28px; height:28px;">✕</button>
+        </div>
+      </div>
+      <div id="ai-messages" class="ai-chat-area">
+        <div class="ai-msg ai">Synchronized. I am prepared to assist with your document analysis. How may I serve your research goals today?</div>
+      </div>
+      <div class="ai-input-wrapper">
+        <div class="ai-input-box">
+          <input type="text" id="ai-input" placeholder="Query document context..." autocomplete="off">
+          <button id="btn-ai-send" class="icon-btn" style="color:var(--accent-color);"><svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg></button>
+        </div>
+      </div>
+    </aside>
+
+    <div id="page-nav-overlay" class="page-indicator">PAGE 1</div>
+  </div>
+
+  <!-- PDF AI Config Modal -->
+  <div id="config-overlay" class="config-panel hidden">
+    <div class="config-card">
+        <div class="config-header">
+            <h3>Neural Core Parameters</h3>
+            <button id="btn-close-config" class="icon-btn">✕</button>
+        </div>
+        <div class="form-group">
+            <label>Intelligence Provider</label>
+            <select id="config-provider">
+                <option value="google">Google Gemini</option>
+                <option value="groq">Groq (Advanced)</option>
+                <option value="ollama">Ollama (Local Private)</option>
+            </select>
+        </div>
+        <div id="config-api-key-group" class="form-group">
+            <label>Access Key</label>
+            <input type="password" id="config-api-key" placeholder="••••••••••••••••">
+        </div>
+        <div class="form-group">
+            <label>Logical Model ID</label>
+            <input type="text" id="config-model" placeholder="e.g. gemini-3-flash-preview">
+        </div>
+        <button id="btn-save-config" class="btn-save-config">SYNC CONFIGURATION</button>
+    </div>
+  </div>
+
+  <script src="https://esm.sh/pdfjs-dist@5.4.530/build/pdf.min.mjs" type="module"></script>
+  <script type="module" src="../../java/renderer/pdfViewerRenderer.js"></script>
+</body>
+</html>

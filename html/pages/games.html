@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Om-X Neuro-Arcade</title>
+  <link rel="stylesheet" href="../../css/base/reset.css">
+  <link rel="stylesheet" href="../../css/base/variables.css">
+  <link rel="stylesheet" href="../../css/base/base.css">
+  <link rel="stylesheet" href="../../css/themes/all-themes.css">
+  <style>
+    body { background: #060608; height: 100vh; display: flex; flex-direction: column; overflow: hidden; font-family: 'Inter', sans-serif; position: relative; }
+    
+    /* Neural Background Animation */
+    .bg-animation {
+      position: absolute; inset: 0; z-index: -1;
+      background: radial-gradient(circle at 50% 50%, #0d0d12 0%, #060608 100%);
+      overflow: hidden;
+    }
+    .bg-stream {
+      position: absolute; width: 2px; height: 100px;
+      background: linear-gradient(to bottom, transparent, var(--accent-color), transparent);
+      opacity: 0.1; animation: fall 4s linear infinite;
+    }
+    @keyframes fall { from { transform: translateY(-200px); } to { transform: translateY(110vh); } }
+
+    .arcade-header {
+        padding: 32px 40px; background: rgba(18,18,20,0.7); border-bottom: 1px solid rgba(255,255,255,0.05);
+        display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; backdrop-filter: blur(20px);
+    }
+    .brand-section h1 { font-size: 24px; font-weight: 900; color: #fff; letter-spacing: -0.5px; }
+    .brand-section p { font-size: 11px; color: var(--accent-color); font-weight: 800; text-transform: uppercase; letter-spacing: 2px; opacity: 0.8; }
+
+    .btn-nav-back {
+        background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: #fff;
+        padding: 10px 24px; border-radius: 12px; font-size: 12px; font-weight: 800; cursor: pointer; transition: all 0.2s;
+        text-transform: uppercase; letter-spacing: 1px;
+    }
+    .btn-nav-back:hover { background: #fff; color: #000; transform: translateX(-4px); }
+
+    .arcade-main { flex: 1; display: flex; align-items: center; justify-content: center; padding: 40px; position: relative; }
+
+    /* Selection Menu */
+    .games-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 24px; width: 100%; max-width: 1200px; }
+    .game-card {
+        background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05); border-radius: 28px;
+        padding: 32px; display: flex; flex-direction: column; align-items: center; gap: 24px; cursor: pointer;
+        transition: all 0.5s cubic-bezier(0.16, 1, 0.3, 1); text-align: center; position: relative; overflow: hidden;
+    }
+    .game-card::after {
+        content: ''; position: absolute; inset: 0; background: radial-gradient(circle at center, var(--accent-color) 0%, transparent 70%);
+        opacity: 0; transition: opacity 0.4s;
+    }
+    .game-card:hover { transform: translateY(-12px) scale(1.02); border-color: var(--accent-color); background: rgba(255,255,255,0.05); }
+    .game-card:hover::after { opacity: 0.05; }
+    
+    .game-icon { width: 80px; height: 80px; background: rgba(255,255,255,0.03); border-radius: 24px; display: flex; align-items: center; justify-content: center; color: var(--accent-color); border: 1px solid rgba(255,255,255,0.05); font-size: 40px; transition: transform 0.3s ease; z-index: 1; }
+    .game-card:hover .game-icon { transform: rotate(5deg) scale(1.1); }
+    
+    .game-meta { z-index: 1; }
+    .game-title { font-size: 20px; font-weight: 800; color: #fff; display: block; margin-bottom: 8px; }
+    .game-desc { font-size: 13px; color: rgba(255,255,255,0.4); line-height: 1.6; }
+
+    /* Game Viewports */
+    .game-viewport { 
+        position: absolute; inset: 0; background: #000; border-radius: 0;
+        display: none; flex-direction: column; align-items: center; justify-content: center; 
+        z-index: 10; overflow: hidden;
+    }
+    .game-viewport.active { display: flex; animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1); }
+    @keyframes slideUp { from { opacity: 0; transform: translateY(40px); } to { opacity: 1; transform: translateY(0); } }
+
+    #game-frame { width: 100%; height: 100%; border: none; background: transparent; }
+
+    .score-banner { position: absolute; top: 40px; font-family: 'JetBrains Mono', monospace; font-size: 14px; font-weight: 900; color: var(--accent-color); text-transform: uppercase; letter-spacing: 2px; }
+    
+    .game-over-overlay {
+        position: absolute; inset: 0; background: rgba(0,0,0,0.9); backdrop-filter: blur(12px);
+        display: none; flex-direction: column; align-items: center; justify-content: center; gap: 24px; z-index: 100;
+    }
+    .game-over-overlay.active { display: flex; animation: fadeIn 0.4s ease; }
+    .btn-retry { background: #fff; color: #000; padding: 14px 40px; border-radius: 14px; font-weight: 900; cursor: pointer; border: none; font-size: 13px; text-transform: uppercase; letter-spacing: 1px; }
+
+    /* Grid Styles */
+    .ttt-grid { display: grid; grid-template-columns: repeat(3, 130px); grid-template-rows: repeat(3, 130px); gap: 12px; }
+    .ttt-cell { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 24px; display: flex; align-items: center; justify-content: center; font-size: 64px; cursor: pointer; transition: all 0.3s; }
+    .ttt-cell:hover:empty { background: rgba(255,255,255,0.08); border-color: var(--accent-color); }
+    .ttt-cell svg { width: 60%; height: 60%; filter: drop-shadow(0 0 10px currentColor); }
+
+    .ms-grid { display: grid; grid-template-columns: repeat(10, 42px); grid-template-rows: repeat(10, 42px); gap: 6px; background: rgba(255,255,255,0.03); padding: 12px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.05); }
+    .ms-cell { width: 42px; height: 42px; background: #18181b; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 16px; font-weight: 900; cursor: pointer; transition: all 0.2s; border: 1px solid rgba(255,255,255,0.02); }
+    .ms-cell:hover { background: #27272a; border-color: rgba(255,255,255,0.1); }
+    .ms-cell.revealed { background: #0c0c0e; border-color: rgba(255,255,255,0.03); cursor: default; }
+
+    /* Memory Styles */
+    .mem-grid { display: grid; grid-template-columns: repeat(4, 90px); gap: 12px; }
+    .mem-card { width: 90px; height: 120px; background: #1c1c1f; border-radius: 12px; cursor: pointer; position: relative; transform-style: preserve-3d; transition: transform 0.6s; }
+    .mem-card.flipped { transform: rotateY(180deg); }
+    .mem-front, .mem-back { position: absolute; inset: 0; backface-visibility: hidden; border-radius: 12px; border: 1px solid rgba(255,255,255,0.1); display: flex; align-items: center; justify-content: center; font-size: 32px; }
+    .mem-back { background: var(--accent-color); color: #fff; }
+    .mem-front { background: #121214; transform: rotateY(180deg); }
+
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body class="theme-midnight">
+  
+  <div class="bg-animation" id="bg-anim"></div>
+
+  <header class="arcade-header">
+    <div class="brand-section">
+      <h1 id="arcade-title">Neuro-Arcade</h1>
+      <p id="arcade-status">Zone 01 - Systems Nominal</p>
+    </div>
+    <button id="btn-back-to-menu" class="btn-nav-back hidden">Exit System</button>
+  </header>
+
+  <main class="arcade-main">
+    <!-- Menu -->
+    <div id="games-menu" class="games-grid">
+        <div class="game-card" data-game="snake">
+            <div class="game-icon">🐍</div>
+            <div class="game-meta">
+                <span class="game-title">Neuro-Snake</span>
+                <p class="game-desc">Zero-Edge topology active. Maintain link integrity while navigating beyond boundaries.</p>
+            </div>
+        </div>
+        <div class="game-card" data-game="dragon">
+            <div class="game-icon">🐉</div>
+            <div class="game-meta">
+                <span class="game-title">Neural-Dragon</span>
+                <p class="game-desc">Endless packet leap protocol. Navigate through firewall fragments at increasing frequency.</p>
+            </div>
+        </div>
+        <div class="game-card" data-game="chess">
+            <div class="game-icon">♟️</div>
+            <div class="game-meta">
+                <span class="game-title">Neural Chess</span>
+                <p class="game-desc">Strategic combat protocol. Deep-logic synchronization required.</p>
+            </div>
+        </div>
+        <div class="game-card" data-game="ttt">
+            <div class="game-icon">❌</div>
+            <div class="game-meta">
+                <span class="game-title">Neural-X</span>
+                <p class="game-desc">Unbeatable Tic-Tac-Toe. Perfect synchronization logic test.</p>
+            </div>
+        </div>
+        <div class="game-card" data-game="ms">
+            <div class="game-icon">💣</div>
+            <div class="game-meta">
+                <span class="game-title">Logic-Sweep</span>
+                <p class="game-desc">Threat assessment protocol. Isolate volatile nodes in the grid.</p>
+            </div>
+        </div>
+        <div class="game-card" data-game="mem">
+            <div class="game-icon">🧠</div>
+            <div class="game-meta">
+                <span class="game-title">Neuro-Memory</span>
+                <p class="game-desc">Short-term link verification. Pair fragmented neural nodes.</p>
+            </div>
+        </div>
+        <div class="game-card" data-game="dash">
+            <div class="game-icon">⚡</div>
+            <div class="game-meta">
+                <span class="game-title">Neural-Dash</span>
+                <p class="game-desc">Packet reflex test. Navigate through high-latency firewall fragments.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Viewports -->
+    <div id="generic-game-viewport" class="game-viewport">
+        <iframe id="game-frame" src=""></iframe>
+    </div>
+
+    <div id="snake-viewport" class="game-viewport">
+        <div class="score-banner">LATENCY: <span id="snake-score">0</span>ms</div>
+        <canvas id="snake-canvas"></canvas>
+        <div id="snake-game-over" class="game-over-overlay">
+            <h2 style="font-size: 32px; font-weight: 900; color: #fff;">LINK TERMINATED</h2>
+            <p style="color: var(--accent-color); font-weight: 700;">Neural Score: <span id="final-score">0</span></p>
+            <button class="btn-retry" id="btn-snake-retry">RE-ESTABLISH LINK</button>
+        </div>
+    </div>
+
+    <div id="dragon-viewport" class="game-viewport">
+        <div class="score-banner">THROUGHPUT: <span id="dragon-score">0</span>MB/s</div>
+        <canvas id="dragon-canvas"></canvas>
+        <div id="dragon-game-over" class="game-over-overlay">
+            <h2 style="font-size: 32px; font-weight: 900; color: #fff;">SYNCHRONIZATION LOST</h2>
+            <p style="color: var(--accent-color); font-weight: 700;">Final Throughput: <span id="dragon-final-score">0</span>MB/s</p>
+            <button class="btn-retry" id="btn-dragon-retry">RE-LEAP</button>
+        </div>
+    </div>
+
+    <div id="ttt-viewport" class="game-viewport">
+        <div class="score-banner">AI LOGIC: <span id="ttt-turn">ACTIVE</span></div>
+        <div id="ttt-grid" class="ttt-grid">
+            <div class="ttt-cell" data-idx="0"></div><div class="ttt-cell" data-idx="1"></div><div class="ttt-cell" data-idx="2"></div>
+            <div class="ttt-cell" data-idx="3"></div><div class="ttt-cell" data-idx="4"></div><div class="ttt-cell" data-idx="5"></div>
+            <div class="ttt-cell" data-idx="6"></div><div class="ttt-cell" data-idx="7"></div><div class="ttt-cell" data-idx="8"></div>
+        </div>
+        <div id="ttt-game-over" class="game-over-overlay">
+            <h2 id="ttt-result-title" style="font-size: 32px; font-weight: 900; color: #fff;">UNBEATABLE</h2>
+            <button class="btn-retry" id="btn-ttt-retry">RESET PROTOCOL</button>
+        </div>
+    </div>
+
+    <div id="ms-viewport" class="game-viewport">
+        <div class="score-banner">VOLATILE NODES: <span id="ms-mine-count">10</span></div>
+        <div id="ms-grid" class="ms-grid"></div>
+        <div id="ms-game-over" class="game-over-overlay">
+            <h2 id="ms-result-title" style="font-size: 32px; font-weight: 900; color: #fff;">GRID CORRUPTED</h2>
+            <button class="btn-retry" id="btn-ms-retry">NEW SCAN</button>
+        </div>
+    </div>
+
+    <div id="mem-viewport" class="game-viewport">
+        <div class="score-banner">STABILITY: <span id="mem-score">100</span>%</div>
+        <div id="mem-grid" class="mem-grid"></div>
+        <div id="mem-game-over" class="game-over-overlay">
+            <h2 id="mem-result-title" style="font-size: 32px; font-weight: 900; color: #fff;">SYNC COMPLETE</h2>
+            <button class="btn-retry" id="btn-mem-retry">RE-SYNC</button>
+        </div>
+    </div>
+
+    <div id="dash-viewport" class="game-viewport">
+        <div class="score-banner">THROUGHPUT: <span id="dash-score">0</span> GB/s</div>
+        <canvas id="dash-canvas"></canvas>
+        <div id="dash-game-over" class="game-over-overlay">
+            <h2 style="font-size: 32px; font-weight: 900; color: #fff;">PACKET LOST</h2>
+            <button class="btn-retry" id="btn-dash-retry">RE-TRANSMIT</button>
+        </div>
+    </div>
+  </main>
+
+  <script type="module" src="../../java/renderer/gamesRenderer.js"></script>
+</body>
+</html>

@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:;">
+  <title>New Tab</title>
+  <link rel="icon" href="../../assets/icons/app.ico" type="image/x-icon">
+  <link rel="stylesheet" href="../../css/base/reset.css">
+  <link rel="stylesheet" href="../../css/base/variables.css">
+  <link rel="stylesheet" href="../../css/base/base.css">
+  <link rel="stylesheet" href="../../css/themes/all-themes.css">
+  <link rel="stylesheet" href="../../css/pages/home.css">
+</head>
+<body class="theme-dark">
+  <div class="home-container">
+    <div class="brand">Om-X</div>
+    <div class="hint">Press <kbd>Ctrl</kbd> + <kbd>T</kbd> to search</div>
+  </div>
+  <script>
+    (async function() {
+        const apply = (theme) => document.body.className = 'theme-' + (theme || 'dark');
+        try {
+            const s = await window.browserAPI.settings.get();
+            if (s && s.theme) apply(s.theme);
+        } catch(e) {}
+        if (window.browserAPI.onSettingsUpdated) {
+            window.browserAPI.onSettingsUpdated(s => apply(s.theme));
+        }
+    })();
+  </script>
+</body>
+</html>

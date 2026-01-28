@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Omni To-Do Station</title>
+  <link rel="stylesheet" href="../../css/base/reset.css">
+  <link rel="stylesheet" href="../../css/base/variables.css">
+  <link rel="stylesheet" href="../../css/base/base.css">
+  <link rel="stylesheet" href="../../css/themes/all-themes.css">
+  <style>
+    body { background: #09090b; height: 100vh; display: flex; align-items: center; justify-content: center; font-family: 'Inter', sans-serif; overflow: hidden; }
+    
+    .todo-container {
+        width: 600px; height: 80vh; background: rgba(18,18,20,0.8); backdrop-filter: blur(40px);
+        border: 1px solid rgba(255,255,255,0.1); border-radius: 32px; display: flex; flex-direction: column;
+        box-shadow: 0 40px 100px rgba(0,0,0,0.8); overflow: hidden; animation: todoIn 0.5s var(--ease-out-expo);
+    }
+    @keyframes todoIn { from { opacity: 0; transform: translateY(20px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
+
+    .todo-header {
+        padding: 40px 40px 20px 40px; border-bottom: 1px solid rgba(255,255,255,0.05);
+        display: flex; justify-content: space-between; align-items: flex-start;
+    }
+    .brand-section h1 { font-size: 24px; font-weight: 800; color: #fff; letter-spacing: -0.5px; }
+    .brand-section p { font-size: 13px; color: rgba(255,255,255,0.4); margin-top: 4px; }
+    
+    .todo-input-area { padding: 20px 40px; display: flex; gap: 12px; }
+    .todo-input-wrap {
+        flex: 1; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1);
+        border-radius: 16px; padding: 4px 16px; display: flex; align-items: center; gap: 12px;
+    }
+    .todo-input-wrap input { flex: 1; height: 44px; color: #fff; font-size: 14px; outline: none; }
+    .btn-add-todo {
+        width: 44px; height: 44px; background: var(--accent-color); color: #fff; border-radius: 12px;
+        display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s;
+    }
+    .btn-add-todo:hover { transform: scale(1.05); filter: brightness(1.1); }
+
+    .todo-list { flex: 1; overflow-y: auto; padding: 20px 40px; display: flex; flex-direction: column; gap: 12px; }
+    .todo-item {
+        background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05);
+        padding: 16px 20px; border-radius: 16px; display: flex; align-items: center; gap: 16px;
+        transition: all 0.2s; cursor: default;
+    }
+    .todo-item:hover { background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.1); }
+    .todo-item.completed { opacity: 0.5; }
+    .todo-item.completed .todo-text { text-decoration: line-through; }
+
+    .check-btn {
+        width: 22px; height: 22px; border: 2px solid rgba(255,255,255,0.2); border-radius: 50%;
+        display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s;
+    }
+    .todo-item.completed .check-btn { background: #10b981; border-color: #10b981; }
+    .check-btn svg { color: #fff; opacity: 0; }
+    .todo-item.completed .check-btn svg { opacity: 1; }
+
+    .todo-text { flex: 1; font-size: 14px; color: #e4e4e7; font-weight: 500; }
+    .btn-delete { color: rgba(255,255,255,0.2); cursor: pointer; transition: color 0.2s; }
+    .btn-delete:hover { color: #ff5252; }
+
+    .todo-footer { padding: 20px 40px 40px 40px; display: flex; justify-content: space-between; align-items: center; }
+    .stats { font-size: 12px; font-weight: 700; color: rgba(255,255,255,0.3); text-transform: uppercase; letter-spacing: 1px; }
+    .btn-ai-clean {
+        background: rgba(124, 77, 255, 0.1); color: var(--accent-color); border: 1px solid rgba(124, 77, 255, 0.2);
+        padding: 8px 16px; border-radius: 20px; font-size: 11px; font-weight: 800; cursor: pointer;
+    }
+    .btn-ai-clean:hover { background: var(--accent-color); color: #fff; }
+    
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body class="theme-midnight">
+  <div class="todo-container">
+    <header class="todo-header">
+      <div class="brand-section">
+        <h1>Task Intelligence</h1>
+        <p id="date-label">Today's Protocol</p>
+      </div>
+      <button id="btn-close" class="btn-delete" style="font-size: 24px;">✕</button>
+    </header>
+
+    <div class="todo-input-area">
+      <div class="todo-input-wrap">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="rgba(255,255,255,0.2)"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+        <input type="text" id="todo-input" placeholder="Initiate new objective...">
+      </div>
+      <button id="btn-add" class="btn-add-todo">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z"/></svg>
+      </button>
+    </div>
+
+    <main id="todo-list" class="todo-list">
+      <!-- To-dos injected here -->
+    </main>
+
+    <footer class="todo-footer">
+      <div class="stats"><span id="active-count">0</span> Objectives Pending</div>
+      <button id="btn-ai-organize" class="btn-ai-clean">OMNI ORCHESTRATE</button>
+    </footer>
+  </div>
+
+  <script type="module" src="../../java/renderer/todoRenderer.js"></script>
+</body>
+</html>
