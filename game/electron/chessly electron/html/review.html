@@ -1,0 +1,953 @@
+
+
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; object-src 'none';">
+  <title>Game Review</title>
+  <link rel="stylesheet" href="css/styles.css" />
+  <style>
+    /* Arena Specific Overrides for Review */
+    body {
+      overflow: hidden;
+      display: flex;
+      background: var(--app-bg);
+    }
+
+    .main-layout {
+        display: flex; width: 100vw; height: 100vh;
+        position: relative; z-index: 10;
+    }
+
+    .board-panel {
+        flex: 1;
+        display: flex; justify-content: center; align-items: center;
+        position: relative;
+        gap: 24px;
+    }
+    
+    .arena-glow {
+        position: absolute; width: 800px; height: 800px;
+        background: radial-gradient(circle, var(--highlight-last) 0%, transparent 70%);
+        opacity: 0.1; pointer-events: none; z-index: 0;
+    }
+
+    /* Grid for moves list */
+    .moves-grid {
+        display: grid;
+        grid-template-columns: 40px 1fr 1fr;
+        gap: 2px;
+        padding: 12px;
+        font-size: 13px;
+        align-content: start;
+    }
+    
+    .grid-header {
+        font-weight: 700;
+        opacity: 0.5;
+        text-transform: uppercase;
+        font-size: 10px;
+        margin-bottom: 8px;
+        padding-bottom: 4px;
+        border-bottom: 1px solid rgba(255,255,255,0.1);
+        color: var(--text-muted);
+    }
+    
+    .move-cell {
+        padding: 6px 8px;
+        border-radius: 4px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        transition: background 0.1s;
+        color: var(--text-main);
+        position: relative;
+    }
+    .move-cell:hover { background: rgba(255,255,255,0.05); }
+    .move-cell.active { background: var(--primary-accent); color: white; font-weight: 600; }
+    .move-num { opacity: 0.5; text-align: right; padding-right: 8px; padding-top: 6px; font-family: 'JetBrains Mono', monospace; font-size: 11px; }
+    
+    /* Analysis Badges (Text in list) */
+    .eval-badge {
+        font-size: 9px; font-weight: 800; padding: 2px 6px; border-radius: 10px;
+        min-width: 24px; text-align: center;
+        display: inline-flex; align-items: center; gap: 4px;
+    }
+    
+    /* Board Stickers (On pieces) */
+    .move-sticker {
+        position: absolute;
+        top: -10px; right: -10px;
+        width: 24px; height: 24px;
+        border-radius: 50%;
+        display: flex; align-items: center; justify-content: center;
+        font-weight: 900; font-size: 14px; color: #fff;
+        box-shadow: 0 3px 8px rgba(0,0,0,0.6);
+        z-index: 25; /* Above piece (z=10) and arrow (z=20) */
+        border: 2px solid #fff;
+        text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+        font-family: 'Arial', sans-serif;
+    }
+
+    /* Annotation Styles (Shared) */
+    .badge-brilliant { background: #1baca6; } /* Teal */
+    .badge-great { background: #5c8bb0; } /* Blue */
+    .badge-best { background: #81b64c; } /* Green */
+    .badge-excellent { background: #96bc4b; } /* Light Green */
+    .badge-good { background: #96bc4b; opacity: 0.8; }
+    .badge-inaccuracy { background: #f0c15c; } /* Yellow */
+    .badge-mistake { background: #e6912c; } /* Orange */
+    .badge-blunder { background: #fa412d; } /* Red */
+    .badge-book { background: #a88865; } /* Brown */
+
+    .anno-brilliant { background: #1baca6; color: #fff; }
+    .anno-great { background: #5c8bb0; color: #fff; }
+    .anno-best { background: #81b64c; color: #fff; }
+    .anno-good { background: rgba(150, 188, 75, 0.2); color: #96bc4b; }
+    .anno-inaccuracy { background: rgba(240, 193, 92, 0.2); color: #f0c15c; }
+    .anno-mistake { background: rgba(230, 145, 44, 0.2); color: #e6912c; }
+    .anno-blunder { background: #fa412d; color: #fff; }
+    .anno-book { background: #a88865; color: #fff; }
+
+    /* Progress Bar */
+    .analysis-progress-container {
+        height: 4px;
+        background: rgba(255,255,255,0.1);
+        width: 100%;
+        position: relative;
+        display: none;
+    }
+    .analysis-progress-bar {
+        height: 100%;
+        background: var(--primary-accent);
+        width: 0%;
+        transition: width 0.3s ease;
+        box-shadow: 0 0 10px var(--primary-accent);
+    }
+    .analysis-status-text {
+        font-size: 10px; color: var(--text-muted); padding: 8px 12px; text-transform: uppercase; letter-spacing: 1px; font-weight: 700;
+        display: none;
+        justify-content: space-between;
+    }
+    
+    .legend-pill {
+        font-size: 10px; padding: 4px 10px; border-radius: 12px; 
+        display: inline-flex; align-items: center; gap: 6px;
+        background: rgba(255,255,255,0.05); opacity: 0.9;
+        border: 1px solid rgba(255,255,255,0.05);
+    }
+    .dot { width: 6px; height: 6px; border-radius: 50%; }
+    
+    /* Explorer Table */
+    .explorer-table {
+        width: 100%; border-collapse: collapse; font-size: 12px;
+    }
+    .explorer-table th {
+        text-align: left; padding: 10px 12px; 
+        color: var(--text-muted); font-weight: 700; font-size: 10px; text-transform: uppercase;
+        border-bottom: 1px solid rgba(255,255,255,0.1);
+    }
+    .explorer-table td {
+        padding: 8px 12px; border-bottom: 1px solid rgba(255,255,255,0.03);
+        vertical-align: middle; cursor: pointer;
+    }
+    .explorer-table tr:hover td { background: rgba(255,255,255,0.05); }
+    
+    .exp-move { font-weight: 700; color: #fff; font-size: 13px; width: 60px; }
+    .exp-count { font-family: 'JetBrains Mono', monospace; opacity: 0.8; width: 50px; text-align: right; }
+    
+    .exp-perf { flex: 1; height: 6px; background: #333; border-radius: 3px; display:flex; overflow:hidden; min-width: 100px; }
+    .bar-w { background: #e2e8f0; }
+    .bar-d { background: #64748b; }
+    .bar-b { background: #1e293b; }
+    
+    /* Nav Bar */
+    .nav-bar {
+        display: flex; gap: 16px; padding: 0 12px;
+    }
+    .nav-btn {
+        flex: 1; height: 60px;
+        background: rgba(255,255,255,0.05); 
+        border: 1px solid rgba(255,255,255,0.1);
+        border-radius: 16px;
+        color: #fff; font-size: 20px;
+        cursor: pointer; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        display: flex; align-items: center; justify-content: center;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+    .nav-btn:hover {
+        background: rgba(255,255,255,0.1);
+        transform: translateY(-2px);
+        box-shadow: 0 8px 15px rgba(0,0,0,0.2);
+        border-color: rgba(255,255,255,0.2);
+    }
+    .nav-btn:active { transform: translateY(0); box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+    .nav-btn:disabled { opacity: 0.3; cursor: default; transform: none; }
+    
+    .nav-btn.primary {
+        background: var(--primary-accent);
+        border-color: var(--primary-accent);
+        box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+    }
+    .nav-btn.primary:hover {
+        filter: brightness(1.1);
+    }
+    
+    /* Sidebar */
+    .sidebar {
+        width: 400px; min-width: 400px;
+        background: var(--glass-bg);
+        backdrop-filter: blur(24px);
+        border-left: var(--glass-border);
+        display: flex; flex-direction: column;
+        z-index: 10;
+        box-shadow: -10px 0 40px rgba(0,0,0,0.5);
+    }
+
+    .sidebar-header {
+        padding: 24px;
+        border-bottom: 1px solid rgba(255,255,255,0.05);
+        text-align: center;
+    }
+    .sidebar-header h2 {
+        margin: 0; font-size: 18px; color: var(--primary-accent); 
+        text-transform: uppercase; letter-spacing: 3px; font-weight: 800;
+        text-shadow: 0 0 20px var(--highlight-move);
+    }
+    
+    .log-container { flex:1; display:flex; flex-direction:column; position:relative; overflow: hidden; }
+    .log-tabs { display:flex; background:rgba(0,0,0,0.2); flex-shrink: 0;}
+    .log-tab { flex:1; padding:10px; text-align:center; cursor:pointer; opacity:0.6; }
+    .log-tab.active { opacity:1; border-bottom:2px solid var(--primary-accent); background:rgba(255,255,255,0.05); }
+    .log-content { display:none; flex:1; overflow-y:auto; }
+    .log-content.active { display:block; }
+    .controls { padding: 24px; border-top:1px solid rgba(255,255,255,0.05); }
+    
+    /* Board Container */
+    #board-container {
+        position: relative;
+        width: min(80vh, 55vw);
+        aspect-ratio: 1 / 1;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        box-shadow: 0 25px 60px rgba(0,0,0,0.6);
+        border: 8px solid rgba(255,255,255,0.05);
+        border-radius: 8px;
+    }
+    
+    #board {
+      width: 100%; height: 100%;
+      display: grid; grid-template-columns: repeat(8, 1fr);
+    }
+    
+    /* Eval Bar */
+    #eval-bar-wrapper {
+        height: min(80vh, 55vw);
+        width: 24px;
+        display: flex;
+        flex-direction: column;
+    }
+    .eval-bar-bg {
+        width: 100%; height: 100%;
+        background: #1a1a1a; border-radius: 4px;
+        overflow: hidden; position: relative;
+        box-shadow: inset 0 0 5px rgba(0,0,0,0.5);
+        border: 1px solid rgba(255,255,255,0.1);
+    }
+    #eval-bar-fill {
+        width: 100%; height: 50%;
+        background: #fff; position: absolute; bottom: 0; left: 0;
+        transition: height 0.5s;
+    }
+    
+    #eval-score-text {
+        position: absolute; top: 10px; left: 0; width: 100%; text-align: center;
+        font-family: 'JetBrains Mono', monospace; font-size: 9px; font-weight: 800;
+        color: #777; z-index: 5; pointer-events: none; transition: top 0.3s, color 0.3s;
+    }
+  </style>
+</head>
+<body>
+  
+  <div class="bg-tech"></div>
+
+  <div class="main-layout">
+    <!-- LEFT: BOARD AREA -->
+    <div class="board-panel">
+      <div class="arena-glow"></div>
+      
+      <div id="eval-bar-wrapper">
+           <div class="eval-bar-bg">
+               <div id="eval-bar-fill"></div>
+               <div id="eval-score-text">0.00</div>
+           </div>
+      </div>
+      
+      <div id="board-container">
+        <div id="board"></div>
+        <svg class="arrow-layer" id="arrow-layer" viewBox="0 0 100 100" style="position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; z-index:20; filter: drop-shadow(0 2px 3px rgba(0,0,0,0.5));"></svg>
+      </div>
+
+      <!-- Analysis Legend Overlay -->
+      <div style="position: absolute; bottom: 20px; display:flex; gap:8px;">
+         <div class="legend-pill"><div class="dot" style="background:#81b64c;"></div> Best</div>
+         <div class="legend-pill"><div class="dot" style="background:#1baca6;"></div> Brilliant</div>
+         <div class="legend-pill"><div class="dot" style="background:#f0c15c;"></div> Inaccuracy</div>
+         <div class="legend-pill"><div class="dot" style="background:#fa412d;"></div> Blunder</div>
+      </div>
+    </div>
+
+    <!-- RIGHT: SIDEBAR -->
+    <div class="sidebar">
+      <div class="sidebar-header">
+          <h2>Review</h2>
+          <div id="opening-name" style="font-size:12px; font-weight:700; color:#fff; margin-top:4px; height:16px;"></div>
+          <div id="status-text" style="font-size:11px; color:var(--text-muted); margin-top:2px; font-family: 'JetBrains Mono', monospace;">Start Position</div>
+      </div>
+
+      <!-- Tabs -->
+      <div class="log-tabs">
+          <div class="log-tab active" onclick="setTab('moves')">Moves</div>
+          <div class="log-tab" onclick="setTab('explorer')">Explorer</div>
+      </div>
+      
+      <!-- Auto Analysis Progress -->
+      <div class="analysis-status-text" id="analysis-status">
+          <span>Analyzing Game...</span>
+          <span id="analysis-pct">0%</span>
+      </div>
+      <div class="analysis-progress-container" id="analysis-prog-container">
+          <div class="analysis-progress-bar" id="analysis-bar"></div>
+      </div>
+      
+      <!-- Content Area -->
+      <div class="log-container">
+         <div id="moves-view" class="log-content active" style="padding:0;">
+             <div class="moves-grid" id="moves-list"></div>
+         </div>
+         <div id="explorer-view" class="log-content" style="padding:0;">
+             <div style="padding:10px; text-align:center; font-size:11px; opacity:0.5; border-bottom:1px solid rgba(255,255,255,0.05);" id="exp-status">DB Stats</div>
+             <table class="explorer-table" id="exp-table">
+                 <thead><tr><th>Move</th><th>Games</th><th>Performance</th></tr></thead>
+                 <tbody id="exp-list"></tbody>
+             </table>
+         </div>
+      </div>
+
+      <!-- Footer Controls -->
+      <div class="controls">
+        <div class="nav-bar">
+            <button class="nav-btn" id="prevBtn" title="Previous">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+            </button>
+            <button class="nav-btn primary" id="nextBtn" title="Next">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+            </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="../java/arena_brain.js"></script>
+  <script>
+    // --- State ---
+    let gameData = null;
+    let currentMoveIndex = -1;
+    let isAnalyzing = false;
+    let analysisIndex = 0;
+    let analysisResults = {}; 
+    let sanHistory = []; 
+    
+    // --- DOM ---
+    const boardEl = document.getElementById("board");
+    const arrowLayer = document.getElementById("arrow-layer");
+    const movesListEl = document.getElementById("moves-list");
+    const statusText = document.getElementById("status-text");
+    const openingNameEl = document.getElementById("opening-name");
+    const expList = document.getElementById("exp-list");
+    const evalBarFill = document.getElementById("eval-bar-fill");
+    const evalScoreText = document.getElementById("eval-score-text");
+    const analysisStatus = document.getElementById("analysis-status");
+    const analysisProgContainer = document.getElementById("analysis-prog-container");
+    const analysisBar = document.getElementById("analysis-bar");
+    const analysisPct = document.getElementById("analysis-pct");
+
+    function setTab(tab) {
+        document.querySelectorAll('.log-tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.log-content').forEach(c => c.classList.remove('active'));
+        
+        if (tab === 'moves') {
+            document.querySelector('.log-tab:nth-child(1)').classList.add('active');
+            document.getElementById('moves-view').classList.add('active');
+        } else {
+            document.querySelector('.log-tab:nth-child(2)').classList.add('active');
+            document.getElementById('explorer-view').classList.add('active');
+            updateExplorer();
+        }
+    }
+
+    const initialBoard = [
+      ["bR","bN","bB","bQ","bK","bB","bN","bR"],
+      ["bP","bP","bP","bP","bP","bP","bP","bP"],
+      ["","","","","","","",""],
+      ["","","","","","","",""],
+      ["","","","","","","",""],
+      ["","","","","","","",""],
+      ["wP","wP","wP","wP","wP","wP","wP","wP"],
+      ["wR","wN","wB","wQ","wK","wB","wN","wR"]
+    ];
+
+    function cloneBoard(b) { return b.map(row => row.slice()); }
+    function coord(sq) {
+      if(!sq || sq.length < 2) return null;
+      const col = sq.charCodeAt(0) - 97;
+      const row = 8 - parseInt(sq[1]);
+      if (col < 0 || col > 7 || row < 0 || row > 7) return null;
+      return {row, col};
+    }
+    
+    function boardToFen(b, turnColor) {
+      let rows = [];
+      for (let r = 0; r < 8; r++) {
+        let empty = 0;
+        let rowStr = "";
+        for (let c = 0; c < 8; c++) {
+          const piece = b[r][c];
+          if (!piece) { empty++; } 
+          else {
+            if (empty > 0) { rowStr += empty.toString(); empty = 0; }
+            const type = piece[1];
+            const color = piece[0];
+            let ch = type === 'N' ? 'n' : type.toLowerCase();
+            if(color === 'w') ch = ch.toUpperCase();
+            rowStr += ch;
+          }
+        }
+        if (empty > 0) rowStr += empty.toString();
+        rows.push(rowStr);
+      }
+      return `${rows.join("/")} ${turnColor} KQkq - 0 1`; 
+    }
+
+    function getBoardAtMove(index) {
+      let b = cloneBoard(initialBoard);
+      if (!gameData || !gameData.moves) return b;
+      const limit = index === -1 ? -1 : index;
+      for (let i = 0; i <= limit; i++) {
+        const mv = gameData.moves[i];
+        if (!mv) break;
+        const from = coord(mv.from);
+        const to = coord(mv.to);
+        if (!from || !to) continue;
+        const p = b[from.row][from.col];
+        b[from.row][from.col] = "";
+        b[to.row][to.col] = p;
+        if (p && p[1] === 'P' && (to.row === 0 || to.row === 7)) {
+           const color = p[0];
+           b[to.row][to.col] = color + "Q";
+        }
+        if (p && p[1] === 'K' && Math.abs(from.col - to.col) > 1) {
+            if (to.col === 6) { b[to.row][5] = b[to.row][7]; b[to.row][7] = ""; }
+            else if (to.col === 2) { b[to.row][3] = b[to.row][0]; b[to.row][0] = ""; }
+        }
+      }
+      return b;
+    }
+
+    function renderBoard(boardState, lastMove, badgeData) {
+      boardEl.innerHTML = "";
+      for(let r=0; r<8; r++){
+        for(let c=0; c<8; c++){
+          const div = document.createElement("div");
+          div.className = "square " + ((r+c)%2===0 ? "light" : "dark");
+          
+          if(lastMove) {
+            const f = coord(lastMove.from);
+            const t = coord(lastMove.to);
+            if(f && t && ((f.row===r && f.col===c) || (t.row===r && t.col===c))) {
+                div.classList.add("last-move-square");
+                
+                // Attach sticker to the destination square
+                if (t.row === r && t.col === c && badgeData && badgeData.type) {
+                    const sticker = document.createElement("div");
+                    sticker.className = `move-sticker badge-${badgeData.type}`;
+                    sticker.textContent = badgeData.text;
+                    div.appendChild(sticker);
+                }
+            }
+          }
+          
+          const p = boardState[r][c];
+          if(p) {
+            const pDiv = document.createElement("div");
+            pDiv.className = "piece";
+            pDiv.style.backgroundImage = `url(../assets/pieces/${p}.png)`;
+            div.appendChild(pDiv);
+          }
+          boardEl.appendChild(div);
+        }
+      }
+    }
+    
+    function clearArrows() { arrowLayer.innerHTML = ""; }
+    
+    // --- Improved Arrow Logic ---
+    function drawKnightArrow(fromSq, toSq, color, opacity="0.8") {
+        if(!fromSq || !toSq) return;
+        const f = coord(fromSq);
+        const t = coord(toSq);
+        if (!f || !t) return;
+
+        const sqSize = 12.5; const offset = 6.25;
+        
+        const x1 = (f.col * sqSize) + offset; 
+        const y1 = (f.row * sqSize) + offset;
+        const x2 = (t.col * sqSize) + offset; 
+        const y2 = (t.row * sqSize) + offset;
+        
+        if(isNaN(x1) || isNaN(y1) || isNaN(x2) || isNaN(y2)) return;
+        
+        const dx = Math.abs(t.col - f.col);
+        const dy = Math.abs(t.row - f.row);
+        
+        let elbowX, elbowY;
+        if (dy === 2) { elbowX = x1; elbowY = y2; } else { elbowX = x2; elbowY = y1; }
+        
+        const id = `k-${Math.random().toString(36).substr(2,5)}`;
+        
+        // Marker
+        const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
+        const marker = document.createElementNS("http://www.w3.org/2000/svg", "marker");
+        marker.setAttribute("id", id); 
+        marker.setAttribute("viewBox", "0 0 20 20");
+        marker.setAttribute("refX", "16"); 
+        marker.setAttribute("refY", "10");
+        marker.setAttribute("markerWidth", "4"); 
+        marker.setAttribute("markerHeight", "4");
+        marker.setAttribute("orient", "auto-start-reverse");
+        
+        const head = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        head.setAttribute("d", "M 0 0 L 20 10 L 0 20 z"); 
+        head.setAttribute("fill", color);
+        marker.appendChild(head); defs.appendChild(marker); arrowLayer.appendChild(defs);
+        
+        // Path
+        const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        const d = `M ${x1} ${y1} L ${elbowX} ${elbowY} L ${x2} ${y2}`;
+        path.setAttribute("d", d); 
+        path.setAttribute("stroke", color);
+        path.setAttribute("stroke-width", "2.2"); 
+        path.setAttribute("fill", "none");
+        path.setAttribute("stroke-linejoin", "round");
+        path.setAttribute("stroke-linecap", "round");
+        path.setAttribute("marker-end", `url(#${id})`); 
+        path.style.opacity = opacity;
+        arrowLayer.appendChild(path);
+    }
+
+    function drawArrow(fromSq, toSq, color, opacity="0.8") {
+        if(!fromSq || !toSq) return;
+        const f = coord(fromSq); const t = coord(toSq);
+        if (!f || !t) return;
+
+        const distSq = Math.pow(f.col-t.col, 2) + Math.pow(f.row-t.row, 2);
+        
+        if (distSq === 5) { drawKnightArrow(fromSq, toSq, color, opacity); return; }
+        
+        const x1 = (f.col*12.5)+6.25; const y1 = (f.row*12.5)+6.25;
+        const x2 = (t.col*12.5)+6.25; const y2 = (t.row*12.5)+6.25;
+        
+        if(isNaN(x1) || isNaN(y1) || isNaN(x2) || isNaN(y2)) return;
+        
+        const id = `a-${Math.random().toString(36).substr(2,5)}`;
+        const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
+        const marker = document.createElementNS("http://www.w3.org/2000/svg", "marker");
+        marker.setAttribute("id", id); marker.setAttribute("viewBox", "0 0 20 20");
+        marker.setAttribute("refX", "16"); marker.setAttribute("refY", "10");
+        marker.setAttribute("markerWidth", "4"); marker.setAttribute("markerHeight", "4");
+        marker.setAttribute("orient", "auto-start-reverse");
+        const head = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        head.setAttribute("d", "M 0 0 L 20 10 L 0 20 z"); head.setAttribute("fill", color);
+        marker.appendChild(head); defs.appendChild(marker); arrowLayer.appendChild(defs);
+        
+        const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+        line.setAttribute("x1", x1); line.setAttribute("y1", y1);
+        line.setAttribute("x2", x2); line.setAttribute("y2", y2);
+        line.setAttribute("stroke", color); line.setAttribute("stroke-width", "2.2");
+        line.setAttribute("marker-end", `url(#${id})`); line.style.opacity = opacity;
+        arrowLayer.appendChild(line);
+    }
+
+    async function updateUI() {
+      const total = gameData?.moves?.length || 0;
+      document.getElementById("prevBtn").disabled = currentMoveIndex < 0;
+      document.getElementById("nextBtn").disabled = currentMoveIndex >= total - 1;
+      
+      let mv = null;
+      if (currentMoveIndex === -1) {
+        statusText.textContent = "Start Position";
+      } else {
+        mv = gameData.moves[currentMoveIndex];
+        const num = Math.floor(currentMoveIndex/2) + 1;
+        const color = currentMoveIndex%2===0 ? "White" : "Black";
+        const san = sanHistory[currentMoveIndex] || mv.san || mv.from+mv.to;
+        statusText.textContent = `${num}. ${color} ${san}`;
+      }
+
+      const b = getBoardAtMove(currentMoveIndex);
+      const badge = analysisResults[currentMoveIndex] ? analysisResults[currentMoveIndex].badge : null;
+      
+      renderBoard(b, mv, badge);
+      clearArrows();
+      
+      // Analysis Results logic:
+      let data = analysisResults[currentMoveIndex + 1];
+      
+      if (data) {
+          updateEvalBar(data.score);
+          
+          // Only draw best move arrow if the piece actually exists at source
+          if (data.bestMove && data.bestMove.length >= 4 && data.bestMove !== '(none)') {
+              const from = data.bestMove.substring(0,2);
+              const fC = coord(from);
+              if (fC && b[fC.row][fC.col]) {
+                  drawArrow(from, data.bestMove.substring(2,4), "#81b64c", "0.9");
+              }
+          }
+          
+          if (data.secondBest && data.secondBest.length >= 4 && Math.abs(data.score) < 2.0) { 
+              const from2 = data.secondBest.substring(0,2);
+              const fC2 = coord(from2);
+              if (fC2 && b[fC2.row][fC2.col]) {
+                  drawArrow(from2, data.secondBest.substring(2,4), "#e6912c", "0.5");
+              }
+          }
+      } else {
+          if(!isAnalyzing) {
+              const turn = currentMoveIndex % 2 === 0 ? 'b' : 'w'; // After 0 (white), it's black turn
+              const currentFen = boardToFen(b, turn); 
+              window.electronAPI.requestAnalysis(currentFen);
+          }
+      }
+      
+      document.querySelectorAll('.move-cell').forEach((el, i) => {
+         const idx = parseInt(el.dataset.index);
+         el.classList.toggle('active', idx === currentMoveIndex);
+         if(idx === currentMoveIndex) el.scrollIntoView({block: "nearest", behavior: "smooth"});
+      });
+      
+      if (document.getElementById('explorer-view').classList.contains('active')) {
+          updateExplorer();
+      }
+    }
+    
+    function updateEvalBar(score) {
+        if(typeof score === 'number') {
+            const clamped = Math.max(-10, Math.min(10, score));
+            let pct = 50 + (clamped * 5); 
+            pct = Math.max(5, Math.min(95, pct));
+            evalBarFill.style.height = pct + "%";
+            let text = Math.abs(score).toFixed(2);
+            if (Math.abs(score) > 20) text = "M"; 
+            if (score >= 0) {
+                evalScoreText.style.top = "auto"; evalScoreText.style.bottom = "10px"; evalScoreText.style.color = "#333"; 
+                evalScoreText.innerText = score > 0 ? `+${text}` : "0.00";
+            } else {
+                evalScoreText.style.top = "10px"; evalScoreText.style.bottom = "auto"; evalScoreText.style.color = "#ccc";
+                evalScoreText.innerText = score === 0 ? "0.00" : `-${text}`;
+            }
+        }
+    }
+    
+    async function updateExplorer() {
+        expList.innerHTML = "<tr><td colspan='3' style='text-align:center;opacity:0.5'>Querying DB...</td></tr>";
+        
+        const movesSoFar = [];
+        
+        if(gameData && gameData.moves) {
+            // Reconstruct board state walk to ensure SAN generation is accurate
+            // Optimization: could cache board states, but this is acceptable for sidebar
+            let tempBoard = cloneBoard(initialBoard);
+            
+            for(let i=0; i<=currentMoveIndex; i++) {
+                let moveData = gameData.moves[i];
+                let san = sanHistory[i] || moveData.san;
+                
+                // Generate SAN if missing
+                if (!san) {
+                    san = simpleUciToSan(tempBoard, moveData.from, moveData.to);
+                }
+                
+                movesSoFar.push(san);
+                
+                // Apply move to tempBoard for next iteration
+                const from = coord(moveData.from);
+                const to = coord(moveData.to);
+                if(from && to) {
+                    const p = tempBoard[from.row][from.col];
+                    tempBoard[from.row][from.col] = "";
+                    tempBoard[to.row][to.col] = p;
+                }
+            }
+        }
+        
+        const result = await window.electronAPI.dbGetStats(movesSoFar);
+        expList.innerHTML = "";
+        
+        if (result.opening) openingNameEl.textContent = result.opening;
+        
+        if (!result.found || result.moves.length === 0) {
+            expList.innerHTML = "<tr><td colspan='3' style='text-align:center;opacity:0.5'>No games found</td></tr>";
+            return;
+        }
+        
+        document.getElementById('exp-status').textContent = `${result.total} games in Database`;
+        
+        result.moves.slice(0, 20).forEach(m => {
+            const s = m.stats;
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td><div class="exp-move">${m.san}</div></td>
+                <td><div class="exp-count">${s.total}</div></td>
+                <td>
+                    <div class="exp-perf" title="W:${s.whitePct.toFixed(0)}% D:${s.drawPct.toFixed(0)}% B:${s.blackPct.toFixed(0)}%">
+                        <div class="bar-w" style="width:${s.whitePct}%"></div>
+                        <div class="bar-d" style="width:${s.drawPct}%"></div>
+                        <div class="bar-b" style="width:${s.blackPct}%"></div>
+                    </div>
+                </td>
+            `;
+            row.onclick = () => {
+               document.querySelectorAll('#exp-list tr').forEach(r => r.style.background='transparent');
+               row.style.background='rgba(255,255,255,0.1)';
+            };
+            expList.appendChild(row);
+        });
+    }
+
+    function renderList() {
+      movesListEl.innerHTML = `<div class="grid-header">#</div><div class="grid-header">White</div><div class="grid-header">Black</div>`;
+      if(!gameData || !gameData.moves) return;
+
+      for (let i = 0; i < gameData.moves.length; i+=2) {
+         const num = (i/2) + 1;
+         const wMove = gameData.moves[i];
+         const bMove = gameData.moves[i+1];
+         
+         const divNum = document.createElement("div");
+         divNum.className = "move-num";
+         divNum.textContent = num + ".";
+         movesListEl.appendChild(divNum);
+         
+         const wCell = document.createElement("div");
+         wCell.className = "move-cell";
+         wCell.id = `mv-cell-${i}`;
+         wCell.dataset.index = i;
+         wCell.innerHTML = `<span>${sanHistory[i] || wMove.san || wMove.from+'-'+wMove.to}</span>`;
+         wCell.onclick = () => { currentMoveIndex = i; updateUI(); };
+         movesListEl.appendChild(wCell);
+         
+         const bCell = document.createElement("div");
+         bCell.className = "move-cell";
+         if (bMove) {
+             bCell.id = `mv-cell-${i+1}`;
+             bCell.dataset.index = i+1;
+             bCell.innerHTML = `<span>${sanHistory[i+1] || bMove.san || bMove.from+'-'+bMove.to}</span>`;
+             bCell.onclick = () => { currentMoveIndex = i+1; updateUI(); };
+         }
+         movesListEl.appendChild(bCell);
+      }
+    }
+    
+    function simpleUciToSan(board, from, to) {
+        const f = coord(from); const t = coord(to);
+        if(!f || !t) return from+to;
+        
+        const p = board[f.row][f.col];
+        if (!p) return from+to; // Fallback
+        
+        const type = p[1];
+        const isCap = board[t.row][t.col] !== "";
+        
+        // Pawn
+        if (type === 'P') {
+            if (isCap) return from[0] + "x" + to; // exd5
+            return to; // e4
+        }
+        
+        // King / Castling
+        if (type === 'K') {
+            if (from === 'e1' && to === 'g1') return 'O-O';
+            if (from === 'e1' && to === 'c1') return 'O-O-O';
+            if (from === 'e8' && to === 'g8') return 'O-O';
+            if (from === 'e8' && to === 'c8') return 'O-O-O';
+        }
+        
+        // Pieces
+        return type + (isCap ? 'x' : '') + to;
+    }
+    
+    function startAutoAnalysis() {
+        if(!gameData || !gameData.moves) return;
+        isAnalyzing = true;
+        analysisIndex = 0;
+        analysisResults = {};
+        sanHistory = new Array(gameData.moves.length);
+        
+        analysisStatus.style.display = "flex";
+        analysisProgContainer.style.display = "block";
+        analysisBar.style.width = "0%";
+        
+        analyzeNextMove();
+    }
+    
+    async function analyzeNextMove() {
+        if (!isAnalyzing) return;
+        if (analysisIndex >= gameData.moves.length) {
+            finishAnalysis();
+            return;
+        }
+        
+        const pct = Math.round((analysisIndex / gameData.moves.length) * 100);
+        analysisBar.style.width = pct + "%";
+        analysisPct.textContent = pct + "%";
+        
+        const boardBefore = getBoardAtMove(analysisIndex - 1);
+        const moveData = gameData.moves[analysisIndex];
+        
+        let san = moveData.san;
+        if (!san || san.length === 4) san = simpleUciToSan(boardBefore, moveData.from, moveData.to);
+        sanHistory[analysisIndex] = san;
+        
+        // Prepare movesSoFar for Book Check
+        const movesSoFar = [];
+        for(let k=0; k<=analysisIndex; k++) movesSoFar.push(sanHistory[k]);
+        
+        // Check if THIS move was a book move
+        let isBook = false;
+        const res = await window.electronAPI.dbGetStats(movesSoFar);
+        if (res.found) isBook = true;
+        
+        const turn = analysisIndex % 2 === 0 ? 'w' : 'b';
+        const fen = boardToFen(boardBefore, turn);
+        
+        // Request analysis for position BEFORE move (to judge quality)
+        window.electronAPI.requestAnalysis(fen);
+        
+        if(!analysisResults[analysisIndex]) analysisResults[analysisIndex] = {};
+        analysisResults[analysisIndex].isBook = isBook;
+    }
+    
+    function finishAnalysis() {
+        isAnalyzing = false;
+        analysisBar.style.width = "100%";
+        renderList(); 
+        setTimeout(() => { analysisStatus.style.display = "none"; analysisProgContainer.style.display = "none"; }, 2000);
+    }
+    
+    // Accuracy Logic
+    function determineMoveBadge(playedMoveUci, bestLine, allLines, isBook) {
+        if (isBook) return { cls: "anno-book", text: "📖", type: "book" }; 
+        if (!bestLine) return null;
+        
+        if (playedMoveUci === bestLine.bestMove) return { cls: "anno-best", text: "★", type: "best" };
+        
+        const foundLine = allLines.find(l => l.bestMove === playedMoveUci);
+        
+        if (foundLine) {
+            const diff = Math.abs(bestLine.score - foundLine.score);
+            if (diff < 0.15) return { cls: "anno-brilliant", text: "!!", type: "brilliant" }; 
+            if (diff < 0.25) return { cls: "anno-great", text: "!", type: "great" }; 
+            if (diff < 0.6) return { cls: "anno-good", text: "✓", type: "good" }; 
+            if (diff < 1.2) return { cls: "anno-inaccuracy", text: "?!", type: "inaccuracy" };
+            if (diff < 2.5) return { cls: "anno-mistake", text: "?", type: "mistake" };
+            return { cls: "anno-blunder", text: "??", type: "blunder" };
+        }
+        
+        // Move not in top lines
+        return { cls: "anno-mistake", text: "?", type: "mistake" }; 
+    }
+
+    document.getElementById("prevBtn").onclick = () => { if(currentMoveIndex >= -1) currentMoveIndex--; updateUI(); }
+    document.getElementById("nextBtn").onclick = () => { if(currentMoveIndex < (gameData?.moves?.length||0)-1) currentMoveIndex++; updateUI(); }
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowLeft') document.getElementById('prevBtn').click();
+        if (e.key === 'ArrowRight') document.getElementById('nextBtn').click();
+    });
+
+    window.electronAPI.onReviewGame((data) => {
+      gameData = data; 
+      renderBoard(cloneBoard(initialBoard), null);
+      clearArrows();
+      analysisResults = {}; 
+      sanHistory = [];
+      isAnalyzing = false;
+      renderList(); 
+      currentMoveIndex = -1; 
+      updateUI();
+      setTimeout(startAutoAnalysis, 1000);
+    });
+    
+    window.electronAPI.onAnalysisResult((results) => {
+        if (!results || !results.lines) return;
+        if (isAnalyzing) {
+            const bestLine = results.lines[0];
+            const secondLine = results.lines[1];
+            const currentRes = analysisResults[analysisIndex] || {};
+            
+            const playedMoveData = gameData.moves[analysisIndex];
+            const playedUci = playedMoveData.from + playedMoveData.to;
+            
+            const badge = determineMoveBadge(playedUci, bestLine, results.lines, currentRes.isBook);
+            
+            analysisResults[analysisIndex] = { 
+                ...currentRes, 
+                score: bestLine ? bestLine.score : 0, 
+                bestMove: bestLine ? bestLine.bestMove : null, 
+                secondBest: secondLine ? secondLine.bestMove : null,
+                badge: badge 
+            };
+            
+            const cell = document.getElementById(`mv-cell-${analysisIndex}`);
+            if (cell && badge) {
+                const old = cell.querySelector('.eval-badge'); if(old) old.remove();
+                const span = document.createElement("span");
+                span.className = `eval-badge ${badge.cls}`; span.textContent = badge.text;
+                cell.appendChild(span);
+            }
+            analysisIndex++;
+            analyzeNextMove();
+            return; 
+        }
+        // Manual Review Mode
+        clearArrows();
+        const best = results.lines[0];
+        const second = results.lines[1];
+        const b = getBoardAtMove(currentMoveIndex);
+        
+        if(best && best.bestMove && best.bestMove.length >= 4 && best.bestMove !== '(none)') {
+            const f = coord(best.bestMove.substring(0,2));
+            if(f && b[f.row][f.col]) {
+                drawArrow(best.bestMove.substring(0,2), best.bestMove.substring(2,4), "#81b64c", "0.9");
+            }
+            updateEvalBar(best.score);
+        }
+        if(second && second.bestMove && second.bestMove.length >= 4 && Math.abs(best.score - second.score) < 1.5) {
+            const f2 = coord(second.bestMove.substring(0,2));
+            if(f2 && b[f2.row][f2.col]) {
+               drawArrow(second.bestMove.substring(0,2), second.bestMove.substring(2,4), "#e6912c", "0.5");
+            }
+        }
+    });
+    
+    (async () => {
+        const prefs = await window.electronAPI?.getPreferences();
+        if (prefs?.boardTheme) document.documentElement.setAttribute('data-theme', prefs.boardTheme);
+        renderBoard(cloneBoard(initialBoard), null);
+    })();
+  </script>
+</body>
+</html>

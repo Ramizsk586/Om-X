@@ -1,0 +1,144 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chess Master</title>
+    <link rel="stylesheet" href="../css/styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Merriweather:wght@300;400;700;900&display=swap" rel="stylesheet">
+</head>
+<body>
+    
+    <!-- Sidebar -->
+    <div class="sidebar">
+        <div class="nav-icon active" title="Board" onclick="switchPanel('game')">
+            <span>♟</span>
+        </div>
+        <div class="nav-icon" title="Coach Config" onclick="switchPanel('ai')">
+            <span>🧠</span>
+        </div>
+        <div class="nav-icon" title="Achievements" onclick="switchPanel('achievements')">
+            <span>🏆</span>
+        </div>
+        <div class="nav-icon" title="Settings" onclick="switchPanel('settings')">
+            <span>⚙</span>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="app-container">
+        
+        <!-- PANEL: GAME -->
+        <div id="panel-game" class="panel active-panel">
+            <!-- Left Panel: The Coach -->
+            <div class="coach-panel">
+                <div class="coach-header">
+                    <div class="coach-portrait">
+                        <!-- Updated image filename to remove space -->
+                        <img id="coach-img" src="../assets/Dr.Yun.png" onerror="this.src='../assets/pieces/wK.png'" alt="Coach">
+                        <div id="coach-status" class="status-dot ready"></div>
+                    </div>
+                    <div class="coach-controls">
+                        <button class="ctrl-btn" id="btn-voice" title="Toggle Voice" onclick="toggleVoice()">🔊</button>
+                        <button class="ctrl-btn" id="btn-spar" title="Spar Mode (Play vs AI)" onclick="toggleSpar()">⚔</button>
+                        <button class="ctrl-btn" title="Undo" onclick="undoMove()">↶</button>
+                        <button class="ctrl-btn" title="Restart" onclick="restartGame()">↻</button>
+                    </div>
+                </div>
+                
+                <div style="text-align:center; margin-top:-10px; margin-bottom:5px;">
+                    <h3 id="coach-name" style="margin:0; font-size:18px; color:var(--wood-dark);">Dr. Yun</h3>
+                </div>
+
+                <div class="dialogue-box">
+                    <div class="bubble coach-bubble">
+                        <p id="coach-text"></p>
+                    </div>
+                    
+                    <div class="response-area">
+                        <button class="response-btn" onclick="coachAck()">Ok, got it.</button>
+                        <button class="response-btn" id="btn-show-me">Show me.</button>
+                    </div>
+                </div>
+
+                <div class="concept-card" id="concept-card">
+                    <h3>Developing</h3>
+                    <p>Moving a piece from its original square to make it more <span class="highlight">active</span>.</p>
+                </div>
+            </div>
+
+            <!-- Right Panel: The Board -->
+            <div class="board-area">
+                <div class="board-frame">
+                    <div class="board-grid" id="board">
+                        <!-- JS Generated -->
+                    </div>
+                    <svg id="overlay-svg" class="overlay-svg" viewBox="0 0 100 100"></svg>
+                    
+                    <div class="coords coords-left">
+                        <div>8</div><div>7</div><div>6</div><div>5</div><div>4</div><div>3</div><div>2</div><div>1</div>
+                    </div>
+                    <div class="coords coords-bottom">
+                        <div>a</div><div>b</div><div>c</div><div>d</div><div>e</div><div>f</div><div>g</div><div>h</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- PANEL: SETTINGS (Loaded Dynamically) -->
+        <div id="panel-settings" class="panel"></div>
+
+        <!-- PANEL: AI CONFIG (Loaded Dynamically) -->
+        <div id="panel-ai" class="panel"></div>
+
+        <!-- PANEL: ACHIEVEMENTS (Loaded Dynamically) -->
+        <div id="panel-achievements" class="panel"></div>
+
+        <!-- ACHIEVEMENT NOTIFICATION TOAST -->
+        <div id="achievement-toast" class="achievement-toast"></div>
+
+        <!-- ACHIEVEMENT DETAIL MODAL -->
+        <div id="ach-detail-overlay" class="ach-modal-overlay" onclick="closeAchievementDetail(event)">
+            <div class="ach-modal-card" id="ach-modal-card">
+                <div class="ach-modal-header" id="ach-detail-header">
+                    <button class="ach-modal-close" onclick="closeAchievementDetail(event)">×</button>
+                    <div class="ach-modal-icon" id="ach-detail-icon">🏆</div>
+                </div>
+                <div class="ach-modal-content">
+                    <div class="ach-modal-title" id="ach-detail-title">Achievement Title</div>
+                    <div class="ach-modal-desc" id="ach-detail-desc">Description of how to unlock this achievement goes here.</div>
+                    <div id="ach-detail-guide" style="margin-top:15px; font-size:13px; color:#5c4033; background:#fffbf0; padding:10px; border-radius:6px; border:1px solid #e6dfcc; display:none;"></div>
+                    <div id="ach-detail-status" class="ach-status-badge locked" style="margin-top:15px;">Locked</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- STORYLINE OVERLAY -->
+        <div id="story-overlay" class="story-overlay">
+            <div class="story-card">
+                <div class="story-header">
+                    <div class="story-portrait-frame">
+                        <img id="story-speaker-img" src="../assets/Dr.Yun.png" onerror="this.src='../assets/pieces/wK.png'">
+                    </div>
+                    <div class="story-meta">
+                        <h2 id="story-title">Dr. Yun</h2>
+                        <span id="story-subtitle">The Mentor</span>
+                    </div>
+                </div>
+                <div class="story-body">
+                    <p id="story-message">Message text...</p>
+                </div>
+                <div class="story-actions">
+                    <button id="story-btn-accept" class="response-btn">Accept</button>
+                    <button id="story-btn-decline" class="response-btn" style="background:transparent; border:1px solid #ccc;">Decline</button>
+                </div>
+            </div>
+        </div>
+
+    </div>
+    
+    <script src="../java/chess_logic.js"></script>
+    <script src="../java/renderer.js"></script>
+</body>
+</html>

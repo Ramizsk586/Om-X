@@ -1,0 +1,1212 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Omni AI Settings</title>
+  <link rel="stylesheet" href="../../css/base/reset.css">
+  <link rel="stylesheet" href="../../css/base/variables.css">
+  <link rel="stylesheet" href="../../css/base/base.css">
+  <link rel="stylesheet" href="../../css/pages/ai-settings.css">
+  <style>
+    .color-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    .color-input-group { 
+      background: rgba(0,0,0,0.2); 
+      padding: 16px; 
+      border-radius: 12px; 
+      border: 1px solid rgba(255,255,255,0.05);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .color-picker-wrapper { display: flex; align-items: center; gap: 12px; }
+    input[type="color"] {
+      width: 32px; height: 32px; border: none; background: none; cursor: pointer;
+    }
+    input[type="color"]::-webkit-color-swatch { border-radius: 6px; border: 1px solid rgba(255,255,255,0.2); }
+    
+    /* Core Animations */
+    @keyframes fadeIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
+    }
+    @keyframes slideDown {
+        from { opacity: 0; transform: translateY(-10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes shimmer {
+        0% { transform: translateX(-100%); }
+        100% { transform: translateX(100%); }
+    }
+    @keyframes pulseGlow {
+        0%, 100% { box-shadow: 0 0 20px rgba(99,102,241,0.3); }
+        50% { box-shadow: 0 0 30px rgba(99,102,241,0.5); }
+    }
+    
+    /* Global Verification Styles */
+    .verify-row { display: flex; gap: 10px; align-items: flex-end; }
+    .verify-row .form-group { flex: 1; margin-bottom: 0; }
+    
+    .btn-verify-action { 
+      height: 45px; width: 120px; font-size: 11px; font-weight: 800; 
+      background: rgba(255,255,255,0.05); color: #fff; border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 10px; cursor: pointer; transition: all 0.2s;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .btn-verify-action:hover:not(:disabled) { background: rgba(255,255,255,0.1); border-color: #fff; }
+    .btn-verify-action.success { background: #10b981; border-color: #10b981; color: #fff; }
+    .btn-verify-action.fail { background: #ef4444; border-color: #ef4444; color: #fff; }
+    .btn-verify-action:disabled { opacity: 0.3; cursor: not-allowed; }
+
+    /* Compact Profile Cards */
+    .profiles-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; margin-top: 24px; }
+    .profile-card {
+      background: #18181b; border: 1px solid #27272a; border-radius: 12px; padding: 16px;
+      cursor: pointer; transition: all 0.2s; position: relative; overflow: hidden;
+    }
+    .profile-card:hover { border-color: var(--accent-color); transform: translateY(-2px); }
+    .profile-card.active { border-color: #fff; background: rgba(255,255,255,0.02); box-shadow: 0 0 15px rgba(255,255,255,0.05); }
+    .profile-card.active::before {
+      content: 'DEFAULT'; position: absolute; top: 0; right: 0; background: var(--accent-color);
+      color: #fff; font-size: 8px; font-weight: 900; padding: 2px 6px; border-radius: 0 0 0 8px;
+    }
+    .p-provider { font-size: 9px; font-weight: 900; color: #71717a; text-transform: uppercase; letter-spacing: 1px; }
+    .p-model { font-size: 13px; font-weight: 700; color: #fff; margin-top: 4px; display: block; overflow: hidden; text-overflow: ellipsis; }
+    .btn-delete-profile {
+      position: absolute; bottom: 8px; right: 8px; opacity: 0; transition: opacity 0.2s;
+      color: #ef4444; font-size: 14px; background: none; border: none; cursor: pointer;
+    }
+    .profile-card:hover .btn-delete-profile { opacity: 1; }
+
+    .ollama-status { font-size: 10px; font-weight: 800; margin-top: 8px; display: block; }
+    .status-online { color: #10b981; }
+    .status-offline { color: #ef4444; }
+
+    /* SerpAPI Quota Card */
+    .quota-badge {
+        margin-top: 12px;
+        padding: 14px;
+        border-radius: 14px;
+        border: 1px solid rgba(124, 77, 255, 0.24);
+        background:
+          linear-gradient(180deg, rgba(124, 77, 255, 0.08), rgba(124, 77, 255, 0.03)),
+          rgba(255,255,255,0.015);
+    }
+    .serp-quota-summary {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 10px;
+        padding-bottom: 10px;
+        border-bottom: 1px solid rgba(255,255,255,0.06);
+    }
+    .serp-quota-summary #serp-quota-count {
+        font-size: 18px;
+        font-weight: 900;
+        color: #f5f3ff;
+        letter-spacing: 0.4px;
+    }
+    .serp-quota-summary .quota-caption {
+        font-size: 10px;
+        font-weight: 800;
+        letter-spacing: 1px;
+        color: rgba(255,255,255,0.55);
+        text-transform: uppercase;
+        white-space: nowrap;
+    }
+    .serp-quota-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+    }
+    .serp-quota-item {
+        padding: 10px 12px;
+        border-radius: 10px;
+        border: 1px solid rgba(255,255,255,0.05);
+        background: rgba(0,0,0,0.18);
+    }
+    .serp-quota-item-label {
+        display: block;
+        font-size: 9px;
+        font-weight: 800;
+        letter-spacing: 0.9px;
+        text-transform: uppercase;
+        color: rgba(255,255,255,0.5);
+        margin-bottom: 5px;
+    }
+    .serp-quota-item-value {
+        display: block;
+        font-size: 12px;
+        font-weight: 700;
+        color: #fff;
+        overflow-wrap: anywhere;
+    }
+    .serp-quota-item-value.mono {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 11px;
+    }
+    @media (max-width: 640px) {
+        .serp-quota-grid { grid-template-columns: 1fr; }
+        .serp-quota-summary {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 4px;
+        }
+    }
+
+    /* New Section Styling */
+    .link-config-block {
+      margin-top: 24px;
+      padding-top: 24px;
+      border-top: 1px solid #27272a;
+    }
+
+    /* Scraper & Viewer Overlays */
+    .panel-cap { position: relative; display: flex; align-items: center; justify-content: space-between; }
+    .header-action-icon { 
+        background: transparent; border: none; color: #71717a; cursor: pointer; 
+        padding: 4px; border-radius: 6px; display: flex; align-items: center; justify-content: center;
+        transition: all 0.2s;
+    }
+    .header-action-icon:hover { color: #fff; background: rgba(255,255,255,0.05); }
+
+    /* ==========================================
+       NEURAL SCRAPER SANDBOX - Enhanced Theme
+       ========================================== */
+    
+    .scraper-overlay {
+        position: fixed; inset: 0; 
+        background: #0a0a0a; 
+        z-index: 10000;
+        display: flex; flex-direction: column; 
+        padding: 32px 5%; 
+        overflow-y: auto;
+    }
+    
+    .scraper-header { 
+        display: flex; justify-content: space-between; align-items: center; 
+        margin-bottom: 24px; 
+        padding: 20px 24px;
+        background: #111;
+        border: 1px solid #222;
+        border-radius: 12px;
+    }
+    
+    .scraper-header h1 { 
+        margin: 0; font-size: 24px; font-weight: 700; color: #fff; 
+        letter-spacing: -0.5px;
+    }
+    
+    .scraper-header p { 
+        margin: 4px 0 0 0; font-size: 13px; color: #666;
+        font-weight: 400;
+    }
+    
+    .scraper-controls-wrapper {
+        display: flex; flex-direction: column; gap: 16px; margin-bottom: 24px;
+        padding: 20px; 
+        background: #111; 
+        border: 1px solid #222; 
+        border-radius: 12px;
+    }
+    
+    .scraper-input-row { 
+        display: flex; gap: 12px; 
+        background: #1a1a1a; 
+        padding: 12px 16px; 
+        border-radius: 8px; 
+        border: 1px solid #333; 
+        align-items: center;
+        transition: border-color 0.2s ease;
+    }
+    
+    .scraper-input-row:focus-within {
+        border-color: #444;
+    }
+    
+    .scraper-input-row input { 
+        flex: 1; 
+        background: transparent; 
+        border: none; 
+        color: #fff; 
+        padding: 8px 12px; 
+        outline: none; 
+        font-size: 14px;
+        font-weight: 400;
+    }
+    
+    .scraper-input-row input::placeholder { 
+        color: #555; 
+    }
+    
+    .scraper-input-row select { 
+        background: rgba(124, 77, 255, 0.1); 
+        border: 1px solid rgba(124, 77, 255, 0.25); 
+        color: #fff; 
+        font-weight: 700; 
+        padding: 10px 14px; 
+        outline: none; 
+        border-radius: 12px; 
+        cursor: pointer; 
+        transition: all 0.3s ease;
+    }
+    
+    .scraper-input-row select:hover {
+        background: rgba(124, 77, 255, 0.2);
+        border-color: rgba(124, 77, 255, 0.4);
+    }
+    
+    .scraper-mode-toggle {
+        display: flex; gap: 8px; 
+        background: #1a1a1a; 
+        padding: 6px; 
+        border-radius: 8px; 
+        width: fit-content; 
+        border: 1px solid #333;
+    }
+    
+    .mode-btn {
+        padding: 8px 16px; 
+        border: none; 
+        background: transparent; 
+        color: #666; 
+        font-size: 12px; 
+        font-weight: 500; 
+        cursor: pointer; 
+        border-radius: 6px; 
+        transition: all 0.2s ease;
+        display: flex; 
+        align-items: center; 
+        gap: 6px;
+    }
+    
+    .mode-btn:hover {
+        color: #999;
+        background: #252525;
+    }
+    
+    .mode-btn.active { 
+        background: #333;
+        color: #fff; 
+    }
+    
+    #btn-start-scrape {
+        background: #333 !important;
+        border: 1px solid #444 !important;
+        color: #fff !important;
+        font-weight: 600 !important;
+        padding: 10px 24px !important;
+        border-radius: 6px !important;
+        font-size: 12px !important;
+        transition: all 0.2s ease !important;
+        cursor: pointer;
+    }
+    
+    #btn-start-scrape:hover {
+        background: #444 !important;
+        border-color: #555 !important;
+    }
+    
+    #btn-start-scrape:active {
+        background: #222 !important;
+    }
+    
+    #btn-start-scrape:disabled {
+        opacity: 0.4 !important;
+        cursor: not-allowed !important;
+    }
+    
+    .scraper-results { 
+        display: grid; 
+        grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); 
+        gap: 16px; 
+        margin-top: 24px; 
+    }
+
+    .scraper-workflow {
+        grid-column: 1 / -1;
+        background: #0f0f0f;
+        border: 1px solid #262626;
+        border-radius: 12px;
+        padding: 16px 18px;
+    }
+
+    .workflow-title {
+        color: #d4d4d8;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+        margin-bottom: 10px;
+    }
+
+    .workflow-progress-track {
+        height: 8px;
+        border-radius: 999px;
+        background: #1b1b1b;
+        overflow: hidden;
+        margin-bottom: 14px;
+        border: 1px solid #2a2a2a;
+    }
+
+    .workflow-progress-bar {
+        height: 100%;
+        width: 0%;
+        background: linear-gradient(90deg, #1d4ed8, #22d3ee);
+        transition: width 280ms ease;
+    }
+
+    .workflow-steps {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 10px;
+    }
+
+    .workflow-step {
+        border: 1px solid #2a2a2a;
+        border-radius: 10px;
+        padding: 10px 12px;
+        background: #121212;
+        color: #8f8f95;
+        font-size: 12px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .workflow-step::before {
+        content: '';
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        background: #52525b;
+        flex: 0 0 auto;
+    }
+
+    .workflow-step.active {
+        border-color: #3b82f6;
+        color: #bfdbfe;
+        animation: workflowPulse 1.2s infinite;
+    }
+
+    .workflow-step.active::before {
+        background: #3b82f6;
+    }
+
+    .workflow-step.done {
+        border-color: #14532d;
+        color: #bbf7d0;
+    }
+
+    .workflow-step.done::before {
+        background: #22c55e;
+    }
+
+    .workflow-step.error {
+        border-color: #7f1d1d;
+        color: #fecaca;
+    }
+
+    .workflow-step.error::before {
+        background: #ef4444;
+    }
+
+    .report-card {
+        grid-column: 1 / -1;
+        background: #111;
+        border: 1px solid #252525;
+        border-radius: 12px;
+        padding: 16px;
+    }
+
+    .report-card h3 {
+        margin: 0 0 10px 0;
+        color: #f4f4f5;
+        font-size: 15px;
+        letter-spacing: .2px;
+    }
+
+    .report-card p {
+        margin: 0;
+        color: #a1a1aa;
+        font-size: 13px;
+        line-height: 1.55;
+    }
+
+    .report-links {
+        grid-column: 1 / -1;
+        background: #101010;
+        border: 1px solid #232323;
+        border-radius: 12px;
+        padding: 14px;
+        display: grid;
+        gap: 8px;
+    }
+
+    .report-link-row {
+        padding: 10px 12px;
+        border-radius: 8px;
+        border: 1px solid #232323;
+        background: #141414;
+        cursor: pointer;
+    }
+
+    .report-link-row:hover {
+        border-color: #334155;
+    }
+
+    .report-link-title {
+        font-size: 12px;
+        color: #e4e4e7;
+        margin-bottom: 4px;
+    }
+
+    .report-link-url {
+        font-size: 11px;
+        color: #60a5fa;
+        word-break: break-word;
+    }
+
+    .topic-pills {
+        grid-column: 1 / -1;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    .topic-pill {
+        font-size: 11px;
+        color: #cbd5e1;
+        border: 1px solid #334155;
+        padding: 6px 10px;
+        border-radius: 999px;
+        background: #0f172a;
+    }
+
+    @keyframes workflowPulse {
+        0% { box-shadow: 0 0 0 0 rgba(59,130,246,.35); }
+        70% { box-shadow: 0 0 0 8px rgba(59,130,246,0); }
+        100% { box-shadow: 0 0 0 0 rgba(59,130,246,0); }
+    }
+    
+    .scraper-img-card { 
+        aspect-ratio: 3/4; 
+        border-radius: 8px; 
+        overflow: hidden; 
+        background: #111; 
+        border: 1px solid #222; 
+        cursor: pointer; 
+        position: relative;
+        transition: border-color 0.2s ease;
+        display: flex; 
+        flex-direction: column;
+    }
+    
+    .scraper-img-card:hover { 
+        border-color: #333;
+    }
+    
+    .scraper-img-card img { 
+        width: 100%; height: 70%; object-fit: cover; 
+        transition: transform 0.3s ease;
+    }
+    
+    .scraper-img-card:hover img { transform: scale(1.05); }
+    
+    .scraper-card-meta {
+        flex: 1; 
+        display: flex; 
+        flex-direction: column; 
+        padding: 12px;
+        background: #111;
+        border-top: 1px solid #222;
+    }
+    
+    .scraper-card-type {
+        font-size: 10px; 
+        font-weight: 600; 
+        color: #666; 
+        text-transform: uppercase; 
+        letter-spacing: 1px; 
+        margin-bottom: 4px;
+    }
+    
+    .scraper-dl-overlay { 
+        position: absolute; inset: 0; 
+        background: rgba(0, 0, 0, 0.9); 
+        opacity: 0; 
+        transition: opacity 0.2s ease; 
+        display: flex; 
+        align-items: center; 
+        justify-content: center; 
+        z-index: 10;
+    }
+    
+    .scraper-img-card:hover .scraper-dl-overlay { opacity: 1; }
+    
+    .overlay-actions {
+        display: flex; 
+        flex-direction: column; 
+        gap: 8px; 
+        width: 80%;
+    }
+    
+    .overlay-actions button {
+        font-size: 11px; 
+        padding: 10px 14px; 
+        border-radius: 6px; 
+        border: 1px solid #444;
+        font-weight: 500; 
+        cursor: pointer; 
+        transition: all 0.2s ease; 
+        background: #222;
+        color: #ccc;
+    }
+    
+    .overlay-actions button:hover {
+        background: #333;
+        border-color: #555;
+        color: #fff;
+    }
+    
+    .scraper-video-card {
+        background: #111;
+        border: 1px solid #222;
+    }
+    
+    .scraper-video-card:hover {
+        border-color: #333;
+    }
+    
+    .video-thumbnail {
+        position: relative; 
+        width: 100%; height: 70%;
+        background: #0a0a0a; 
+        display: flex; 
+        align-items: center; 
+        justify-content: center;
+    }
+    
+    .video-thumbnail img {
+        width: 100%; height: 100%; object-fit: cover;
+    }
+    
+    .video-play-badge {
+        position: absolute; 
+        width: 48px; height: 48px; 
+        background: rgba(255, 255, 255, 0.9); 
+        border-radius: 50%;
+        display: flex; 
+        align-items: center; 
+        justify-content: center;
+        color: #000; 
+        font-size: 16px; 
+        font-weight: 600;
+    }
+    
+    .scraper-video-card:hover .video-play-badge {
+        transform: scale(1.1);
+    }
+    
+    .scraper-results-header {
+        display: flex; justify-content: space-between; align-items: center; 
+        margin-top: 24px; margin-bottom: 16px;
+        padding: 14px 20px; 
+        background: #111;
+        border: 1px solid #222; 
+        border-radius: 8px;
+    }
+    
+    .results-info {
+        font-size: 12px; 
+        font-weight: 600; 
+        color: #888;
+        text-transform: uppercase; 
+        letter-spacing: 1px;
+    }
+    
+    .btn-batch-action {
+        background: #222;
+        color: #aaa; 
+        border: 1px solid #333;
+        padding: 8px 16px; 
+        border-radius: 6px; 
+        font-size: 11px; 
+        font-weight: 500; 
+        cursor: pointer; 
+        transition: all 0.2s ease;
+    }
+    
+    .btn-batch-action:hover { 
+        background: #333;
+        border-color: #444;
+        color: #fff;
+    }
+    
+    .btn-verify-action {
+        background: #222;
+        border: 1px solid #333;
+        color: #aaa;
+        padding: 10px 20px;
+        border-radius: 6px;
+        font-size: 11px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+    
+    .btn-verify-action:hover {
+        background: #333;
+        border-color: #444;
+        color: #fff;
+    }
+
+    .viewer-overlay {
+        position: fixed; inset: 0; 
+        background: rgba(0, 0, 0, 0.95); 
+        z-index: 20000;
+        display: flex; 
+        align-items: center; 
+        justify-content: center; 
+        cursor: pointer;
+    }
+    
+    .viewer-content { 
+        position: relative; 
+        max-width: 90%; 
+        max-height: 90%; 
+        border-radius: 4px;
+        overflow: hidden;
+        cursor: default;
+    }
+    
+    .viewer-content img { 
+        max-width: 100%; 
+        max-height: 90vh; 
+        border-radius: 4px; 
+        display: block;
+    }
+    
+    .btn-close-viewer { 
+        position: absolute; 
+        top: -40px; right: 0; 
+        color: #888; 
+        font-size: 24px; 
+        cursor: pointer;
+        width: 32px;
+        height: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 4px;
+        background: transparent;
+        transition: all 0.2s ease;
+    }
+    
+    .btn-close-viewer:hover {
+        color: #fff;
+        background: #333;
+    }
+
+    /* Enhanced Animations */
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(20px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    
+    @keyframes slideIn {
+        from { opacity: 0; transform: translateX(-20px); }
+        to { opacity: 1; transform: translateX(0); }
+    }
+  </style>
+</head>
+<body class="theme-dark">
+  <div class="settings-container">
+    <header class="settings-header">
+      <div class="brand-section">
+        <div class="ai-logo">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M21 16.5C21 16.88 20.79 17.21 20.47 17.38L12.57 21.82C12.41 21.94 12.21 22 12 22C11.79 22 11.59 21.94 11.43 21.82L3.53 17.38C3.21 17.21 3 16.88 3 16.5V7.5C3 7.12 3.21 6.79 3.53 6.62L11.43 2.18C11.59 2.06 11.79 2 12 2C12.21 2 12.41 2.06 12.57 2.18L20.47 6.62C20.79 6.79 21 7.12 21 7.5V16.5Z"/></svg>
+        </div>
+        <div>
+          <h1>Intelligence Configuration</h1>
+          <p>Global parameters for the Omni AI subsystem.</p>
+        </div>
+      </div>
+      <div class="header-actions">
+        <button id="btn-save" class="btn-primary" disabled>Save</button>
+      </div>
+    </header>
+
+    <main class="settings-grid">
+      <!-- Panel 1: Intelligence Core -->
+      <section class="settings-panel">
+        <div class="panel-cap">INTELLIGENCE CORE</div>
+        <div class="panel-body">
+          <div class="form-group">
+            <label>Intelligence Provider</label>
+            <select id="provider-select">
+              <option value="google">Google Gemini (Native)</option>
+              <option value="offline">Offline Bot (No API)</option>
+              <option value="lmstudio">LM Studio (Local)</option>
+              <option value="llamacpp">llama.cpp (Local Server)</option>
+              <option value="openrouter">OpenRouter (Unified)</option>
+              <option value="groq">Groq (Ultra-Fast)</option>
+              <option value="mistral">Mistral AI</option>
+              <option value="sarvamai">SarvamAI</option>
+              <option value="openai-compatible">OpenAI Compatible (Local/Proxy)</option>
+            </select>
+          </div>
+
+          <div id="openai-url-group" class="form-group hidden">
+            <label>Server Base URL</label>
+            <div class="verify-row">
+              <input type="text" id="openai-base-url" placeholder="http://localhost:1234/v1" style="flex: 1; font-family: monospace;">
+              <button id="btn-scan-local" class="btn-verify-action" style="width: 100px;">SCAN HOST</button>
+            </div>
+          </div>
+
+          <!-- LM Studio Specific Group -->
+          <div id="lmstudio-group" class="form-group hidden">
+              <label>LM Studio Endpoint</label>
+              <div class="verify-row">
+                  <input type="text" id="lmstudio-base-url" placeholder="http://localhost:1234/v1" style="flex: 1; font-family: monospace;">
+                  <button id="btn-scan-lm" class="btn-verify-action" style="width: 100px;">SCAN LM</button>
+              </div>
+              
+              <div class="sub-config-area" style="margin-top:16px;">
+                  <div class="setting-row">
+                      <div class="setting-info">
+                          <label>Neural Image Discovery</label>
+                          <p>Enable automatic image scraping for local models.</p>
+                      </div>
+                      <label class="switch"><input type="checkbox" id="lm-enable-image-scrape"><span class="slider"></span></label>
+                  </div>
+                  <div class="form-group" style="margin-top:12px;">
+                      <label>Scrape Density</label>
+                      <select id="lm-image-scrape-count">
+                          <option value="1">Minimal (1 Image)</option>
+                          <option value="3" selected>Balanced (3 Images)</option>
+                          <option value="5">Deep (5 Images)</option>
+                      </select>
+                  </div>
+              </div>
+          </div>
+          
+          <!-- llama.cpp Specific Group -->
+          <div id="llamacpp-group" class="form-group hidden">
+              <label>llama.cpp Server Endpoint</label>
+              <div class="verify-row">
+                  <input type="text" id="llamacpp-base-url" placeholder="http://localhost:8081" style="flex: 1; font-family: monospace;">
+                  <button id="btn-scan-llamacpp" class="btn-verify-action" style="width: 100px;">SCAN</button>
+              </div>
+              <p style="font-size: 11px; color: #71717a; margin-top: 8px;">Connect to a running llama.cpp server with OpenAI-compatible API. Uses /v1/chat/completions endpoint.</p>
+          </div>
+          
+          <div class="verify-row">
+            <div class="form-group">
+              <label>API Access Token</label>
+              <input type="password" id="api-key-input" placeholder="••••••••••••••••" autocomplete="off">
+            </div>
+            <button id="btn-verify-ai" class="btn-verify-action">VERIFY LINK</button>
+          </div>
+
+          <div class="form-group" style="margin-top: 24px;">
+            <label>Model Configuration</label>
+            <select id="model-select"></select>
+            <input type="text" id="model-custom-input" class="hidden" style="margin-top: 8px;" placeholder="Custom model ID (e.g. llama-3.3-70b-versatile)">
+          </div>
+
+          <!-- New llama.cpp Link Section -->
+          <div class="link-config-block">
+            <div class="form-group">
+              <label>Llama.cpp Web UI Address</label>
+              <p style="font-size: 11px; color: #71717a; margin-bottom: 8px;">The local address where the llama.cpp server is hosting its graphical interface.</p>
+              <input type="text" id="llama-web-url" placeholder="http://localhost:8081" style="font-family: monospace;">
+            </div>
+          </div>
+
+          <div style="height: 1px; background: #27272a; margin: 32px 0;"></div>
+          
+          <label class="panel-cap" style="padding: 0; margin-bottom: 12px; display: block; border: none;">VERIFIED INTELLIGENCE CARDS</label>
+          <div id="profiles-container" class="profiles-grid">
+              <!-- AI Profile Cards -->
+          </div>
+        </div>
+      </section>
+
+      <!-- Panel 2: Web Scraping Protocol -->
+      <section class="settings-panel">
+        <div class="panel-cap">
+            WEB SCRAPING PROTOCOL
+            <button id="btn-open-scraper" class="header-action-icon" title="Open Neural Scraper Tool">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+            </button>
+        </div>
+        <div class="panel-body">
+            <div class="setting-row">
+                <div class="setting-info">
+                    <label>Deep Image Extraction</label>
+                    <p>Use SerpAPI to find and attach high-fidelity visual context to responses.</p>
+                </div>
+                <label class="switch"><input type="checkbox" id="scrape-images-enabled" checked><span class="slider"></span></label>
+            </div>
+
+            <div class="form-group" style="margin-top: 16px;">
+                <label>SerpAPI Access Key (Dedicated)</label>
+                <input type="password" id="scrape-serp-key" placeholder="Enter key for image scraping...">
+            </div>
+
+            <div class="setting-row">
+                <div class="setting-info">
+                    <label>4K Ultra-HD Resolution</label>
+                    <p>Force the engine to seek 4K resolution images whenever possible.</p>
+                </div>
+                <label class="switch"><input type="checkbox" id="scrape-4k-enabled"><span class="slider"></span></label>
+            </div>
+
+            <div class="form-group">
+                <label>Visual Count Target</label>
+                <select id="scrape-image-count">
+                    <option value="1">Minimal (1 Asset)</option>
+                    <option value="2">Standard (2 Assets)</option>
+                    <option value="4" selected>Deep (4 Assets)</option>
+                </select>
+            </div>
+        </div>
+      </section>
+
+      <!-- Panel 3: Omni Persona -->
+      <section class="settings-panel">
+        <div class="panel-cap">OMNI PERSONA</div>
+        <div class="panel-body">
+            <div class="form-group">
+                <label>Response Style</label>
+                <select id="persona-style">
+                    <option value="standard">Clinical (Concise & Plain)</option>
+                    <option value="enhanced">High-Fidelity (Vibrant & Structured)</option>
+                </select>
+                <p style="font-size: 11px; color: #71717a; margin-top: 6px;">Enhanced mode uses semantic color highlighting for topics.</p>
+            </div>
+            
+            <div class="setting-row">
+                <div class="setting-info">
+                    <label>Neural Emojis</label>
+                    <p>Incorporate contextually relevant icons into responses.</p>
+                </div>
+                <label class="switch"><input type="checkbox" id="persona-emojis" checked><span class="slider"></span></label>
+            </div>
+
+            <div class="setting-row">
+                <div class="setting-info">
+                    <label>Show Citations & Sources</label>
+                    <p>Explicitly list verification URLs for factual claims.</p>
+                </div>
+                <label class="switch"><input type="checkbox" id="persona-sources" checked><span class="slider"></span></label>
+            </div>
+
+            <div class="setting-row">
+                <div class="setting-info">
+                    <label>Safe Video Discovery</label>
+                    <p>Incorporate vetted video content from verified hosts.</p>
+                </div>
+                <label class="switch"><input type="checkbox" id="persona-videos" checked><span class="slider"></span></label>
+            </div>
+        </div>
+      </section>
+
+      <!-- Panel 4: Engine Performance & Search -->
+      <section class="settings-panel">
+        <div class="panel-cap">SEARCH ENGINE PIPELINE</div>
+        <div class="panel-body">
+          <div class="setting-row">
+            <div class="setting-info">
+              <label>Web Search Grounding</label>
+              <p>Allow Omni to retrieve real-time data from the internet.</p>
+            </div>
+            <label class="switch"><input type="checkbox" id="web-search-toggle"><span class="slider"></span></label>
+          </div>
+
+          <div id="search-config" class="sub-config-area disabled">
+            <div class="form-group">
+              <label>Search Protocol</label>
+              <select id="search-provider-select">
+                <option value="native">Google Search (Native)</option>
+                <option value="duckduckgo">DuckDuckGo (Privacy)</option>
+                <option value="google_pse">Google Programmable Search (PSE)</option>
+                <option value="serpapi">SerpApi (Advanced)</option>
+              </select>
+            </div>
+            <div id="provider-fields">
+              <div class="form-group provider-field hidden" data-provider="serpapi">
+                <div class="verify-row">
+                   <div class="form-group">
+                      <label>SerpApi Key</label>
+                      <input type="password" id="serpapi-key" placeholder="Enter key...">
+                   </div>
+                   <button id="btn-verify-serp" class="btn-verify-action">VERIFY</button>
+                </div>
+                <div class="quota-badge hidden" id="serp-quota-card">
+                    <div class="serp-quota-summary">
+                      <span id="serp-quota-count">--- SEARCHES LEFT</span>
+                      <span class="quota-caption">SerpAPI usage</span>
+                    </div>
+                    <div class="serp-quota-grid">
+                      <div class="serp-quota-item">
+                        <span class="serp-quota-item-label">Account</span>
+                        <span class="serp-quota-item-value mono" id="serp-quota-account">---</span>
+                      </div>
+                      <div class="serp-quota-item">
+                        <span class="serp-quota-item-label">Monthly Total</span>
+                        <span class="serp-quota-item-value" id="serp-quota-total">---</span>
+                      </div>
+                      <div class="serp-quota-item">
+                        <span class="serp-quota-item-label">Used</span>
+                        <span class="serp-quota-item-value" id="serp-quota-used">---</span>
+                      </div>
+                      <div class="serp-quota-item">
+                        <span class="serp-quota-item-label">Renew Date</span>
+                        <span class="serp-quota-item-value" id="serp-quota-renew">---</span>
+                      </div>
+                    </div>
+                </div>
+              </div>
+              <div class="form-group provider-field hidden" data-provider="google_pse">
+                <label>Search Engine ID (CX)</label>
+                <input type="text" id="google-pse-cx" placeholder="0123456789:abcdefghij" style="margin-bottom:12px;">
+                <div class="verify-row">
+                   <div class="form-group">
+                      <label>Google Cloud API Key</label>
+                      <input type="password" id="google-pse-key" placeholder="AIza...">
+                   </div>
+                   <button id="btn-verify-pse" class="btn-verify-action">VERIFY</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Panel 5: Aesthetic -->
+      <section class="settings-panel">
+        <div class="panel-cap">AESTHETIC PROTOCOL</div>
+        <div class="panel-body">
+          <div class="theme-selector" style="margin-bottom: 24px;">
+              <button class="theme-chip active" data-theme="dark">Zinc</button>
+              <button class="theme-chip" data-theme="glass">Glass</button>
+              <button class="theme-chip" data-theme="cyber">Cyber</button>
+          </div>
+
+          <div class="setting-row">
+            <div class="setting-info">
+              <label>Interface Animations</label>
+              <p>Enable smooth transitions and neural pulse effects.</p>
+            </div>
+            <label class="switch"><input type="checkbox" id="animations-toggle" checked><span class="slider"></span></label>
+          </div>
+
+          <div class="form-group">
+            <label>Typography Profile</label>
+            <select id="font-select">
+                <option value="sans">Modern Sans (SF Pro)</option>
+                <option value="mono">Developer Mono (JetBrains)</option>
+                <option value="serif">Classic Serif (Georgia)</option>
+            </select>
+          </div>
+          
+          <div class="setting-row" style="flex-direction: column; align-items: stretch;">
+            <div class="setting-info" style="margin-bottom: 16px;">
+              <label>Neural Chromatics</label>
+              <p>Custom data signatures for user and AI responses.</p>
+            </div>
+            <div class="color-grid">
+                <div class="color-input-group">
+                    <span style="font-size: 10px; font-weight: 800; color: #52525b; text-transform: uppercase;">User Signature</span>
+                    <div class="color-picker-wrapper">
+                        <input type="color" id="color-user-text" value="#ffffff">
+                        <span style="font-size: 12px; color: #fff;">Human Input</span>
+                    </div>
+                </div>
+                <div class="color-input-group">
+                    <span style="font-size: 10px; font-weight: 800; color: #52525b; text-transform: uppercase;">Omni Response</span>
+                    <div class="color-picker-wrapper">
+                        <input type="color" id="color-ai-text" value="#e4e4e7">
+                        <span style="font-size: 12px; color: #fff;">Machine Output</span>
+                    </div>
+                </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Panel 6: Text-to-Speech Configuration -->
+      <section class="settings-panel">
+        <div class="panel-cap">TEXT-TO-SPEECH PROTOCOL</div>
+        <div class="panel-body">
+          <div class="form-group">
+            <label>TTS Engine</label>
+            <select id="tts-provider-select">
+              <option value="system">System Default (Native)</option>
+              <option value="pocket">Pocket TTS (Custom Server)</option>
+              <option value="elevenlabs">ElevenLabs (Cloud)</option>
+              <option value="sarvamai">SarvamAI (Cloud)</option>
+            </select>
+            <p style="font-size: 11px; color: #71717a; margin-top: 6px;">Choose between system native TTS or Pocket TTS server for enhanced voice synthesis.</p>
+          </div>
+
+          <!-- Pocket TTS Configuration -->
+          <div id="pocket-tts-config" class="sub-config-area hidden">
+            <div class="form-group">
+              <label>Pocket TTS Server URL</label>
+              <div class="verify-row">
+                <input type="text" id="pocket-tts-url" placeholder="http://localhost:8080/tts" style="flex: 1; font-family: monospace;">
+                <button id="btn-test-pocket-tts" class="btn-verify-action" style="width: 100px;">TEST</button>
+              </div>
+              <p style="font-size: 11px; color: #71717a; margin-top: 8px;">Enter your Pocket TTS server endpoint. The server should accept POST requests with text input.</p>
+            </div>
+
+            <div class="setting-row">
+              <div class="setting-info">
+                <label>Voice Quality</label>
+                <p>Enhanced voice synthesis with better naturalness and prosody.</p>
+              </div>
+              <label class="switch"><input type="checkbox" id="pocket-tts-enhanced" checked><span class="slider"></span></label>
+            </div>
+
+            <div class="form-group">
+              <label>Voice Profile</label>
+              <select id="pocket-tts-voice">
+                <option value="default">Default Voice</option>
+                <option value="male">Male Voice</option>
+                <option value="female">Female Voice</option>
+                <option value="neutral">Neutral Voice</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label>Speech Speed</label>
+              <input type="range" id="pocket-tts-speed" min="0.5" max="2.0" step="0.1" value="1.0" style="width: 100%;">
+              <div style="display: flex; justify-content: space-between; font-size: 10px; color: #71717a; margin-top: 4px;">
+                <span>0.5x</span>
+                <span id="tts-speed-value">1.0x</span>
+                <span>2.0x</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- ElevenLabs Configuration -->
+          <div id="elevenlabs-tts-config" class="sub-config-area hidden">
+            <div class="form-group">
+              <label>ElevenLabs API Key</label>
+              <input type="password" id="elevenlabs-key" placeholder="xi-api-key...">
+            </div>
+            <div class="form-group">
+              <label>Voice ID</label>
+              <input type="text" id="elevenlabs-voice-id" placeholder="JBFqnCBsd6RMkjVDRZzb">
+              <p style="font-size: 11px; color: #71717a; margin-top: 8px;">Use your ElevenLabs voice ID (default uses a built-in voice).</p>
+            </div>
+          </div>
+
+          <!-- SarvamAI Configuration -->
+          <div id="sarvam-tts-config" class="sub-config-area hidden">
+            <div class="form-group">
+              <label>SarvamAI API Key</label>
+              <input type="password" id="sarvam-key" placeholder="Your Sarvam API key">
+            </div>
+            <div class="form-group">
+              <label>Target Language Code</label>
+              <select id="sarvam-target-language">
+                <option value="hi-IN" selected>hi-IN (Hindi)</option>
+                <option value="en-IN">en-IN (English - India)</option>
+                <option value="bn-IN">bn-IN (Bengali)</option>
+                <option value="ta-IN">ta-IN (Tamil)</option>
+                <option value="te-IN">te-IN (Telugu)</option>
+                <option value="mr-IN">mr-IN (Marathi)</option>
+                <option value="gu-IN">gu-IN (Gujarati)</option>
+                <option value="kn-IN">kn-IN (Kannada)</option>
+                <option value="ml-IN">ml-IN (Malayalam)</option>
+                <option value="pa-IN">pa-IN (Punjabi)</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="setting-row" style="margin-top: 16px;">
+            <div class="setting-info">
+              <label>Auto-Play Responses</label>
+              <p>Automatically convert AI responses to speech when generated.</p>
+            </div>
+            <label class="switch"><input type="checkbox" id="tts-auto-play"><span class="slider"></span></label>
+          </div>
+
+          <div class="setting-row">
+            <div class="setting-info">
+              <label>TTS Indicator</label>
+              <p>Show visual indicator when text-to-speech is active.</p>
+            </div>
+            <label class="switch"><input type="checkbox" id="tts-show-indicator" checked><span class="slider"></span></label>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- NEW: NEURAL SCRAPER OVERLAY -->
+    <div id="neural-scraper-panel" class="scraper-overlay hidden">
+        <div class="scraper-header">
+            <div>
+                <h1 id="scraper-title">Neural Scraper Sandbox</h1>
+                <p id="scraper-subtitle">Manual visual asset collection subsystem.</p>
+            </div>
+            <div style="display:flex; gap:10px;">
+                <button id="btn-view-saved-gallery" class="btn-batch-action">SAVED COLLECTIONS</button>
+                <button id="btn-close-scraper" class="btn-verify-action" style="width:100px;">EXIT</button>
+            </div>
+        </div>
+
+        <div class="scraper-controls-wrapper" id="scraper-controls-wrapper">
+            <div class="scraper-mode-toggle">
+                <button class="mode-btn active" data-mode="images">
+                    <svg style="display:inline-block; width:12px; height:12px; margin-right:6px; vertical-align:middle;" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 19V7c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2z"/></svg>
+                    Images
+                </button>
+                <button class="mode-btn" data-mode="videos">
+                    <svg style="display:inline-block; width:12px; height:12px; margin-right:6px; vertical-align:middle;" viewBox="0 0 24 24" fill="currentColor"><path d="M17 10.5V7c0 .55-.45 1-1 1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"/></svg>
+                    Videos
+                </button>
+                <button class="mode-btn" data-mode="data">
+                    <svg style="display:inline-block; width:12px; height:12px; margin-right:6px; vertical-align:middle;" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3C7 3 3 4.79 3 7v10c0 2.21 4 4 9 4s9-1.79 9-4V7c0-2.21-4-4-9-4zm0 2c4.42 0 7 .99 7 2s-2.58 2-7 2-7-.99-7-2 2.58-2 7-2zm0 14c-4.42 0-7-.99-7-2v-2.08C6.54 15.58 9.08 16 12 16s5.46-.42 7-1.08V17c0 1.01-2.58 2-7 2zm0-5c-4.42 0-7-.99-7-2V9.92C6.54 10.58 9.08 11 12 11s5.46-.42 7-1.08V12c0 1.01-2.58 2-7 2z"/></svg>
+                    Data
+                </button>
+            </div>
+
+            <div class="scraper-input-row" id="scraper-controls">
+                <input type="text" id="scraper-query" placeholder="Enter search topic for assets..." autofocus>
+                <button id="btn-start-scrape" class="btn-primary" style="padding:0 24px; border-radius:12px; font-weight:800; text-transform:uppercase; letter-spacing:1px;">DISCOVER</button>
+            </div>
+        </div>
+
+        <div class="scraper-results-header hidden" id="scraper-results-toolbar">
+            <div class="results-info" id="results-count-label">0 ASSETS DISCOVERED</div>
+            <button id="btn-save-all-desktop" class="btn-batch-action" style="display:none;">SAVE ALL TO DESKTOP</button>
+        </div>
+
+        <div id="scraper-results" class="scraper-results">
+            <!-- Results will appear here -->
+        </div>
+    </div>
+
+    <!-- NEW: IMAGE VIEWER OVERLAY -->
+    <div id="scraper-image-viewer" class="viewer-overlay hidden">
+        <div class="viewer-content">
+            <span id="btn-close-viewer" class="btn-close-viewer">✕</span>
+            <img id="viewer-img" src="">
+            <button id="btn-viewer-dl" class="btn-primary" style="position:absolute; bottom:-60px; left:50%; transform:translateX(-50%); width:200px;">DOWNLOAD</button>
+        </div>
+    </div>
+    
+    <div id="save-status" class="save-status">Settings Saved</div>
+  </div>
+
+  <script type="module" src="../../java/renderer/aiSettingsRenderer.js"></script>
+</body>
+</html>
+
+

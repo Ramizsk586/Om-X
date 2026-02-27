@@ -1,0 +1,128 @@
+
+<div class="panel-content fade-in">
+    <div class="panel-title">Family Configuration</div>
+    
+    <div class="split-view">
+        <!-- List of Personas -->
+        <div class="persona-list" id="persona-list" style="min-height: 200px;">
+            <!-- JS Generated -->
+        </div>
+
+        <!-- Detail Config -->
+        <div class="config-detail" id="config-detail" style="display:none;">
+            
+            <!-- Hero Card -->
+            <div class="hero-card">
+                <div class="hero-image">
+                    <img id="hero-img" src="" onerror="this.src='../assets/pieces/wK.png'">
+                </div>
+                <div class="hero-stats">
+                    <div class="hero-name" id="hero-name">Dr. Yun</div>
+                    <div class="hero-role" id="hero-role">The Mentor</div>
+                    <div class="hero-desc" id="hero-desc">Calculating...</div>
+                    <div style="display:flex; gap:10px;">
+                        <span class="achievement-date" id="hero-badge-elo">ELO: 2500</span>
+                        <span class="achievement-date" id="hero-badge-style">Style: Socratic</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Settings -->
+            <div class="setting-card">
+                <div class="setting-header">
+                    <div>
+                        <div class="setting-label">Playing Strength (Elo)</div>
+                        <div class="setting-desc">Adjust the engine's rating limit.</div>
+                    </div>
+                    <span id="elo-display" style="font-weight:bold; color:var(--deep-green); font-size:18px;">2500</span>
+                </div>
+                <div class="range-wrapper">
+                    <input type="range" min="800" max="3200" step="50" value="2500" class="wood-range" id="elo-slider">
+                    <div class="slider-labels">
+                        <span>Beginner (800)</span>
+                        <span>Super GM (3200)</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="setting-card">
+                <div class="setting-header">
+                    <div>
+                        <div class="setting-label">Calculation Depth</div>
+                        <div class="setting-desc">How many moves ahead the AI thinks.</div>
+                    </div>
+                    <span id="depth-display" style="font-weight:bold; color:var(--deep-green); font-size:18px;">15</span>
+                </div>
+                <div class="range-wrapper">
+                    <input type="range" min="1" max="24" step="1" value="15" class="wood-range" id="depth-slider">
+                    <div class="slider-labels">
+                        <span>Fast (1)</span>
+                        <span>Deep (24)</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="setting-card">
+                <div class="setting-header">
+                    <div>
+                        <div class="setting-label">Personality Style</div>
+                        <div class="setting-desc">Controls verbal interaction style.</div>
+                    </div>
+                </div>
+                <div class="wood-select-wrapper">
+                    <select id="style-select" class="wood-select">
+                        <option value="Socratic">Socratic (Questions)</option>
+                        <option value="Aggressive">Aggressive (Taunts)</option>
+                        <option value="Defensive">Defensive (Cautious)</option>
+                        <option value="Balanced">Balanced (Standard)</option>
+                        <option value="Chaotic">Chaotic (Random)</option>
+                    </select>
+                </div>
+            </div>
+
+            <div style="text-align: right;">
+                <button class="response-btn" onclick="saveCurrentPersonaSettings()">Save Configuration</button>
+            </div>
+        </div>
+        
+        <!-- Empty State -->
+        <div id="config-empty" style="display:flex; align-items:center; justify-content:center; height:300px; color:#8c7b66; font-style:italic;">
+            Select a family member to configure.
+        </div>
+    </div>
+
+    <!-- Neural Link Section (Global) -->
+    <div class="setting-card" style="border-left-color: var(--amber-glow); margin-top: 40px;">
+        <div class="setting-header">
+            <div>
+                <div class="setting-label">Neural Link (Global)</div>
+                <div class="setting-desc">Connect to an AI Provider for personalized dialogue.</div>
+            </div>
+        </div>
+        <div style="display:flex; flex-direction:column; gap:12px;">
+            <div class="wood-select-wrapper">
+                <select id="ai-provider" class="wood-select">
+                    <option value="gemini">Google Gemini</option>
+                    <option value="groq">Groq</option>
+                    <option value="openrouter">OpenRouter</option>
+                </select>
+            </div>
+            
+            <input type="password" id="api-key-input" class="wood-input" placeholder="Enter API Key">
+            
+            <div style="display:flex; gap:10px;">
+                <div class="wood-select-wrapper" style="flex:1;">
+                    <select id="ai-model" class="wood-select">
+                        <option value="" disabled selected>Select Model (Verify First)</option>
+                    </select>
+                </div>
+                <button class="response-btn small" onclick="verifyKey()" id="btn-verify">Verify</button>
+            </div>
+            
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px;">
+                <span id="verify-status" style="font-size:13px; color:#8c7b66;"></span>
+                <button class="response-btn small" onclick="saveAiConfig()" style="border-color: var(--amber-glow); background: #fffbe6;">Save Link</button>
+            </div>
+        </div>
+    </div>
+</div>

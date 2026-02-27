@@ -1,0 +1,456 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Edit Profile</title>
+  <link rel="stylesheet" href="css/styles.css" />
+  <style>
+      :root {
+          --primary: #6366f1;
+          --accent-cyan: #06b6d4;
+          --accent-pink: #ec4899;
+          --bg-deep: #020617;
+          --text-main: #f8fafc;
+          --text-muted: #94a3b8;
+          --glass-bg: rgba(15, 23, 42, 0.6);
+          --glass-border: 1px solid rgba(255, 255, 255, 0.08);
+      }
+
+      body { 
+          margin: 0; padding: 0;
+          height: 100vh; width: 100vw;
+          overflow: hidden;
+          background: var(--bg-deep);
+          font-family: 'Inter', system-ui, sans-serif;
+          display: flex;
+          color: var(--text-main);
+      }
+
+      /* --- Dynamic Background --- */
+      .bg-mesh {
+          position: fixed; inset: 0; z-index: 0;
+          background: 
+              radial-gradient(circle at 0% 0%, rgba(99, 102, 241, 0.15) 0%, transparent 50%),
+              radial-gradient(circle at 100% 0%, rgba(236, 72, 153, 0.15) 0%, transparent 50%),
+              radial-gradient(circle at 50% 100%, rgba(6, 182, 212, 0.1) 0%, transparent 50%);
+          filter: blur(60px);
+          animation: pulseMesh 10s ease-in-out infinite alternate;
+      }
+      @keyframes pulseMesh { 
+          0% { opacity: 0.6; transform: scale(1); } 
+          100% { opacity: 1; transform: scale(1.1); } 
+      }
+
+      /* --- Main Layout --- */
+      .layout {
+          position: relative; z-index: 10;
+          display: flex;
+          width: 100%; height: 100%;
+      }
+
+      /* --- LEFT PANEL: Identity --- */
+      .identity-panel {
+          width: 420px;
+          background: var(--glass-bg);
+          backdrop-filter: blur(40px);
+          border-right: var(--glass-border);
+          display: flex; flex-direction: column;
+          align-items: center; justify-content: center;
+          padding: 40px;
+          gap: 40px;
+          box-shadow: 20px 0 60px rgba(0,0,0,0.3);
+          position: relative;
+          overflow: hidden;
+      }
+      
+      /* Tech Decoration Lines */
+      .deco-line {
+          position: absolute; background: rgba(255,255,255,0.05);
+      }
+      .dl-top { top: 40px; left: 0; width: 100%; height: 1px; }
+      .dl-bot { bottom: 40px; left: 0; width: 100%; height: 1px; }
+
+      /* Avatar Stage - Square Version */
+      .avatar-stage {
+          position: relative;
+          width: 240px; height: 240px;
+          display: flex; justify-content: center; align-items: center;
+      }
+
+      /* Square Frames */
+      .sq-frame {
+          position: absolute;
+          border-radius: 24px;
+          transition: all 0.3s ease;
+      }
+      
+      .sq-outer {
+          inset: 20px;
+          border: 1px solid rgba(99, 102, 241, 0.3);
+          box-shadow: 0 0 30px rgba(99, 102, 241, 0.1);
+          animation: pulse-sq 4s ease-in-out infinite;
+      }
+      
+      .sq-inner {
+          inset: 30px;
+          border: 1px solid rgba(6, 182, 212, 0.2);
+      }
+
+      @keyframes pulse-sq { 
+          0% { transform: scale(1); border-color: rgba(99, 102, 241, 0.3); } 
+          50% { transform: scale(1.05); border-color: rgba(99, 102, 241, 0.6); } 
+          100% { transform: scale(1); border-color: rgba(99, 102, 241, 0.3); } 
+      }
+
+      /* The Mask - Rounded Square */
+      .avatar-mask {
+          width: 140px; height: 140px;
+          border-radius: 20px;
+          background: radial-gradient(circle at center, rgba(30, 41, 59, 0.8), #050507);
+          border: 1px solid rgba(255,255,255,0.15);
+          overflow: hidden;
+          position: relative;
+          z-index: 5;
+          display: flex; justify-content: center; align-items: center;
+          box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+          transition: transform 0.3s ease, border-color 0.3s;
+      }
+
+      .hero-avatar {
+          width: 90%; height: 90%;
+          object-fit: contain;
+          filter: drop-shadow(0 8px 16px rgba(0,0,0,0.6));
+          transition: transform 0.3s ease;
+      }
+
+      /* Hover Effects */
+      .avatar-stage:hover .sq-outer { border-color: var(--accent-pink); box-shadow: 0 0 40px rgba(236, 72, 153, 0.3); }
+      .avatar-stage:hover .avatar-mask { transform: scale(1.02); border-color: rgba(255,255,255,0.4); }
+      .avatar-stage:hover .hero-avatar { transform: scale(1.1); }
+
+      /* Identity Text */
+      .identity-info { text-align: center; z-index: 5; }
+      .identity-name {
+          font-size: 36px; font-weight: 900; margin: 0;
+          letter-spacing: -1px;
+          background: linear-gradient(135deg, #fff 0%, var(--text-muted) 100%);
+          -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+          text-shadow: 0 10px 30px rgba(0,0,0,0.5);
+      }
+      .identity-elo {
+          font-family: 'JetBrains Mono', monospace;
+          font-size: 14px; color: var(--accent-cyan);
+          margin-top: 8px; font-weight: 700;
+          background: rgba(6, 182, 212, 0.1);
+          padding: 4px 12px; border-radius: 20px;
+          border: 1px solid rgba(6, 182, 212, 0.2);
+          display: inline-block;
+      }
+      .identity-bio {
+          margin-top: 16px; font-size: 13px; color: var(--text-muted); font-style: italic;
+          max-width: 250px; line-height: 1.5;
+      }
+
+      /* --- RIGHT PANEL: Form --- */
+      .form-panel {
+          flex: 1;
+          padding: 60px 80px;
+          overflow-y: auto;
+          display: flex; flex-direction: column;
+          gap: 32px;
+      }
+
+      .section-header h2 { font-size: 22px; font-weight: 700; margin: 0 0 6px 0; color: #fff; text-transform: uppercase; letter-spacing: 1px; }
+      .section-header p { margin: 0; color: var(--text-muted); font-size: 13px; }
+
+      .form-grid {
+          display: grid; grid-template-columns: 1fr 1fr; gap: 24px;
+      }
+      .full-width { grid-column: 1 / -1; }
+
+      .input-wrapper { display: flex; flex-direction: column; gap: 8px; }
+      .input-wrapper label { 
+          font-size: 11px; font-weight: 800; 
+          text-transform: uppercase; letter-spacing: 1px; 
+          color: var(--primary); 
+      }
+      
+      .input-field {
+          background: rgba(255, 255, 255, 0.03);
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          border-radius: 8px;
+          padding: 16px;
+          color: #fff; font-size: 15px; font-family: inherit; font-weight: 500;
+          transition: all 0.2s;
+          outline: none;
+      }
+      .input-field:focus {
+          background: rgba(255, 255, 255, 0.06);
+          border-color: var(--primary);
+          box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.1);
+      }
+
+      /* Avatar Grid */
+      .avatar-picker {
+          display: grid; grid-template-columns: repeat(auto-fill, minmax(70px, 1fr)); gap: 12px;
+          padding: 16px;
+          background: rgba(0,0,0,0.2);
+          border-radius: 12px;
+          border: 1px solid rgba(255,255,255,0.05);
+          max-height: 200px; overflow-y: auto;
+      }
+      .avatar-opt {
+          aspect-ratio: 1;
+          background: rgba(255,255,255,0.05);
+          border: 2px solid transparent;
+          border-radius: 12px;
+          padding: 8px;
+          cursor: pointer;
+          transition: all 0.2s;
+          display: flex; align-items: center; justify-content: center;
+      }
+      .avatar-opt img { width: 100%; height: 100%; object-fit: contain; transition: transform 0.2s; }
+      .avatar-opt:hover { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.2); }
+      .avatar-opt:hover img { transform: scale(1.1); }
+      
+      .avatar-opt.selected {
+          background: rgba(99, 102, 241, 0.15);
+          border-color: var(--primary);
+          box-shadow: 0 0 15px rgba(99, 102, 241, 0.3);
+      }
+
+      /* Buttons */
+      .action-bar {
+          margin-top: auto;
+          display: flex; justify-content: flex-end; gap: 16px;
+          padding-top: 20px; border-top: 1px solid rgba(255,255,255,0.05);
+      }
+
+      .btn {
+          padding: 14px 32px; border-radius: 8px; font-size: 13px; font-weight: 800;
+          cursor: pointer; transition: all 0.2s; letter-spacing: 1px; text-transform: uppercase;
+      }
+      .btn-primary {
+          background: var(--primary); color: #fff; border: none;
+          box-shadow: 0 4px 20px rgba(99, 102, 241, 0.3);
+      }
+      .btn-primary:hover { transform: translateY(-2px); filter: brightness(1.1); box-shadow: 0 8px 30px rgba(99, 102, 241, 0.4); }
+      .btn-primary:active { transform: translateY(0); }
+      
+      .btn-secondary {
+          background: transparent; color: var(--text-muted); border: 1px solid rgba(255,255,255,0.1);
+      }
+      .btn-secondary:hover { background: rgba(255,255,255,0.05); color: #fff; border-color: rgba(255,255,255,0.2); }
+
+      /* Scrollbar */
+      ::-webkit-scrollbar { width: 6px; }
+      ::-webkit-scrollbar-track { background: transparent; }
+      ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
+      ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+  </style>
+</head>
+<body>
+
+  <div class="bg-mesh"></div>
+
+  <div class="layout">
+      <!-- LEFT PANEL: Identity -->
+      <div class="identity-panel">
+          <div class="deco-line dl-top"></div>
+          
+          <div class="avatar-stage">
+              <div class="sq-frame sq-outer"></div>
+              <div class="sq-frame sq-inner"></div>
+              <div class="avatar-mask">
+                  <img id="currentAvatar" class="hero-avatar" src="../assets/pieces/wK.png">
+              </div>
+          </div>
+          
+          <div class="identity-info">
+              <h1 class="identity-name" id="previewName">Guest</h1>
+              <div class="identity-elo" id="previewElo">1200 ELO</div>
+              <div class="identity-bio" id="previewBio">"Ready to play"</div>
+          </div>
+          
+          <div class="deco-line dl-bot"></div>
+      </div>
+
+      <!-- RIGHT PANEL: Form -->
+      <div class="form-panel">
+          
+          <div class="section-header">
+              <h2>Identity Configuration</h2>
+              <p>Define your persona for the network.</p>
+          </div>
+
+          <div class="form-grid">
+              <div class="input-wrapper">
+                  <label>Codename</label>
+                  <input type="text" id="nameInput" class="input-field" placeholder="Username" maxlength="20">
+              </div>
+
+              <div class="input-wrapper">
+                  <label>Rating Override</label>
+                  <input type="number" id="eloInput" class="input-field" placeholder="1200" max="3500">
+              </div>
+
+              <div class="input-wrapper full-width">
+                  <label>Status Message</label>
+                  <input type="text" id="bioInput" class="input-field" placeholder="Your motto..." maxlength="50">
+              </div>
+              
+              <div class="input-wrapper full-width">
+                  <label>Visual Avatar</label>
+                  <div class="avatar-picker" id="avatarGrid">
+                      <!-- Avatars Injected Here -->
+                  </div>
+              </div>
+          </div>
+
+          <div class="action-bar">
+              <button id="cancelBtn" class="btn btn-secondary">Discard</button>
+              <button id="saveBtn" class="btn btn-primary">Save Profile</button>
+          </div>
+      </div>
+  </div>
+
+  <script>
+      const nameInput = document.getElementById('nameInput');
+      const bioInput = document.getElementById('bioInput');
+      const eloInput = document.getElementById('eloInput');
+      
+      const previewName = document.getElementById('previewName');
+      const previewElo = document.getElementById('previewElo');
+      const previewBio = document.getElementById('previewBio');
+      const currentAvatar = document.getElementById('currentAvatar');
+      const avatarGrid = document.getElementById('avatarGrid');
+      
+      const saveBtn = document.getElementById('saveBtn');
+      const cancelBtn = document.getElementById('cancelBtn');
+      
+      let selectedAvatarFile = 'wK.png';
+      let selectedFolder = 'pieces';
+
+      // Live Previews
+      nameInput.addEventListener('input', () => previewName.textContent = nameInput.value || 'Guest');
+      eloInput.addEventListener('input', () => previewElo.textContent = (eloInput.value || '1200') + ' ELO');
+      bioInput.addEventListener('input', () => previewBio.textContent = bioInput.value ? `"${bioInput.value}"` : '');
+
+      async function init() {
+          const profile = await window.electronAPI.getProfile();
+          nameInput.value = profile.name || "Guest";
+          bioInput.value = profile.bio || "";
+          eloInput.value = profile.elo || 1200;
+          
+          // Update Preview
+          nameInput.dispatchEvent(new Event('input'));
+          eloInput.dispatchEvent(new Event('input'));
+          bioInput.dispatchEvent(new Event('input'));
+
+          if (profile.avatar) {
+              updatePreview(profile.avatar, profile.avatarFolder);
+          } else {
+              // Fallback
+              updatePreview('wK.png', 'pieces');
+          }
+
+          // Get avatars from main process (filesystem)
+          try {
+              const avatars = await window.electronAPI.getAvailableAvatars();
+              avatarGrid.innerHTML = '';
+              
+              if (!avatars || avatars.length === 0) {
+                  avatarGrid.innerHTML = "<div style='grid-column:1/-1; text-align:center; padding:20px; color:#999;'>No avatars found in assets</div>";
+              }
+
+              avatars.forEach(item => {
+                  const div = document.createElement('div');
+                  div.className = 'avatar-opt';
+                  if (item.filename === selectedAvatarFile) div.classList.add('selected');
+                  
+                  div.innerHTML = `<img src="../assets/${item.folder}/${item.filename}" onerror="this.style.display='none'">`;
+                  div.title = item.filename;
+                  
+                  div.onclick = () => {
+                      document.querySelectorAll('.avatar-opt').forEach(el => el.classList.remove('selected'));
+                      div.classList.add('selected');
+                      updatePreview(item.filename, item.folder);
+                  };
+                  avatarGrid.appendChild(div);
+              });
+          } catch (e) {
+              console.error("Failed to load avatars", e);
+              avatarGrid.innerHTML = "<div style='grid-column:1/-1; text-align:center; padding:20px; color:#fca5a5;'>Error loading avatars</div>";
+          }
+          
+          // Sync Theme
+          const prefs = await window.electronAPI?.getPreferences();
+          if (prefs?.boardTheme) document.documentElement.setAttribute('data-theme', prefs.boardTheme);
+      }
+      
+      function updatePreview(filename, folder = 'pieces') {
+          selectedAvatarFile = filename; 
+          selectedFolder = folder;
+          
+          currentAvatar.style.transform = "scale(0.8) rotate(-10deg)";
+          currentAvatar.style.opacity = "0";
+          
+          setTimeout(() => {
+              // Robust path handling
+              currentAvatar.src = `../assets/${folder}/${filename}`;
+              
+              currentAvatar.onload = () => {
+                  currentAvatar.style.transform = "scale(1)";
+                  currentAvatar.style.opacity = "1";
+              };
+              currentAvatar.onerror = () => {
+                  // Fallback if file missing - try pieces first
+                  if (folder !== 'pieces') {
+                      currentAvatar.src = `../assets/pieces/${filename}`;
+                      // If that fails, user will see broken image or we can fallback to default
+                      currentAvatar.onerror = () => { currentAvatar.src = '../assets/pieces/wK.png'; };
+                  } else {
+                      currentAvatar.src = '../assets/pieces/wK.png';
+                  }
+                  currentAvatar.style.opacity = "1";
+                  currentAvatar.style.transform = "scale(1)";
+              };
+          }, 150);
+      }
+      
+      saveBtn.onclick = async () => {
+          const data = { 
+              name: nameInput.value.trim() || "Guest", 
+              bio: bioInput.value.trim(), 
+              elo: parseInt(eloInput.value) || 1200, 
+              avatar: selectedAvatarFile, 
+              avatarFolder: selectedFolder 
+          };
+          
+          try {
+              await window.electronAPI.saveProfile(data);
+              
+              saveBtn.textContent = "SAVED";
+              saveBtn.style.background = "#10b981";
+              saveBtn.style.boxShadow = "0 0 20px #10b981";
+              
+              // Close via IPC
+              setTimeout(() => { window.electronAPI.closeProfileWindow(); }, 500);
+          } catch (e) {
+              console.error(e);
+              saveBtn.textContent = "ERROR";
+              saveBtn.style.background = "#ef4444";
+          }
+      };
+      
+      cancelBtn.onclick = () => {
+          window.electronAPI.closeProfileWindow();
+      };
+      
+      window.electronAPI?.onThemeChanged((theme) => { document.documentElement.setAttribute('data-theme', theme); });
+      
+      init();
+  </script>
+</body>
+</html>

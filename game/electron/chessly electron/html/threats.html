@@ -1,0 +1,617 @@
+
+
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>Threat Protocol</title>
+  <link rel="stylesheet" href="css/styles.css" />
+  <style>
+    :root {
+        --danger-glow: 0 0 20px rgba(239, 68, 68, 0.4);
+        --danger-border: 1px solid rgba(239, 68, 68, 0.3);
+        --bg-threat: radial-gradient(circle at top right, #1a0505 0%, #050507 60%);
+        --text-danger: #f87171;
+        --text-safe: #4ade80;
+        --text-warn: #fbbf24;
+    }
+
+    body {
+      overflow: hidden;
+      display: flex;
+      background: var(--app-bg);
+      color: #e2e8f0;
+      font-family: 'Inter', system-ui, sans-serif;
+    }
+
+    .main-layout {
+        display: flex; width: 100vw; height: 100vh;
+    }
+
+    /* Left Panel: Board */
+    .board-panel {
+        flex: 1;
+        display: flex; justify-content: center; align-items: center;
+        position: relative;
+        background: var(--bg-threat);
+    }
+    
+    .scan-overlay {
+        position: absolute; inset: 0;
+        background: repeating-linear-gradient(
+            0deg,
+            transparent,
+            transparent 1px,
+            rgba(239, 68, 68, 0.03) 2px,
+            rgba(239, 68, 68, 0.03) 3px
+        );
+        pointer-events: none;
+        z-index: 0;
+    }
+
+    #board-container {
+        width: min(80vh, 55vw);
+        aspect-ratio: 1/1;
+        position: relative;
+        border-radius: 8px;
+        box-shadow: 0 30px 80px -10px rgba(0,0,0,0.8);
+        border: 4px solid rgba(255,255,255,0.05);
+        z-index: 10;
+    }
+
+    /* Threat Sticker (Reuse Style) */
+    .move-sticker {
+        position: absolute;
+        top: -10px; right: -10px;
+        width: 24px; height: 24px;
+        border-radius: 50%;
+        display: flex; align-items: center; justify-content: center;
+        font-weight: 900; font-size: 14px; color: #fff;
+        box-shadow: 0 3px 8px rgba(0,0,0,0.6);
+        z-index: 25;
+        border: 2px solid #fff;
+        text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+        background: #fa412d; /* Default Threat Red */
+        font-family: 'Arial', sans-serif;
+    }
+
+    /* Right Panel: Sidebar */
+    .sidebar {
+        width: 400px; min-width: 400px;
+        background: rgba(10, 5, 5, 0.95);
+        backdrop-filter: blur(20px);
+        border-left: 1px solid rgba(255, 255, 255, 0.08);
+        display: flex; flex-direction: column;
+        z-index: 20;
+        box-shadow: -10px 0 60px rgba(0,0,0,0.6);
+    }
+
+    .sidebar-header {
+        padding: 24px;
+        border-bottom: 1px solid rgba(255,255,255,0.05);
+        background: rgba(239, 68, 68, 0.05);
+    }
+    
+    .header-title {
+        display: flex; align-items: center; gap: 10px;
+        font-size: 18px; font-weight: 900; 
+        text-transform: uppercase; letter-spacing: 2px;
+        color: #f87171;
+        text-shadow: 0 0 15px rgba(239, 68, 68, 0.5);
+    }
+    
+    .radar-icon {
+        width: 12px; height: 12px; background: #ef4444;
+        border-radius: 50%;
+        box-shadow: 0 0 10px #ef4444;
+        animation: radarPulse 2s infinite;
+    }
+    @keyframes radarPulse { 0% { transform: scale(1); opacity: 1; } 100% { transform: scale(2.5); opacity: 0; } }
+
+    /* Scan Controls */
+    .scan-controls {
+        padding: 20px;
+        display: flex; flex-direction: column; gap: 16px;
+        border-bottom: 1px solid rgba(255,255,255,0.05);
+    }
+    
+    .progress-container {
+        height: 4px; background: rgba(255,255,255,0.1);
+        border-radius: 2px; overflow: hidden; margin-top: 8px;
+        display: none;
+    }
+    .progress-bar {
+        height: 100%; background: #ef4444; width: 0%;
+        transition: width 0.3s ease;
+        box-shadow: 0 0 10px #ef4444;
+    }
+    
+    .status-text {
+        font-size: 11px; color: #9ca3af; font-family: 'JetBrains Mono', monospace;
+        display: flex; justify-content: space-between;
+    }
+
+    /* Threat List */
+    .threat-list {
+        flex: 1; overflow-y: auto;
+        padding: 16px;
+        display: flex; flex-direction: column; gap: 12px;
+    }
+    
+    .threat-card {
+        background: rgba(255,255,255,0.03);
+        border: 1px solid rgba(255,255,255,0.05);
+        border-radius: 12px;
+        padding: 16px;
+        cursor: pointer;
+        transition: all 0.2s;
+        position: relative;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+    .threat-card:hover {
+        background: rgba(255,255,255,0.06);
+        border-color: rgba(239, 68, 68, 0.3);
+    }
+    .threat-card.active {
+        background: rgba(239, 68, 68, 0.1);
+        border: 1px solid #ef4444;
+        box-shadow: 0 0 20px rgba(239, 68, 68, 0.1);
+    }
+    .threat-card.active::before {
+        content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: #ef4444;
+    }
+    
+    .card-header {
+        display: flex; justify-content: space-between; align-items: center;
+    }
+    .move-num { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #9ca3af; opacity: 0.7; }
+    .threat-type { 
+        font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px;
+        padding: 2px 6px; border-radius: 4px;
+    }
+    .type-fatal { background: rgba(239, 68, 68, 0.2); color: #fca5a5; border: 1px solid rgba(239, 68, 68, 0.4); }
+    .type-blunder { background: rgba(245, 158, 11, 0.2); color: #fcd34d; border: 1px solid rgba(245, 158, 11, 0.4); }
+    .type-miss { background: rgba(99, 102, 241, 0.2); color: #a5b4fc; border: 1px solid rgba(99, 102, 241, 0.4); }
+    
+    .card-reason {
+        font-size: 12px; color: #e2e8f0; font-weight: 600;
+        display: flex; align-items: center; gap: 6px;
+    }
+    .reason-icon { font-size: 14px; }
+    
+    .card-footer {
+        display: flex; justify-content: space-between; align-items: center;
+        font-size: 11px; font-family: 'JetBrains Mono', monospace;
+        margin-top: 4px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.05);
+    }
+    .eval-drop { color: var(--text-danger); font-weight: 700; }
+    
+    .empty-state {
+        height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center;
+        opacity: 0.4; font-size: 13px; text-align: center; gap: 12px;
+    }
+
+    /* Buttons */
+    .btn-scan {
+        width: 100%; background: #ef4444; color: white; border: none;
+        padding: 14px; border-radius: 8px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px;
+        cursor: pointer; box-shadow: 0 0 20px rgba(239, 68, 68, 0.3);
+        transition: all 0.2s;
+    }
+    .btn-scan:hover { transform: translateY(-2px); filter: brightness(1.1); }
+    .btn-scan:disabled { background: #4b5563; box-shadow: none; cursor: not-allowed; transform: none; }
+
+    #arrow-layer {
+        position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+        pointer-events: none; z-index: 20;
+        filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));
+    }
+  </style>
+</head>
+<body>
+
+  <div class="main-layout">
+    <!-- Left Panel -->
+    <div class="board-panel">
+       <div class="scan-overlay"></div>
+       <div id="board-container">
+          <div id="board"></div>
+          <svg id="arrow-layer" viewBox="0 0 100 100"></svg>
+       </div>
+    </div>
+
+    <!-- Right Panel -->
+    <div class="sidebar">
+       <div class="sidebar-header">
+          <div class="header-title">
+              <div class="radar-icon"></div>
+              Threat Protocol
+          </div>
+       </div>
+
+       <div class="scan-controls">
+           <div class="status-text">
+               <span id="status-label">System Ready</span>
+               <span id="scan-counter"></span>
+           </div>
+           <div class="progress-container" id="prog-container">
+               <div class="progress-bar" id="prog-bar"></div>
+           </div>
+           <button id="btn-scan" class="btn-scan">Initiate Deep Scan</button>
+       </div>
+
+       <div class="threat-list" id="threat-list">
+           <div class="empty-state">
+               <div style="font-size: 32px;">🛡️</div>
+               <div>No threats detected.<br>Run scan to analyze vulnerabilities.</div>
+           </div>
+       </div>
+    </div>
+  </div>
+
+  <script src="../java/arena_brain.js"></script>
+  <script>
+    // --- Logic ---
+    let gameData = null;
+    let isScanning = false;
+    let threats = [];
+    let currentThreatIndex = -1;
+    
+    // Sensitivity Thresholds
+    const THRESHOLD_FATAL = 4.0;
+    const THRESHOLD_BLUNDER = 1.5;
+    const THRESHOLD_MISTAKE = 0.8;
+
+    const boardEl = document.getElementById('board');
+    const arrowLayer = document.getElementById('arrow-layer');
+    const threatListEl = document.getElementById('threat-list');
+    const statusLabel = document.getElementById('status-label');
+    const scanCounter = document.getElementById('scan-counter');
+    const progContainer = document.getElementById('prog-container');
+    const progBar = document.getElementById('prog-bar');
+    const btnScan = document.getElementById('btn-scan');
+
+    // --- Board Utils ---
+    function renderBoard(fen, highlightMove) {
+        boardEl.innerHTML = "";
+        const parts = fen.split(' ');
+        const rows = parts[0].split('/');
+        
+        for(let r=0; r<8; r++) {
+            let c = 0;
+            for(let char of rows[r]) {
+                if(!isNaN(char)) {
+                    const empties = parseInt(char);
+                    for(let k=0; k<empties; k++) { createSquare(r, c++, null, highlightMove); }
+                } else {
+                    const color = char === char.toUpperCase() ? 'w' : 'b';
+                    const type = char.toUpperCase();
+                    createSquare(r, c++, color+type, highlightMove);
+                }
+            }
+        }
+    }
+    
+    function createSquare(r, c, p, highlightMove) {
+        const div = document.createElement('div');
+        div.className = `square ${(r+c)%2===0 ? 'light' : 'dark'}`;
+        
+        if(highlightMove) {
+            const t = coord(highlightMove.to);
+            const f = coord(highlightMove.from);
+            // Last Move Highlight
+            if (t && f && ((t.r===r && t.c===c) || (f.r===r && f.c===c))) div.classList.add('last-move-square');
+            
+            // Add Sticker to Destination
+            if (t && t.r===r && t.c===c) {
+                const sticker = document.createElement("div");
+                sticker.className = "move-sticker";
+                sticker.textContent = "??";
+                div.appendChild(sticker);
+            }
+        }
+        
+        if(p) {
+            const piece = document.createElement('div');
+            piece.className = 'piece';
+            piece.style.backgroundImage = `url('../assets/pieces/${p}.png')`;
+            div.appendChild(piece);
+        }
+        boardEl.appendChild(div);
+    }
+
+    // --- Arrow Drawing (Updated for Dashed Lines) ---
+    function coord(sq) {
+        if (typeof sq === 'object') return sq; 
+        if (!sq || sq.length < 2) return null;
+        const c = sq.charCodeAt(0) - 97;
+        const r = 8 - parseInt(sq[1]);
+        if(c < 0 || c > 7 || r < 0 || r > 7) return null;
+        return {r, c};
+    }
+
+    function drawArrow(fromSq, toSq, color, options = {}) {
+        if(!fromSq || !toSq) return;
+        const f = coord(fromSq); const t = coord(toSq);
+        if(!f || !t) return;
+
+        const opacity = options.opacity || "0.8";
+        const dashed = options.dashed ? "5,5" : "none";
+        const width = options.width || "2.2";
+
+        // Knight check (L-Shape)
+        const distSq = Math.pow(f.c - t.c, 2) + Math.pow(f.r - t.r, 2);
+        if(distSq === 5) {
+            drawKnightArrow(fromSq, toSq, color, opacity, dashed);
+            return;
+        }
+        
+        const sqSize = 12.5;
+        const offset = 6.25;
+        
+        const x1 = (f.c * sqSize) + offset; const y1 = (f.r * sqSize) + offset;
+        const x2 = (t.c * sqSize) + offset; const y2 = (t.r * sqSize) + offset;
+        
+        if (isNaN(x1) || isNaN(y1) || isNaN(x2) || isNaN(y2)) return;
+        
+        const id = `arr-${Math.random().toString(36).substr(2,5)}`;
+        const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
+        const marker = document.createElementNS("http://www.w3.org/2000/svg", "marker");
+        marker.setAttribute("id", id);
+        marker.setAttribute("viewBox", "0 0 20 20");
+        marker.setAttribute("refX", "16"); marker.setAttribute("refY", "10");
+        marker.setAttribute("markerWidth", "4"); marker.setAttribute("markerHeight", "4");
+        marker.setAttribute("orient", "auto-start-reverse");
+        
+        const poly = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        poly.setAttribute("d", "M 0 0 L 20 10 L 0 20 z");
+        poly.setAttribute("fill", color);
+        marker.appendChild(poly);
+        defs.appendChild(marker);
+        arrowLayer.appendChild(defs);
+        
+        const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+        line.setAttribute("x1", x1); line.setAttribute("y1", y1);
+        line.setAttribute("x2", x2); line.setAttribute("y2", y2);
+        line.setAttribute("stroke", color);
+        line.setAttribute("stroke-width", width);
+        line.setAttribute("stroke-linecap", "round");
+        line.setAttribute("stroke-dasharray", dashed);
+        line.setAttribute("marker-end", `url(#${id})`);
+        line.style.opacity = opacity;
+        arrowLayer.appendChild(line);
+    }
+
+    function drawKnightArrow(fromSq, toSq, color, opacity="0.8", dashed="none") {
+        const f = coord(fromSq); const t = coord(toSq);
+        const sqSize = 12.5; const offset = 6.25;
+        const x1 = (f.c * sqSize) + offset; const y1 = (f.r * sqSize) + offset;
+        const x2 = (t.c * sqSize) + offset; const y2 = (t.r * sqSize) + offset;
+        
+        const dy = Math.abs(t.r - f.r);
+        let elbowX = (dy === 2) ? x1 : x2;
+        let elbowY = (dy === 2) ? y2 : y1;
+        
+        const id = `k-${Math.random().toString(36).substr(2,5)}`;
+        const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
+        const marker = document.createElementNS("http://www.w3.org/2000/svg", "marker");
+        marker.setAttribute("id", id); marker.setAttribute("viewBox", "0 0 20 20");
+        marker.setAttribute("refX", "16"); marker.setAttribute("refY", "10");
+        marker.setAttribute("markerWidth", "4"); marker.setAttribute("markerHeight", "4");
+        marker.setAttribute("orient", "auto-start-reverse");
+        const head = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        head.setAttribute("d", "M 0 0 L 20 10 L 0 20 z"); head.setAttribute("fill", color);
+        marker.appendChild(head); defs.appendChild(marker); arrowLayer.appendChild(defs);
+        
+        const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        path.setAttribute("d", `M ${x1} ${y1} L ${elbowX} ${elbowY} L ${x2} ${y2}`);
+        path.setAttribute("stroke", color); path.setAttribute("stroke-width", "2.2");
+        path.setAttribute("fill", "none"); path.setAttribute("stroke-linejoin", "round");
+        path.setAttribute("stroke-linecap", "round");
+        path.setAttribute("stroke-dasharray", dashed);
+        path.setAttribute("marker-end", `url(#${id})`);
+        path.style.opacity = opacity;
+        arrowLayer.appendChild(path);
+    }
+
+    // --- Heuristics for Reasoning ---
+    function categorizeThreat(delta, scoreBefore) {
+        const abs = Math.abs(delta);
+        let type = 'blunder';
+        let label = 'Mistake';
+        let reason = 'Inaccuracy';
+        let icon = '⚠️';
+
+        if (abs > THRESHOLD_FATAL) {
+            type = 'fatal'; label = 'FATAL'; icon = '☠️';
+            reason = 'Catastrophic Material Loss';
+            if (Math.abs(scoreBefore) > 10) reason = 'Missed Forced Mate';
+        } 
+        else if (abs > THRESHOLD_BLUNDER) {
+            type = 'blunder'; label = 'BLUNDER'; icon = '🛑';
+            reason = 'Material Loss (Piece)';
+        }
+        else if (abs > THRESHOLD_MISTAKE) {
+            type = 'miss'; label = 'MISS'; icon = '📉';
+            reason = 'Positional Error';
+        }
+
+        // Special Check for Winning -> Losing
+        if (scoreBefore > 1.0 && (scoreBefore - delta) < -0.5) {
+            reason = 'Threw Away Win';
+        }
+
+        return { type, label, reason, icon };
+    }
+
+    // --- Scan Loop ---
+    let scanResolver = null;
+    window.electronAPI.onAnalysisResult((res) => { if(scanResolver) { scanResolver(res); scanResolver = null; } });
+    function requestAnalysisPromised(fen) { return new Promise(resolve => { scanResolver = resolve; window.electronAPI.requestAnalysis(fen); }); }
+
+    function getFenHistory(moves) {
+        const brain = new ArenaBrain();
+        const fens = [];
+        fens.push(brain.boardToFen()); 
+        for(const m of moves) {
+            brain.applyMove(m.uci || (m.from + m.to));
+            fens.push(brain.boardToFen());
+        }
+        return fens;
+    }
+
+    function getWhiteScore(result, fen) {
+        let sc = 0;
+        if (result.lines && result.lines[0]) sc = result.lines[0].score;
+        // Mate score normalization
+        if (Math.abs(sc) > 50) sc = sc > 0 ? 20 : -20;
+        const turn = fen.split(' ')[1];
+        if(turn === 'b') return -sc;
+        return sc;
+    }
+
+    btnScan.onclick = async () => {
+        if(isScanning || !gameData) return;
+        
+        isScanning = true;
+        btnScan.disabled = true;
+        btnScan.textContent = "ANALYZING PLAYER SAFETY...";
+        progContainer.style.display = "block";
+        threats = [];
+        renderThreatList();
+        
+        const fens = getFenHistory(gameData.moves);
+        const scores = [];
+        
+        let score = await requestAnalysisPromised(fens[0]);
+        let whiteScore = getWhiteScore(score, fens[0]);
+        scores.push(whiteScore);
+        
+        for(let i=1; i<fens.length; i++) {
+            progBar.style.width = ((i/fens.length)*100) + "%";
+            
+            const res = await requestAnalysisPromised(fens[i]);
+            const currentWhiteScore = getWhiteScore(res, fens[i]);
+            scores.push(currentWhiteScore);
+            
+            const moveIdx = i - 1;
+            const sideMoved = moveIdx % 2 === 0 ? 'w' : 'b';
+            const delta = currentWhiteScore - scores[i-1];
+            
+            // Check if player hurt themselves (Threat on Player / Self-Inflicted)
+            // White move -> Score dropped (negative delta)
+            // Black move -> Score rose (positive delta, meaning better for White)
+            
+            let severity = 0;
+            let isThreat = false;
+            
+            if (sideMoved === 'w' && delta < -THRESHOLD_MISTAKE) { isThreat = true; severity = Math.abs(delta); }
+            if (sideMoved === 'b' && delta > THRESHOLD_MISTAKE) { isThreat = true; severity = Math.abs(delta); }
+            
+            if (isThreat) {
+                // Categorize
+                const details = categorizeThreat(severity, scores[i-1]);
+                
+                threats.push({
+                    moveIdx: moveIdx,
+                    fenBefore: fens[i-1],
+                    fenAfter: fens[i],
+                    playedMove: gameData.moves[moveIdx],
+                    bestMove: res.lines && res.lines[0] ? res.lines[0].bestMove : null,
+                    scoreDrop: severity,
+                    side: sideMoved,
+                    details: details
+                });
+            }
+        }
+        
+        // Post-process best moves
+        statusLabel.textContent = "Refining...";
+        for(let t of threats) {
+            const res = await requestAnalysisPromised(t.fenBefore);
+            if(res.lines && res.lines[0]) { t.bestMove = res.lines[0].bestMove; }
+        }
+        
+        isScanning = false;
+        btnScan.textContent = "SCAN COMPLETE";
+        statusLabel.textContent = `Identified ${threats.length} errors`;
+        renderThreatList();
+    };
+
+    function renderThreatList() {
+        threatListEl.innerHTML = "";
+        if(threats.length === 0) {
+            threatListEl.innerHTML = `<div class="empty-state"><div style="font-size:32px;">🛡️</div><div>No immediate threats detected in replay.</div></div>`;
+            return;
+        }
+        
+        threats.forEach((t, idx) => {
+            const div = document.createElement('div');
+            div.className = `threat-card`;
+            div.onclick = () => loadThreat(idx);
+            
+            const moveNum = Math.floor(t.moveIdx / 2) + 1;
+            const sideStr = t.side === 'w' ? 'White' : 'Black';
+            const san = t.playedMove.san || t.playedMove.uci;
+            const { type, label, reason, icon } = t.details;
+            
+            div.innerHTML = `
+                <div class="card-header">
+                    <span class="move-num">${moveNum}. ${san} (${sideStr})</span>
+                    <span class="threat-type type-${type}">${label}</span>
+                </div>
+                <div class="card-reason">
+                    <span class="reason-icon">${icon}</span>
+                    <span>${reason}</span>
+                </div>
+                <div class="card-footer">
+                    <span>Loss of Advantage</span>
+                    <span class="eval-drop">-${t.scoreDrop.toFixed(1)}</span>
+                </div>
+            `;
+            threatListEl.appendChild(div);
+        });
+    }
+    
+    function loadThreat(idx) {
+        const t = threats[idx];
+        
+        document.querySelectorAll('.threat-card').forEach((el, i) => {
+            el.classList.toggle('active', i === idx);
+        });
+        
+        const played = t.playedMove;
+        const from = played.from || played.uci.substring(0,2);
+        const to = played.to || played.uci.substring(2,4);
+        
+        renderBoard(t.fenAfter, { from, to });
+        arrowLayer.innerHTML = ""; 
+        
+        // Red Solid Arrow for Mistake
+        drawArrow(from, to, "#ef4444", { width: "3" });
+        
+        // Green Neon Dashed Arrow for Solution/Best Move
+        if (t.bestMove && t.bestMove.length >= 4 && t.bestMove !== '(none)') {
+            const bFrom = t.bestMove.substring(0,2);
+            const bTo = t.bestMove.substring(2,4);
+            drawArrow(bFrom, bTo, "#4ade80", { dashed: true, width: "2.5", opacity: "1.0" });
+        }
+    }
+
+    (async () => {
+        const prefs = await window.electronAPI.getPreferences();
+        if(prefs?.boardTheme) document.documentElement.setAttribute('data-theme', prefs.boardTheme);
+        window.electronAPI.requestLastGame(); 
+    })();
+    
+    window.electronAPI.onLastGame((data) => {
+        gameData = data;
+        if(data && data.fen) renderBoard(data.fen); 
+    });
+
+  </script>
+</body>
+</html>

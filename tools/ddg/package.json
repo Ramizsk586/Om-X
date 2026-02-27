@@ -1,0 +1,17 @@
+{
+  "name": "lms-plugin-duckduckgo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "LM Studio plugin for searching the web with DuckDuckGo",
+  "main": "index.js",
+  "scripts": {
+    "dev": "lms dev",
+    "push": "lms push"
+  },
+  "author": "Daniel Sig",
+  "license": "MIT",
+  "peerDependencies": {
+    "@lmstudio/sdk": "*",
+    "zod": "*"
+  }
+}

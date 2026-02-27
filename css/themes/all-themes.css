@@ -1,0 +1,810 @@
+/* Om-X Advanced Blended Theme System - 41 Themes Across 10 Categories */
+/* Each theme features sophisticated gradients, glassmorphism, and blended colors */
+
+/* ============================================================
+   DARK & MODERN - Sophisticated dark themes with depth
+   ============================================================ */
+
+/* 1. Midnight Blend - Deep blue-black with purple undertones */
+body.theme-midnight-blend {
+  --bg-app: linear-gradient(135deg, #0a0a0f 0%, #12121a 50%, #0d0d14 100%);
+  --glass-bg: rgba(20, 20, 30, 0.75);
+  --glass-border: 1px solid rgba(139, 92, 246, 0.15);
+  --text-main: #f8f8ff;
+  --text-secondary: #a0a0b0;
+  --accent-color: #8b5cf6;
+  --accent-gradient: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%);
+  --glass-blur: blur(24px);
+  --shadow-glow: 0 8px 32px rgba(139, 92, 246, 0.2);
+}
+
+/* 2. Obsidian Glass - Rich black with subtle blue tints */
+body.theme-obsidian {
+  --bg-app: linear-gradient(145deg, #0d0d12 0%, #15151c 50%, #111118 100%);
+  --glass-bg: rgba(25, 25, 35, 0.8);
+  --glass-border: 1px solid rgba(99, 102, 241, 0.12);
+  --text-main: #f0f0f5;
+  --text-secondary: #8b8b9a;
+  --accent-color: #6366f1;
+  --accent-gradient: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+  --glass-blur: blur(28px);
+  --shadow-glow: 0 8px 32px rgba(99, 102, 241, 0.15);
+}
+
+/* 3. Carbon Fiber - Dark gray with metallic undertones */
+body.theme-carbon {
+  --bg-app: linear-gradient(160deg, #1a1a1a 0%, #242424 50%, #1f1f1f 100%);
+  --glass-bg: rgba(35, 35, 35, 0.85);
+  --glass-border: 1px solid rgba(255, 255, 255, 0.06);
+  --text-main: #f5f5f5;
+  --text-secondary: #909090;
+  --accent-color: #e5e5e5;
+  --accent-gradient: linear-gradient(135deg, #d4d4d4 0%, #a3a3a3 100%);
+  --glass-blur: blur(20px);
+  --shadow-glow: 0 8px 32px rgba(255, 255, 255, 0.08);
+}
+
+/* 4. Deep Void - Absolute black with subtle depth */
+body.theme-void {
+  --bg-app: radial-gradient(ellipse at top, #0a0a0a 0%, #000000 50%, #050505 100%);
+  --glass-bg: rgba(15, 15, 15, 0.9);
+  --glass-border: 1px solid rgba(255, 255, 255, 0.04);
+  --text-main: #ffffff;
+  --text-secondary: #666666;
+  --accent-color: #444444;
+  --accent-gradient: linear-gradient(135deg, #555555 0%, #333333 100%);
+  --glass-blur: blur(16px);
+  --shadow-glow: 0 4px 24px rgba(0, 0, 0, 0.5);
+}
+
+/* 5. Nordic Night - Cool blue-gray darkness */
+body.theme-nordic {
+  --bg-app: linear-gradient(135deg, #1e293b 0%, #0f172a 50%, #1e293b 100%);
+  --glass-bg: rgba(30, 41, 59, 0.7);
+  --glass-border: 1px solid rgba(148, 163, 184, 0.1);
+  --text-main: #f1f5f9;
+  --text-secondary: #94a3b8;
+  --accent-color: #38bdf8;
+  --accent-gradient: linear-gradient(135deg, #38bdf8 0%, #0ea5e9 100%);
+  --glass-blur: blur(22px);
+  --shadow-glow: 0 8px 32px rgba(56, 189, 248, 0.15);
+}
+
+/* ============================================================
+   LIGHT & CLEAN - Bright, airy themes with subtle elegance
+   ============================================================ */
+
+/* 6. Arctic White - Crisp white with cool blue tints */
+body.theme-arctic {
+  --bg-app: linear-gradient(180deg, #ffffff 0%, #f8fafc 50%, #f1f5f9 100%);
+  --glass-bg: rgba(255, 255, 255, 0.85);
+  --glass-border: 1px solid rgba(203, 213, 225, 0.3);
+  --text-main: #0f172a;
+  --text-secondary: #64748b;
+  --accent-color: #3b82f6;
+  --accent-gradient: linear-gradient(135deg, #60a5fa 0%, #3b82f6 100%);
+  --glass-blur: blur(20px);
+  --shadow-glow: 0 8px 32px rgba(59, 130, 246, 0.12);
+}
+
+/* 7. Pearl Mist - Soft white with warm undertones */
+body.theme-pearl {
+  --bg-app: linear-gradient(145deg, #faf9f7 0%, #f5f4f2 50%, #f0eeeb 100%);
+  --glass-bg: rgba(250, 249, 247, 0.9);
+  --glass-border: 1px solid rgba(200, 195, 190, 0.25);
+  --text-main: #2d2a26;
+  --text-secondary: #8b8680;
+  --accent-color: #d4a574;
+  --accent-gradient: linear-gradient(135deg, #e6c9a8 0%, #d4a574 100%);
+  --glass-blur: blur(18px);
+  --shadow-glow: 0 8px 32px rgba(212, 165, 116, 0.1);
+}
+
+/* 8. Ivory Clean - Classic ivory with subtle warmth */
+body.theme-ivory {
+  --bg-app: linear-gradient(160deg, #fffff0 0%, #faf8ed 50%, #f5f2e6 100%);
+  --glass-bg: rgba(255, 255, 240, 0.88);
+  --glass-border: 1px solid rgba(218, 210, 190, 0.3);
+  --text-main: #2c2c2c;
+  --text-secondary: #8a8a7a;
+  --accent-color: #b8a88a;
+  --accent-gradient: linear-gradient(135deg, #d4c4a8 0%, #b8a88a 100%);
+  --glass-blur: blur(20px);
+  --shadow-glow: 0 8px 32px rgba(184, 168, 138, 0.1);
+}
+
+/* 9. Winter Frost - Icy white with silver-blue hints */
+body.theme-frost {
+  --bg-app: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 50%, #f1f5f9 100%);
+  --glass-bg: rgba(248, 250, 252, 0.9);
+  --glass-border: 1px solid rgba(203, 213, 225, 0.4);
+  --text-main: #1e293b;
+  --text-secondary: #64748b;
+  --accent-color: #94a3b8;
+  --accent-gradient: linear-gradient(135deg, #cbd5e1 0%, #94a3b8 100%);
+  --glass-blur: blur(24px);
+  --shadow-glow: 0 8px 32px rgba(148, 163, 184, 0.15);
+}
+
+/* ============================================================
+   GRADIENT & GLASS - Mesmerizing gradient themes
+   ============================================================ */
+
+/* 10. Aurora Borealis - Shimmering green-blue-purple */
+body.theme-aurora {
+  --bg-app: linear-gradient(135deg, #0f2027 0%, #203a43 50%, #2c5364 100%);
+  --glass-bg: rgba(32, 58, 67, 0.65);
+  --glass-border: 1px solid rgba(52, 211, 153, 0.2);
+  --text-main: #ecfdf5;
+  --text-secondary: #6ee7b7;
+  --accent-color: #34d399;
+  --accent-gradient: linear-gradient(135deg, #34d399 0%, #10b981 50%, #059669 100%);
+  --glass-blur: blur(30px);
+  --shadow-glow: 0 8px 40px rgba(52, 211, 153, 0.25);
+}
+
+/* 11. Sunset Gradient - Warm orange-pink-purple fade */
+body.theme-sunset {
+  --bg-app: linear-gradient(135deg, #2d1b4e 0%, #7c3aed 50%, #f97316 100%);
+  --glass-bg: rgba(124, 58, 237, 0.6);
+  --glass-border: 1px solid rgba(251, 146, 60, 0.25);
+  --text-main: #fff7ed;
+  --text-secondary: #fdba74;
+  --accent-color: #f97316;
+  --accent-gradient: linear-gradient(135deg, #fb923c 0%, #f97316 50%, #ea580c 100%);
+  --glass-blur: blur(32px);
+  --shadow-glow: 0 8px 40px rgba(249, 115, 22, 0.3);
+}
+
+/* 12. Twilight Blend - Deep purple-blue evening sky */
+body.theme-twilight {
+  --bg-app: linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #4338ca 100%);
+  --glass-bg: rgba(49, 46, 129, 0.7);
+  --glass-border: 1px solid rgba(167, 139, 250, 0.2);
+  --text-main: #ede9fe;
+  --text-secondary: #a78bfa;
+  --accent-color: #8b5cf6;
+  --accent-gradient: linear-gradient(135deg, #a78bfa 0%, #8b5cf6 50%, #7c3aed 100%);
+  --glass-blur: blur(28px);
+  --shadow-glow: 0 8px 40px rgba(139, 92, 246, 0.3);
+}
+
+/* 13. Cosmic Nebula - Space-inspired purple-pink-blue */
+body.theme-nebula {
+  --bg-app: radial-gradient(ellipse at top right, #1a0b2e 0%, #2d1b4e 50%, #0f172a 100%);
+  --glass-bg: rgba(45, 27, 78, 0.65);
+  --glass-border: 1px solid rgba(232, 121, 249, 0.15);
+  --text-main: #fae8ff;
+  --text-secondary: #e879f9;
+  --accent-color: #d946ef;
+  --accent-gradient: linear-gradient(135deg, #e879f9 0%, #d946ef 50%, #c026d3 100%);
+  --glass-blur: blur(34px);
+  --shadow-glow: 0 8px 40px rgba(217, 70, 239, 0.25);
+}
+
+/* 14. Prismatic Glass - Rainbow-inspired subtle gradient */
+body.theme-prism {
+  --bg-app: linear-gradient(135deg, #18181b 0%, #27272a 50%, #3f3f46 100%);
+  --glass-bg: rgba(39, 39, 42, 0.75);
+  --glass-border: 1px solid rgba(255, 255, 255, 0.08);
+  --text-main: #fafafa;
+  --text-secondary: #a1a1aa;
+  --accent-color: #a855f7;
+  --accent-gradient: linear-gradient(135deg, #22d3ee 0%, #a855f7 50%, #f472b6 100%);
+  --glass-blur: blur(26px);
+  --shadow-glow: 0 8px 40px rgba(168, 85, 247, 0.2);
+}
+
+/* ============================================================
+   PASTEL & SOFT - Gentle, calming color palettes
+   ============================================================ */
+
+/* 15. Cherry Blossom - Soft pink with white */
+body.theme-blossom {
+  --bg-app: linear-gradient(135deg, #fdf2f8 0%, #fce7f3 50%, #fbcfe8 100%);
+  --glass-bg: rgba(253, 242, 248, 0.85);
+  --glass-border: 1px solid rgba(244, 114, 182, 0.15);
+  --text-main: #831843;
+  --text-secondary: #ec4899;
+  --accent-color: #f472b6;
+  --accent-gradient: linear-gradient(135deg, #f9a8d4 0%, #f472b6 100%);
+  --glass-blur: blur(20px);
+  --shadow-glow: 0 8px 32px rgba(244, 114, 182, 0.15);
+}
+
+/* 16. Cotton Candy - Blue-pink soft blend */
+body.theme-cotton {
+  --bg-app: linear-gradient(135deg, #eff6ff 0%, #fdf4ff 50%, #fff1f2 100%);
+  --glass-bg: rgba(255, 255, 255, 0.88);
+  --glass-border: 1px solid rgba(167, 139, 250, 0.2);
+  --text-main: #4c1d95;
+  --text-secondary: #8b5cf6;
+  --accent-color: #a78bfa;
+  --accent-gradient: linear-gradient(135deg, #60a5fa 0%, #a78bfa 50%, #f472b6 100%);
+  --glass-blur: blur(22px);
+  --shadow-glow: 0 8px 32px rgba(167, 139, 250, 0.2);
+}
+
+/* 17. Peach Cream - Warm peachy softness */
+body.theme-peach {
+  --bg-app: linear-gradient(135deg, #fff7ed 0%, #ffedd5 50%, #fed7aa 100%);
+  --glass-bg: rgba(255, 247, 237, 0.9);
+  --glass-border: 1px solid rgba(251, 146, 60, 0.15);
+  --text-main: #7c2d12;
+  --text-secondary: #f97316;
+  --accent-color: #fb923c;
+  --accent-gradient: linear-gradient(135deg, #fdba74 0%, #fb923c 100%);
+  --glass-blur: blur(18px);
+  --shadow-glow: 0 8px 32px rgba(251, 146, 60, 0.15);
+}
+
+/* 18. Soft Sage - Muted green tranquility */
+body.theme-sage {
+  --bg-app: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 50%, #bbf7d0 100%);
+  --glass-bg: rgba(240, 253, 244, 0.9);
+  --glass-border: 1px solid rgba(74, 222, 128, 0.15);
+  --text-main: #14532d;
+  --text-secondary: #22c55e;
+  --accent-color: #4ade80;
+  --accent-gradient: linear-gradient(135deg, #86efac 0%, #4ade80 100%);
+  --glass-blur: blur(20px);
+  --shadow-glow: 0 8px 32px rgba(74, 222, 128, 0.15);
+}
+
+/* 19. Dusty Mauve - Muted purple elegance */
+body.theme-mauve {
+  --bg-app: linear-gradient(135deg, #faf5ff 0%, #f3e8ff 50%, #e9d5ff 100%);
+  --glass-bg: rgba(250, 245, 255, 0.88);
+  --glass-border: 1px solid rgba(192, 132, 252, 0.15);
+  --text-main: #581c87;
+  --text-secondary: #a855f7;
+  --accent-color: #c084fc;
+  --accent-gradient: linear-gradient(135deg, #d8b4fe 0%, #c084fc 100%);
+  --glass-blur: blur(22px);
+  --shadow-glow: 0 8px 32px rgba(192, 132, 252, 0.15);
+}
+
+/* ============================================================
+   CYBER & NEON - High-contrast futuristic themes
+   ============================================================ */
+
+/* 20. Cyber Punk - Electric blue-pink */
+body.theme-cyber {
+  --bg-app: linear-gradient(135deg, #0c0a09 0%, #1c1917 50%, #0f0a1e 100%);
+  --glass-bg: rgba(28, 25, 23, 0.8);
+  --glass-border: 1px solid rgba(6, 182, 212, 0.3);
+  --text-main: #ecfeff;
+  --text-secondary: #22d3ee;
+  --accent-color: #06b6d4;
+  --accent-gradient: linear-gradient(135deg, #22d3ee 0%, #06b6d4 50%, #0891b2 100%);
+  --glass-blur: blur(24px);
+  --shadow-glow: 0 0 40px rgba(6, 182, 212, 0.4);
+}
+
+/* 21. Matrix Code - Classic green terminal */
+body.theme-matrix {
+  --bg-app: linear-gradient(135deg, #022c22 0%, #064e3b 50%, #065f46 100%);
+  --glass-bg: rgba(6, 78, 59, 0.75);
+  --glass-border: 1px solid rgba(34, 197, 94, 0.3);
+  --text-main: #ecfdf5;
+  --text-secondary: #4ade80;
+  --accent-color: #22c55e;
+  --accent-gradient: linear-gradient(135deg, #4ade80 0%, #22c55e 50%, #16a34a 100%);
+  --glass-blur: blur(20px);
+  --shadow-glow: 0 0 40px rgba(34, 197, 94, 0.4);
+}
+
+/* 22. Neon Nights - Hot pink-electric blue */
+body.theme-neon {
+  --bg-app: linear-gradient(135deg, #0f0518 0%, #1a0b2e 50%, #0f0514 100%);
+  --glass-bg: rgba(26, 11, 46, 0.8);
+  --glass-border: 1px solid rgba(236, 72, 153, 0.3);
+  --text-main: #fdf2f8;
+  --text-secondary: #f472b6;
+  --accent-color: #ec4899;
+  --accent-gradient: linear-gradient(135deg, #f472b6 0%, #ec4899 50%, #db2777 100%);
+  --glass-blur: blur(26px);
+  --shadow-glow: 0 0 40px rgba(236, 72, 153, 0.4);
+}
+
+/* 23. Synthwave - Retro purple-orange gradient */
+body.theme-synth {
+  --bg-app: linear-gradient(135deg, #2e1065 0%, #701a75 50%, #c2410c 100%);
+  --glass-bg: rgba(112, 26, 117, 0.7);
+  --glass-border: 1px solid rgba(251, 146, 60, 0.25);
+  --text-main: #fef3c7;
+  --text-secondary: #fbbf24;
+  --accent-color: #f59e0b;
+  --accent-gradient: linear-gradient(135deg, #c084fc 0%, #f59e0b 100%);
+  --glass-blur: blur(28px);
+  --shadow-glow: 0 8px 40px rgba(245, 158, 11, 0.3);
+}
+
+/* 24. Terminal Green - Classic hacking aesthetic */
+body.theme-hacker {
+  --bg-app: #000000;
+  --glass-bg: rgba(0, 20, 0, 0.9);
+  --glass-border: 1px solid rgba(0, 255, 65, 0.2);
+  --text-main: #00ff41;
+  --text-secondary: #008f11;
+  --accent-color: #00ff41;
+  --accent-gradient: linear-gradient(135deg, #00ff41 0%, #008f11 100%);
+  --glass-blur: blur(16px);
+  --shadow-glow: 0 0 30px rgba(0, 255, 65, 0.5);
+}
+
+/* ============================================================
+   NATURE & ORGANIC - Earth-inspired natural themes
+   ============================================================ */
+
+/* 25. Deep Forest - Rich greens with depth */
+body.theme-forest {
+  --bg-app: linear-gradient(135deg, #052e16 0%, #14532d 50%, #166534 100%);
+  --glass-bg: rgba(20, 83, 45, 0.75);
+  --glass-border: 1px solid rgba(74, 222, 128, 0.2);
+  --text-main: #f0fdf4;
+  --text-secondary: #86efac;
+  --accent-color: #22c55e;
+  --accent-gradient: linear-gradient(135deg, #4ade80 0%, #22c55e 100%);
+  --glass-blur: blur(24px);
+  --shadow-glow: 0 8px 32px rgba(34, 197, 94, 0.2);
+}
+
+/* 26. Ocean Waves - Deep blue aquatic theme */
+body.theme-ocean-waves {
+  --bg-app: linear-gradient(135deg, #082f49 0%, #0c4a6e 50%, #075985 100%);
+  --glass-bg: rgba(12, 74, 110, 0.75);
+  --glass-border: 1px solid rgba(56, 189, 248, 0.2);
+  --text-main: #f0f9ff;
+  --text-secondary: #7dd3fc;
+  --accent-color: #0ea5e9;
+  --accent-gradient: linear-gradient(135deg, #38bdf8 0%, #0ea5e9 100%);
+  --glass-blur: blur(26px);
+  --shadow-glow: 0 8px 32px rgba(14, 165, 233, 0.2);
+}
+
+/* 27. Desert Sands - Warm earth tones */
+body.theme-desert {
+  --bg-app: linear-gradient(135deg, #fef3c7 0%, #fde68a 50%, #fcd34d 100%);
+  --glass-bg: rgba(254, 243, 199, 0.88);
+  --glass-border: 1px solid rgba(217, 119, 6, 0.2);
+  --text-main: #78350f;
+  --text-secondary: #d97706;
+  --accent-color: #f59e0b;
+  --accent-gradient: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
+  --glass-blur: blur(20px);
+  --shadow-glow: 0 8px 32px rgba(217, 119, 6, 0.15);
+}
+
+/* 28. Autumn Leaves - Orange-red warmth */
+body.theme-autumn {
+  --bg-app: linear-gradient(135deg, #451a03 0%, #7c2d12 50%, #9a3412 100%);
+  --glass-bg: rgba(124, 45, 18, 0.8);
+  --glass-border: 1px solid rgba(251, 146, 60, 0.2);
+  --text-main: #fff7ed;
+  --text-secondary: #fdba74;
+  --accent-color: #f97316;
+  --accent-gradient: linear-gradient(135deg, #fb923c 0%, #f97316 100%);
+  --glass-blur: blur(22px);
+  --shadow-glow: 0 8px 32px rgba(249, 115, 22, 0.2);
+}
+
+/* 29. Tropical Paradise - Vibrant teal-coral */
+body.theme-tropical {
+  --bg-app: linear-gradient(135deg, #134e4a 0%, #0f766e 50%, #0d9488 100%);
+  --glass-bg: rgba(15, 118, 110, 0.75);
+  --glass-border: 1px solid rgba(45, 212, 191, 0.2);
+  --text-main: #f0fdfa;
+  --text-secondary: #5eead4;
+  --accent-color: #14b8a6;
+  --accent-gradient: linear-gradient(135deg, #2dd4bf 0%, #14b8a6 100%);
+  --glass-blur: blur(24px);
+  --shadow-glow: 0 8px 32px rgba(20, 184, 166, 0.25);
+}
+
+/* ============================================================
+   PREMIUM DARK - Sophisticated dark themes
+   ============================================================ */
+
+/* 30. Titanium Dark - Metallic dark gray with subtle silver */
+body.theme-titanium {
+  --bg-app: linear-gradient(135deg, #1a1a1f 0%, #252530 50%, #1e1e28 100%);
+  --glass-bg: rgba(35, 35, 45, 0.8);
+  --glass-border: 1px solid rgba(200, 200, 210, 0.1);
+  --text-main: #f0f0f5;
+  --text-secondary: #a0a0aa;
+  --accent-color: #a1a1aa;
+  --accent-gradient: linear-gradient(135deg, #d4d4d8 0%, #71717a 100%);
+  --glass-blur: blur(24px);
+  --shadow-glow: 0 8px 32px rgba(180, 180, 190, 0.15);
+}
+
+/* 31. Onyx Night - Deep black with subtle texture */
+body.theme-onyx {
+  --bg-app: linear-gradient(145deg, #0c0c0f 0%, #141418 50%, #0a0a0c 100%);
+  --glass-bg: rgba(18, 18, 22, 0.85);
+  --glass-border: 1px solid rgba(255, 255, 255, 0.05);
+  --text-main: #f5f5f7;
+  --text-secondary: #888890;
+  --accent-color: #6b6b75;
+  --accent-gradient: linear-gradient(135deg, #8a8a95 0%, #52525b 100%);
+  --glass-blur: blur(28px);
+  --shadow-glow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+/* 32. Charcoal Glass - Warm dark gray with subtle brown undertones */
+body.theme-charcoal {
+  --bg-app: linear-gradient(135deg, #1c1917 0%, #292524 50%, #1c1917 100%);
+  --glass-bg: rgba(41, 37, 36, 0.75);
+  --glass-border: 1px solid rgba(251, 191, 144, 0.1);
+  --text-main: #fafaf9;
+  --text-secondary: #a8a29e;
+  --accent-color: #d6d3d1;
+  --accent-gradient: linear-gradient(135deg, #e7e5e4 0%, #a8a29e 100%);
+  --glass-blur: blur(22px);
+  --shadow-glow: 0 8px 32px rgba(168, 162, 158, 0.15);
+}
+
+/* ============================================================
+   FRESH LIGHT - Clean and bright themes
+   ============================================================ */
+
+/* 33. Crisp Linen - Fresh white with subtle texture */
+body.theme-crisp-linen {
+  --bg-app: linear-gradient(180deg, #fefefe 0%, #faf9f6 50%, #f5f3f0 100%);
+  --glass-bg: rgba(255, 255, 255, 0.9);
+  --glass-border: 1px solid rgba(229, 228, 226, 0.4);
+  --text-main: #1c1917;
+  --text-secondary: #78716c;
+  --accent-color: #a8a29e;
+  --accent-gradient: linear-gradient(135deg, #d6d3d1 0%, #a8a29e 100%);
+  --glass-blur: blur(20px);
+  --shadow-glow: 0 8px 32px rgba(168, 162, 158, 0.1);
+}
+
+/* 34. Morning Haze - Soft gray-blue morning light */
+body.theme-morning-haze {
+  --bg-app: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 50%, #f8fafc 100%);
+  --glass-bg: rgba(241, 245, 249, 0.88);
+  --glass-border: 1px solid rgba(203, 213, 225, 0.35);
+  --text-main: #334155;
+  --text-secondary: #64748b;
+  --accent-color: #94a3b8;
+  --accent-gradient: linear-gradient(135deg, #cbd5e1 0%, #94a3b8 100%);
+  --glass-blur: blur(22px);
+  --shadow-glow: 0 8px 32px rgba(148, 163, 184, 0.15);
+}
+
+/* ============================================================
+   GOLDEN HOUR - Warm sunrise-inspired themes
+   ============================================================ */
+
+/* 35. Sunrise Glow - Warm golden orange gradients */
+body.theme-sunrise-glow {
+  --bg-app: linear-gradient(135deg, #fff7ed 0%, #ffedd5 30%, #fed7aa 70%, #fdba74 100%);
+  --glass-bg: rgba(255, 247, 237, 0.85);
+  --glass-border: 1px solid rgba(251, 146, 60, 0.2);
+  --text-main: #7c2d12;
+  --text-secondary: #ea580c;
+  --accent-color: #f97316;
+  --accent-gradient: linear-gradient(135deg, #fb923c 0%, #f97316 50%, #ea580c 100%);
+  --glass-blur: blur(24px);
+  --shadow-glow: 0 8px 32px rgba(249, 115, 22, 0.2);
+}
+
+/* 36. Honey Amber - Rich golden honey tones */
+body.theme-honey-amber {
+  --bg-app: linear-gradient(135deg, #fef3c7 0%, #fde68a 50%, #fcd34d 100%);
+  --glass-bg: rgba(253, 230, 138, 0.85);
+  --glass-border: 1px solid rgba(245, 158, 11, 0.2);
+  --text-main: #78350f;
+  --text-secondary: #d97706;
+  --accent-color: #f59e0b;
+  --accent-gradient: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
+  --glass-blur: blur(22px);
+  --shadow-glow: 0 8px 32px rgba(245, 158, 11, 0.2);
+}
+
+/* ============================================================
+   SOFT PASTEL - Gentle and calming palettes
+   ============================================================ */
+
+/* 37. Lavender Dream - Soft purple serenity */
+body.theme-lavender-dream {
+  --bg-app: linear-gradient(135deg, #faf5ff 0%, #f3e8ff 50%, #e9d5ff 100%);
+  --glass-bg: rgba(250, 245, 255, 0.88);
+  --glass-border: 1px solid rgba(192, 132, 252, 0.2);
+  --text-main: #5b21b6;
+  --text-secondary: #8b5cf6;
+  --accent-color: #a78bfa;
+  --accent-gradient: linear-gradient(135deg, #c4b5fd 0%, #a78bfa 100%);
+  --glass-blur: blur(24px);
+  --shadow-glow: 0 8px 32px rgba(167, 139, 250, 0.2);
+}
+
+/* 38. Rose Petals - Soft romantic pink */
+body.theme-rose-petals {
+  --bg-app: linear-gradient(135deg, #fdf2f8 0%, #fce7f3 50%, #fbcfe8 100%);
+  --glass-bg: rgba(253, 242, 248, 0.88);
+  --glass-border: 1px solid rgba(244, 114, 182, 0.2);
+  --text-main: #9d174d;
+  --text-secondary: #ec4899;
+  --accent-color: #f472b6;
+  --accent-gradient: linear-gradient(135deg, #f9a8d4 0%, #f472b6 100%);
+  --glass-blur: blur(22px);
+  --shadow-glow: 0 8px 32px rgba(244, 114, 182, 0.2);
+}
+
+/* ============================================================
+   VOLCANIC & FIRE - Fiery dark themes
+   ============================================================ */
+
+/* 39. Volcanic Glass - Dark volcanic rock with subtle heat */
+body.theme-volcanic-glass {
+  --bg-app: linear-gradient(135deg, #1c1917 0%, #292524 50%, #0c0a09 100%);
+  --glass-bg: rgba(28, 25, 23, 0.8);
+  --glass-border: 1px solid rgba(249, 115, 22, 0.15);
+  --text-main: #fafaf9;
+  --text-secondary: #a8a29e;
+  --accent-color: #f97316;
+  --accent-gradient: linear-gradient(135deg, #fb923c 0%, #f97316 50%, #ea580c 100%);
+  --glass-blur: blur(26px);
+  --shadow-glow: 0 8px 40px rgba(249, 115, 22, 0.25);
+}
+
+/* 40. Ember Glow - Glowing orange-red fire theme */
+body.theme-ember-glow {
+  --bg-app: radial-gradient(ellipse at top, #1a0a05 0%, #0c0502 50%, #000000 100%);
+  --glass-bg: rgba(28, 10, 5, 0.85);
+  --glass-border: 1px solid rgba(234, 88, 12, 0.2);
+  --text-main: #fff7ed;
+  --text-secondary: #fdba74;
+  --accent-color: #f97316;
+  --accent-gradient: linear-gradient(135deg, #fb923c 0%, #f97316 50%, #ea580c 100%);
+  --glass-blur: blur(24px);
+  --shadow-glow: 0 0 40px rgba(249, 115, 22, 0.35);
+}
+
+/* 41. Crimson Storm - Deep red dramatic theme */
+body.theme-crimson-storm {
+  --bg-app: linear-gradient(135deg, #1f0505 0%, #2e0a0a 50%, #1a0303 100%);
+  --glass-bg: rgba(60, 10, 10, 0.8);
+  --glass-border: 1px solid rgba(220, 38, 38, 0.2);
+  --text-main: #fef2f2;
+  --text-secondary: #fca5a5;
+  --accent-color: #ef4444;
+  --accent-gradient: linear-gradient(135deg, #f87171 0%, #ef4444 50%, #dc2626 100%);
+  --glass-blur: blur(26px);
+  --shadow-glow: 0 8px 40px rgba(239, 68, 68, 0.25);
+}
+
+/* 42. Steel Blue - Professional cool blue-gray */
+body.theme-steel-blue {
+  --bg-app: linear-gradient(135deg, #1e293b 0%, #334155 50%, #1e293b 100%);
+  --glass-bg: rgba(30, 41, 59, 0.75);
+  --glass-border: 1px solid rgba(148, 163, 184, 0.15);
+  --text-main: #f1f5f9;
+  --text-secondary: #94a3b8;
+  --accent-color: #60a5fa;
+  --accent-gradient: linear-gradient(135deg, #93c5fd 0%, #60a5fa 100%);
+  --glass-blur: blur(24px);
+  --shadow-glow: 0 8px 32px rgba(96, 165, 250, 0.2);
+}
+
+/* 43. Mint Fresh - Crisp cool mint green */
+body.theme-mint-fresh {
+  --bg-app: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 50%, #a7f3d0 100%);
+  --glass-bg: rgba(236, 253, 245, 0.9);
+  --glass-border: 1px solid rgba(52, 211, 153, 0.2);
+  --text-main: #064e3b;
+  --text-secondary: #10b981;
+  --accent-color: #34d399;
+  --accent-gradient: linear-gradient(135deg, #6ee7b7 0%, #34d399 100%);
+  --glass-blur: blur(20px);
+  --shadow-glow: 0 8px 32px rgba(52, 211, 153, 0.15);
+}
+
+/* 44. Berry Smoothie - Rich purple berry tones */
+body.theme-berry-smoothie {
+  --bg-app: linear-gradient(135deg, #faf5ff 0%, #ede9fe 50%, #ddd6fe 100%);
+  --glass-bg: rgba(250, 245, 255, 0.88);
+  --glass-border: 1px solid rgba(167, 139, 250, 0.2);
+  --text-main: #4c1d95;
+  --text-secondary: #8b5cf6;
+  --accent-color: #a78bfa;
+  --accent-gradient: linear-gradient(135deg, #c4b5fd 0%, #a78bfa 100%);
+  --glass-blur: blur(22px);
+  --shadow-glow: 0 8px 32px rgba(167, 139, 250, 0.2);
+}
+
+/* 45. Plasma Purple - Electric vibrant purple */
+body.theme-plasma-purple {
+  --bg-app: linear-gradient(135deg, #2e1065 0%, #4c1d95 50%, #5b21b6 100%);
+  --glass-bg: rgba(76, 29, 149, 0.7);
+  --glass-border: 1px solid rgba(192, 132, 252, 0.25);
+  --text-main: #faf5ff;
+  --text-secondary: #c084fc;
+  --accent-color: #a855f7;
+  --accent-gradient: linear-gradient(135deg, #c084fc 0%, #a855f7 50%, #9333ea 100%);
+  --glass-blur: blur(26px);
+  --shadow-glow: 0 8px 40px rgba(168, 85, 247, 0.3);
+}
+
+/* 46. Neon Cyan - Electric bright cyan */
+body.theme-neon-cyan {
+  --bg-app: linear-gradient(135deg, #0c4a6e 0%, #0284c7 50%, #06b6d4 100%);
+  --glass-bg: rgba(12, 74, 110, 0.75);
+  --glass-border: 1px solid rgba(34, 211, 238, 0.3);
+  --text-main: #ecfeff;
+  --text-secondary: #67e8f9;
+  --accent-color: #22d3ee;
+  --accent-gradient: linear-gradient(135deg, #67e8f9 0%, #22d3ee 50%, #06b6d4 100%);
+  --glass-blur: blur(24px);
+  --shadow-glow: 0 0 40px rgba(34, 211, 238, 0.35);
+}
+
+/* 47. Solar Flare - Intense yellow-orange energy */
+body.theme-solar-flare {
+  --bg-app: linear-gradient(135deg, #451a03 0%, #78350f 50%, #b45309 100%);
+  --glass-bg: rgba(120, 53, 15, 0.75);
+  --glass-border: 1px solid rgba(251, 191, 36, 0.25);
+  --text-main: #fffbeb;
+  --text-secondary: #fbbf24;
+  --accent-color: #f59e0b;
+  --accent-gradient: linear-gradient(135deg, #fcd34d 0%, #f59e0b 50%, #d97706 100%);
+  --glass-blur: blur(24px);
+  --shadow-glow: 0 8px 40px rgba(245, 158, 11, 0.3);
+}
+
+/* 48. Deep Ocean - Abyssal dark blue */
+body.theme-deep-ocean {
+  --bg-app: linear-gradient(180deg, #0c191f 0%, #0a1a24 50%, #061219 100%);
+  --glass-bg: rgba(12, 25, 31, 0.85);
+  --glass-border: 1px solid rgba(56, 189, 248, 0.1);
+  --text-main: #e0f2fe;
+  --text-secondary: #7dd3fc;
+  --accent-color: #0ea5e9;
+  --accent-gradient: linear-gradient(135deg, #38bdf8 0%, #0ea5e9 100%);
+  --glass-blur: blur(28px);
+  --shadow-glow: 0 8px 32px rgba(14, 165, 233, 0.2);
+}
+
+/* 49. Champagne Gold - Elegant warm gold */
+body.theme-champagne-gold {
+  --bg-app: linear-gradient(145deg, #fdfcfb 0%, #fbf9f4 50%, #f5f0e8 100%);
+  --glass-bg: rgba(255, 252, 251, 0.9);
+  --glass-border: 1px solid rgba(212, 195, 165, 0.3);
+  --text-main: #3d3529;
+  --text-secondary: #8b7355;
+  --accent-color: #d4c4a8;
+  --accent-gradient: linear-gradient(135deg, #e8dcc8 0%, #d4c4a8 100%);
+  --glass-blur: blur(20px);
+  --shadow-glow: 0 8px 32px rgba(180, 160, 130, 0.15);
+}
+
+/* 50. Frostbite - Icy cold blue theme */
+body.theme-frostbite {
+  --bg-app: linear-gradient(135deg, #0f172a 0%, #1e3a5f 50%, #0c4a6e 100%);
+  --glass-bg: rgba(15, 23, 42, 0.8);
+  --glass-border: 1px solid rgba(147, 197, 253, 0.2);
+  --text-main: #eff6ff;
+  --text-secondary: #93c5fd;
+  --accent-color: #3b82f6;
+  --accent-gradient: linear-gradient(135deg, #60a5fa 0%, #3b82f6 50%, #2563eb 100%);
+  --glass-blur: blur(26px);
+  --shadow-glow: 0 8px 40px rgba(59, 130, 246, 0.25);
+}
+
+/* ============================================================
+    THEME PREVIEWS - Visual thumbnails for theme selector
+    ============================================================ */
+
+/* Dark & Modern Previews */
+.preview-midnight-blend { background: linear-gradient(135deg, #0a0a0f 0%, #12121a 100%); border: 1px solid #8b5cf6; }
+.preview-obsidian { background: linear-gradient(145deg, #0d0d12 0%, #15151c 100%); border: 1px solid #6366f1; }
+.preview-carbon { background: linear-gradient(160deg, #1a1a1a 0%, #242424 100%); border: 1px solid #666; }
+.preview-void { background: radial-gradient(ellipse at top, #0a0a0a 0%, #000000 100%); border: 1px solid #444; }
+.preview-nordic { background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); border: 1px solid #38bdf8; }
+
+/* Light & Clean Previews */
+.preview-arctic { background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%); border: 1px solid #3b82f6; }
+.preview-pearl { background: linear-gradient(145deg, #faf9f7 0%, #f5f4f2 100%); border: 1px solid #d4a574; }
+.preview-ivory { background: linear-gradient(160deg, #fffff0 0%, #faf8ed 100%); border: 1px solid #b8a88a; }
+.preview-frost { background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%); border: 1px solid #94a3b8; }
+
+/* Gradient & Glass Previews */
+.preview-aurora { background: linear-gradient(135deg, #0f2027 0%, #203a43 50%, #2c5364 100%); border: 1px solid #34d399; }
+.preview-sunset { background: linear-gradient(135deg, #2d1b4e 0%, #7c3aed 50%, #f97316 100%); border: 1px solid #f97316; }
+.preview-twilight { background: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%); border: 1px solid #8b5cf6; }
+.preview-nebula { background: radial-gradient(ellipse at top right, #1a0b2e 0%, #2d1b4e 100%); border: 1px solid #d946ef; }
+.preview-prism { background: linear-gradient(135deg, #18181b 0%, #27272a 100%); border: 1px solid #a855f7; }
+
+/* Pastel & Soft Previews */
+.preview-blossom { background: linear-gradient(135deg, #fdf2f8 0%, #fce7f3 100%); border: 1px solid #f472b6; }
+.preview-cotton { background: linear-gradient(135deg, #eff6ff 0%, #fdf4ff 50%, #fff1f2 100%); border: 1px solid #a78bfa; }
+.preview-peach { background: linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%); border: 1px solid #fb923c; }
+.preview-sage { background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%); border: 1px solid #4ade80; }
+.preview-mauve { background: linear-gradient(135deg, #faf5ff 0%, #f3e8ff 100%); border: 1px solid #c084fc; }
+
+/* Cyber & Neon Previews */
+.preview-cyber { background: linear-gradient(135deg, #0c0a09 0%, #1c1917 100%); border: 1px solid #06b6d4; box-shadow: 0 0 10px rgba(6, 182, 212, 0.3); }
+.preview-matrix { background: linear-gradient(135deg, #022c22 0%, #064e3b 100%); border: 1px solid #22c55e; box-shadow: 0 0 10px rgba(34, 197, 94, 0.3); }
+.preview-neon { background: linear-gradient(135deg, #0f0518 0%, #1a0b2e 100%); border: 1px solid #ec4899; box-shadow: 0 0 10px rgba(236, 72, 153, 0.3); }
+.preview-synth { background: linear-gradient(135deg, #2e1065 0%, #701a75 50%, #c2410c 100%); border: 1px solid #f59e0b; }
+.preview-hacker { background: #000000; border: 1px solid #00ff41; box-shadow: 0 0 10px rgba(0, 255, 65, 0.3); }
+
+/* Nature & Organic Previews */
+.preview-forest { background: linear-gradient(135deg, #052e16 0%, #14532d 100%); border: 1px solid #22c55e; }
+.preview-ocean-waves { background: linear-gradient(135deg, #082f49 0%, #0c4a6e 100%); border: 1px solid #0ea5e9; }
+.preview-desert { background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%); border: 1px solid #f59e0b; }
+.preview-autumn { background: linear-gradient(135deg, #451a03 0%, #7c2d12 100%); border: 1px solid #f97316; }
+.preview-tropical { background: linear-gradient(135deg, #134e4a 0%, #0f766e 100%); border: 1px solid #14b8a6; }
+
+/* Premium Dark Previews */
+.preview-titanium { background: linear-gradient(135deg, #1a1a1f 0%, #252530 100%); border: 1px solid #a1a1aa; }
+.preview-onyx { background: linear-gradient(145deg, #0c0c0f 0%, #141418 100%); border: 1px solid #6b6b75; }
+.preview-charcoal { background: linear-gradient(135deg, #1c1917 0%, #292524 100%); border: 1px solid #d6d3d1; }
+
+/* Fresh Light Previews */
+.preview-crisp-linen { background: linear-gradient(180deg, #fefefe 0%, #faf9f6 100%); border: 1px solid #a8a29e; }
+.preview-morning-haze { background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%); border: 1px solid #94a3b8; }
+
+/* Golden Hour Previews */
+.preview-sunrise-glow { background: linear-gradient(135deg, #fff7ed 0%, #ffedd5 50%, #fdba74 100%); border: 1px solid #f97316; }
+.preview-honey-amber { background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%); border: 1px solid #f59e0b; }
+
+/* Soft Pastel Previews */
+.preview-lavender-dream { background: linear-gradient(135deg, #faf5ff 0%, #e9d5ff 100%); border: 1px solid #a78bfa; }
+.preview-rose-petals { background: linear-gradient(135deg, #fdf2f8 0%, #fbcfe8 100%); border: 1px solid #f472b6; }
+
+/* Volcanic & Fire Previews */
+.preview-volcanic-glass { background: linear-gradient(135deg, #1c1917 0%, #0c0a09 100%); border: 1px solid #f97316; box-shadow: 0 0 10px rgba(249, 115, 22, 0.2); }
+.preview-ember-glow { background: radial-gradient(ellipse at top, #1a0a05 0%, #0c0502 100%); border: 1px solid #f97316; box-shadow: 0 0 15px rgba(249, 115, 22, 0.3); }
+
+/* Additional Themes Previews */
+.preview-crimson-storm { background: linear-gradient(135deg, #1f0505 0%, #2e0a0a 100%); border: 1px solid #ef4444; box-shadow: 0 0 10px rgba(239, 68, 68, 0.2); }
+.preview-steel-blue { background: linear-gradient(135deg, #1e293b 0%, #334155 100%); border: 1px solid #60a5fa; }
+.preview-mint-fresh { background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%); border: 1px solid #34d399; }
+.preview-berry-smoothie { background: linear-gradient(135deg, #faf5ff 0%, #ddd6fe 100%); border: 1px solid #a78bfa; }
+.preview-plasma-purple { background: linear-gradient(135deg, #2e1065 0%, #5b21b6 100%); border: 1px solid #a855f7; box-shadow: 0 0 10px rgba(168, 85, 247, 0.3); }
+.preview-neon-cyan { background: linear-gradient(135deg, #0c4a6e 0%, #06b6d4 100%); border: 1px solid #22d3ee; box-shadow: 0 0 15px rgba(34, 211, 238, 0.3); }
+.preview-solar-flare { background: linear-gradient(135deg, #451a03 0%, #b45309 100%); border: 1px solid #f59e0b; box-shadow: 0 0 10px rgba(245, 158, 11, 0.2); }
+.preview-deep-ocean { background: linear-gradient(180deg, #0c191f 0%, #061219 100%); border: 1px solid #0ea5e9; }
+.preview-champagne-gold { background: linear-gradient(145deg, #fdfcfb 0%, #f5f0e8 100%); border: 1px solid #d4c4a8; }
+.preview-frostbite { background: linear-gradient(135deg, #0f172a 0%, #0c4a6e 100%); border: 1px solid #3b82f6; box-shadow: 0 0 10px rgba(59, 130, 246, 0.2); }
+
+/* ============================================================
+    SHARED THEME ENHANCEMENTS
+    ============================================================ */
+
+/* Glass card enhancement for all themes */
+.glass-card {
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  background: var(--glass-bg);
+  border: var(--glass-border);
+  box-shadow: var(--shadow-glow);
+}
+
+/* Accent button styling */
+.btn-accent {
+  background: var(--accent-gradient);
+  border: none;
+  color: white;
+  transition: all 0.3s ease;
+}
+
+.btn-accent:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-glow);
+  filter: brightness(1.1);
+}
+
+/* Theme transition for smooth switching */
+body {
+  transition: background 0.5s ease, color 0.3s ease;
+}
+
+* {
+  transition: background-color 0.3s ease, border-color 0.3s ease, color 0.2s ease;
+}

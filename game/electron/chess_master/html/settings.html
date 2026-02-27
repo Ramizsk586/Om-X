@@ -1,0 +1,94 @@
+
+<div class="panel-content fade-in">
+    <div class="panel-title">Sanctuary Settings</div>
+    
+    <div class="setting-card">
+        <div class="setting-header">
+            <div>
+                <div class="setting-label">Board Material</div>
+                <div class="setting-desc">Choose the aesthetic of your study board.</div>
+            </div>
+        </div>
+        <div class="segmented-control">
+            <button class="segment-btn active" onclick="setBoardTheme('wood')">Oak Wood</button>
+            <button class="segment-btn" onclick="setBoardTheme('marble')">White Marble</button>
+            <button class="segment-btn" onclick="setBoardTheme('paper')">Aged Paper</button>
+            <button class="segment-btn" onclick="setBoardTheme('ancient')">Ancient Scroll</button>
+        </div>
+    </div>
+
+    <!-- NEW: Visual Aids Section -->
+    <div class="setting-card">
+        <div class="setting-header">
+            <div>
+                <div class="setting-label">Coach Visuals</div>
+                <div class="setting-desc">Configure visual learning aids.</div>
+            </div>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 16px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <label class="checkbox-row" style="cursor:pointer">
+                    <input type="checkbox" id="coach-arrows-toggle" class="wood-toggle" checked>
+                    <span style="margin-left:12px; font-size:15px; font-weight:500; color:#5c4033;">Show Analysis Arrows</span>
+                </label>
+            </div>
+            
+            <div style="display: flex; align-items: center; gap: 15px;">
+                <span style="font-size:14px; color:#8c7b66;">Hide Arrows After:</span>
+                <div class="wood-select-wrapper" style="width: 150px;">
+                    <select id="arrow-time-select" class="wood-select">
+                        <option value="3000">3 Seconds</option>
+                        <option value="5000">5 Seconds</option>
+                        <option value="10000">10 Seconds</option>
+                        <option value="9999999">Never</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="setting-card">
+        <div class="setting-header">
+            <div>
+                <div class="setting-label">Engine Core</div>
+                <div class="setting-desc">Select a UCI-compatible chess engine.</div>
+            </div>
+        </div>
+        <div style="display:flex; gap:10px;">
+            <input type="text" id="engine-path" class="wood-input" readonly placeholder="Default (Embedded)">
+            <button class="response-btn small" onclick="browseEngine()">Browse</button>
+        </div>
+    </div>
+
+    <div class="setting-card">
+        <div class="setting-header">
+            <div class="setting-label">Visual Aids</div>
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+            <label class="checkbox-row" style="cursor:pointer">
+                <input type="checkbox" id="show-coords" class="wood-toggle" checked onchange="toggleCoords(this.checked)">
+                <span style="margin-left:12px; font-size:15px; font-weight:500; color:#5c4033;">Show Coordinates</span>
+            </label>
+            <label class="checkbox-row" style="cursor:pointer">
+                <input type="checkbox" id="highlight-moves" class="wood-toggle" checked onchange="toggleHighlights(this.checked)">
+                <span style="margin-left:12px; font-size:15px; font-weight:500; color:#5c4033;">Highlight Last Move</span>
+            </label>
+        </div>
+    </div>
+
+    <div class="setting-card">
+        <div class="setting-header">
+            <div>
+                <div class="setting-label">Atmosphere</div>
+                <div class="setting-desc">Adjust ambient sound volume.</div>
+            </div>
+        </div>
+        <div class="range-wrapper">
+            <input type="range" min="0" max="100" value="50" class="wood-range">
+            <div class="slider-labels">
+                <span>Silent</span>
+                <span>Immersive</span>
+            </div>
+        </div>
+    </div>
+</div>

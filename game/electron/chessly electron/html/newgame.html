@@ -1,0 +1,167 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>New Game</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <style>body { padding: 32px; display: flex; flex-direction: column; height: 100vh; box-sizing: border-box; overflow-y: auto; }</style>
+</head>
+<body>
+  
+  <div class="section">
+      <h2>Game Mode</h2>
+      <div class="mode-grid">
+          <div class="mode-card selected" id="modeHuman" onclick="selectMode('human')">
+              <div class="mode-icon">👥</div>
+              <div class="mode-title">Pass & Play</div>
+              <div class="mode-desc">Local Multiplayer</div>
+          </div>
+          <div class="mode-card" id="modeEngine" onclick="selectMode('engine')">
+              <div class="mode-icon">🤖</div>
+              <div class="mode-title">Challenge AI</div>
+              <div class="mode-desc">Engine / Persona</div>
+          </div>
+      </div>
+  </div>
+  
+  <div class="section">
+      <h2>Time Control (Per Player)</h2>
+      <div class="time-options">
+          <div class="time-opt" onclick="selectTime(1)">1 min</div>
+          <div class="time-opt" onclick="selectTime(3)">3 min</div>
+          <div class="time-opt" onclick="selectTime(5)">5 min</div>
+          <div class="time-opt selected" onclick="selectTime(10)">10 min</div>
+          <div class="time-opt" onclick="selectTime(30)">30 min</div>
+          <div class="time-opt" onclick="selectTime(0)">∞</div>
+      </div>
+  </div>
+
+  <div id="ai-options" class="hidden">
+      <div class="section">
+          <h2>Your Side</h2>
+          <div class="side-select">
+              <div class="side-opt selected" id="sideWhite" onclick="selectSide('white')">
+                  <img src="../assets/pieces/wK.png">
+                  <div class="side-label">White</div>
+              </div>
+              <div class="side-opt" id="sideBlack" onclick="selectSide('black')">
+                  <img src="../assets/pieces/bK.png">
+                  <div class="side-label">Black</div>
+              </div>
+          </div>
+      </div>
+
+      <div class="section" style="margin-bottom:0;">
+          <h2>Opponent</h2>
+          <div class="engines-grid" id="engineGrid" style="max-height: 200px;">
+              <!-- JS Injected -->
+          </div>
+          <div id="noEnginesMsg" style="font-size:13px; color:var(--text-muted); margin-top:12px; display:none; text-align:center; padding:30px; background:rgba(0,0,0,0.2); border-radius:16px; border:1px dashed rgba(255,255,255,0.1);">
+              No AI players found.<br><br>
+              <button class="btn-secondary" onclick="window.electronAPI.openEnginesManager()">+ Add New Player</button>
+          </div>
+      </div>
+  </div>
+
+  <div style="margin-top:auto; padding-top:24px; display:flex; gap:16px; border-top:var(--glass-border);">
+      <button class="btn-secondary" style="flex:1" onclick="window.close()">Cancel</button>
+      <button class="btn-primary" style="flex:2" id="startBtn">Start Match</button>
+  </div>
+
+  <script>
+     let selectedMode = 'human';
+     let selectedSide = 'white';
+     let selectedEngineId = null;
+     let selectedTime = 10;
+     let engines = [];
+     
+     function resolveAvatarSrc(pathStr) {
+        if (!pathStr) return "../assets/icon/chessly.png";
+        if (pathStr.includes('/') || pathStr.includes('\\')) return pathStr; 
+        return `../assets/pieces/${pathStr}`;
+     }
+     
+     async function init() {
+         const prefs = await window.electronAPI?.getPreferences();
+         if (prefs?.boardTheme) document.documentElement.setAttribute('data-theme', prefs.boardTheme);
+         engines = await window.electronAPI?.enginesGetAll() || [];
+         renderEngines();
+         if (engines.length > 0) {
+             const def = engines.find(e => e.isDefaultPlay) || engines[0];
+             selectEngine(def.id);
+         }
+     }
+
+     function selectMode(mode) {
+         selectedMode = mode;
+         document.getElementById('modeHuman').classList.toggle('selected', mode === 'human');
+         document.getElementById('modeEngine').classList.toggle('selected', mode === 'engine');
+         const aiOptions = document.getElementById('ai-options');
+         if (mode === 'engine') {
+             aiOptions.classList.remove('hidden');
+             setTimeout(() => window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }), 100);
+         } else {
+             aiOptions.classList.add('hidden');
+         }
+     }
+
+     function selectSide(side) {
+         selectedSide = side;
+         document.getElementById('sideWhite').classList.toggle('selected', side === 'white');
+         document.getElementById('sideBlack').classList.toggle('selected', side === 'black');
+     }
+     
+     function selectTime(min) {
+         selectedTime = min;
+         document.querySelectorAll('.time-opt').forEach(el => el.classList.remove('selected'));
+         const opts = document.querySelectorAll('.time-opt');
+         if(min === 1) opts[0].classList.add('selected');
+         else if(min === 3) opts[1].classList.add('selected');
+         else if(min === 5) opts[2].classList.add('selected');
+         else if(min === 10) opts[3].classList.add('selected');
+         else if(min === 30) opts[4].classList.add('selected');
+         else opts[5].classList.add('selected');
+     }
+     
+     function renderEngines() {
+         const grid = document.getElementById('engineGrid');
+         const msg = document.getElementById('noEnginesMsg');
+         grid.innerHTML = '';
+         if (engines.length === 0) { msg.style.display = 'block'; grid.style.display = 'none'; return; }
+         msg.style.display = 'none'; grid.style.display = 'grid';
+         engines.forEach(eng => {
+             const isLLM = eng.type === 'llm';
+             const card = document.createElement('div');
+             card.className = 'eng-card';
+             if (selectedEngineId === eng.id) card.classList.add('selected');
+             card.onclick = () => selectEngine(eng.id);
+             
+             let avatarSrc = resolveAvatarSrc(eng.avatar);
+             // Fallback if no avatar set for LLM/UCI
+             if (!eng.avatar) avatarSrc = isLLM ? "../assets/pieces/bN.png" : "../assets/icon/chessly.png";
+             
+             card.innerHTML = `<img class="eng-avatar" src="${avatarSrc}" onerror="this.src='../assets/icon/chessly.png'"><div class="eng-name">${eng.name}</div><div class="eng-meta">${isLLM ? (eng.provider || 'AI') : (eng.elo + ' ELO')}</div>`;
+             grid.appendChild(card);
+         });
+     }
+     
+     function selectEngine(id) { selectedEngineId = id; renderEngines(); }
+     
+     document.getElementById('startBtn').onclick = () => {
+         if (selectedMode === 'engine' && !selectedEngineId) { alert("Please select an opponent first."); return; }
+         
+         // Send engineId only if mode is engine, else null to prevent ghost engine moves
+         const engineIdToSend = selectedMode === 'engine' ? selectedEngineId : null;
+         
+         window.electronAPI?.newGameSelected({ 
+             mode: selectedMode, 
+             engineId: engineIdToSend, 
+             humanColor: selectedSide === 'white' ? 'w' : 'b', 
+             timeControl: selectedTime 
+         });
+     };
+     init();
+  </script>
+</body>
+</html>

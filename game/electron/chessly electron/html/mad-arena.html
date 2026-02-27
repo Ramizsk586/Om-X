@@ -1,0 +1,970 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; object-src 'none';">
+  <title>MAD ARENA</title>
+  <link rel="stylesheet" href="css/styles.css" />
+  <style>
+    /* Mad Arena Default Theme (Inferno) */
+    :root {
+        --mad-primary: #ef4444;
+        --mad-bg-core: #1a0505;
+        --mad-bg-outer: #000000;
+        --mad-glow: rgba(239, 68, 68, 0.2);
+        --mad-sq-light: #eec;
+        --mad-sq-dark: #833;
+        --glass-border: 1px solid rgba(239, 68, 68, 0.2);
+    }
+    
+    /* THEMES */
+    [data-mad-theme="toxic"] {
+        --mad-primary: #10b981;
+        --mad-bg-core: #051a05;
+        --mad-bg-outer: #000;
+        --mad-glow: rgba(16, 185, 129, 0.2);
+        --mad-sq-light: #ccfccc;
+        --mad-sq-dark: #14532d;
+        --glass-border: 1px solid rgba(16, 185, 129, 0.2);
+    }
+    
+    [data-mad-theme="void"] {
+        --mad-primary: #d8b4fe;
+        --mad-bg-core: #1e1a2e;
+        --mad-bg-outer: #0b0a12;
+        --mad-glow: rgba(168, 85, 247, 0.2);
+        --mad-sq-light: #f3e8ff;
+        --mad-sq-dark: #581c87;
+        --glass-border: 1px solid rgba(168, 85, 247, 0.2);
+    }
+    
+    [data-mad-theme="matrix"] {
+        --mad-primary: #22c55e;
+        --mad-bg-core: #000;
+        --mad-bg-outer: #000;
+        --mad-glow: rgba(34, 197, 94, 0.1);
+        --mad-sq-light: #000;
+        --mad-sq-dark: #052e16;
+        --glass-border: 1px solid #22c55e;
+        font-family: 'Courier New', monospace;
+    }
+
+    body {
+      overflow: hidden;
+      display: flex;
+      background: radial-gradient(circle at center, var(--mad-bg-core), var(--mad-bg-outer));
+      transition: background 0.5s ease;
+      color: #fff;
+    }
+
+    .main-layout {
+        display: flex; width: 100vw; height: 100vh;
+    }
+
+    /* Board Panel */
+    .board-panel {
+        flex: 1;
+        display: flex; justify-content: center; align-items: center;
+        position: relative;
+        gap: 24px;
+    }
+    
+    .arena-glow {
+        position: absolute; width: 800px; height: 800px;
+        background: radial-gradient(circle, var(--mad-glow) 0%, transparent 70%);
+        opacity: 0.4; pointer-events: none; z-index: 0;
+        animation: pulseGlow 3s infinite alternate;
+    }
+    
+    @keyframes pulseGlow {
+        from { opacity: 0.2; transform: scale(0.95); }
+        to { opacity: 0.5; transform: scale(1.05); }
+    }
+
+    /* Sidebar */
+    .sidebar {
+        width: 400px; min-width: 400px;
+        background: rgba(0, 0, 0, 0.6);
+        backdrop-filter: blur(24px);
+        border-left: var(--glass-border);
+        display: flex; flex-direction: column;
+        z-index: 10;
+        box-shadow: -10px 0 40px rgba(0,0,0,0.5);
+    }
+
+    .sidebar-header {
+        padding: 20px;
+        border-bottom: 1px solid rgba(255,255,255,0.05);
+        text-align: center;
+        position: relative;
+    }
+    .sidebar-header h2 {
+        margin: 0; font-size: 20px; color: var(--mad-primary); 
+        text-transform: uppercase; letter-spacing: 4px; font-weight: 900;
+        text-shadow: 0 0 20px var(--mad-primary);
+    }
+    #status-msg {
+        font-size: 11px; color: var(--mad-primary); margin-top: 6px; font-weight: 500; text-transform: uppercase; letter-spacing: 1px; opacity: 0.8;
+    }
+    
+    .header-buttons {
+        position: absolute; right: 10px; top: 20px; display:flex; gap:4px;
+    }
+    .icon-btn {
+        background: transparent; border: none; color: var(--mad-primary);
+        cursor: pointer; font-size: 18px; opacity: 0.7; padding: 4px;
+        transition: all 0.2s;
+    }
+    .icon-btn:hover { opacity: 1; transform: scale(1.1); }
+    .icon-btn.active { color: #fff; text-shadow: 0 0 10px var(--mad-primary); opacity: 1; }
+
+    /* Agent Cards */
+    .agents-container {
+        padding: 24px; display: flex; flex-direction: column; gap: 20px;
+        flex-shrink: 0;
+    }
+
+    .agent-card {
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(255, 255, 255, 0.05);
+        border-radius: 16px;
+        padding: 16px;
+        display: flex; align-items: center; gap: 16px;
+        position: relative; overflow: hidden;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    
+    .agent-card.active-turn {
+        background: linear-gradient(90deg, rgba(255,255,255,0.05), rgba(255,255,255,0.02));
+        border-color: var(--mad-primary);
+        box-shadow: 0 0 25px var(--mad-glow);
+        transform: scale(1.02);
+    }
+    .agent-card.active-turn::before {
+        content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
+        background: var(--mad-primary); box-shadow: 0 0 10px var(--mad-primary);
+    }
+
+    .agent-avatar {
+        width: 64px; height: 64px; border-radius: 14px;
+        background: rgba(0,0,0,0.5); 
+        border: 1px solid rgba(255,255,255,0.1);
+        display: flex; justify-content: center; align-items: center;
+        cursor: pointer; overflow: hidden;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+        transition: all 0.2s ease;
+    }
+    .agent-avatar:hover { transform: scale(1.05); border-color: var(--mad-primary); }
+    .agent-avatar img { width: 100%; height: 100%; object-fit: cover; }
+
+    .agent-info { flex: 1; display: flex; flex-direction: column; justify-content: center; min-width: 0; }
+    .agent-name { font-weight: 800; font-size: 16px; color: #fff; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .agent-model { 
+        font-size: 11px; color: var(--mad-primary); font-family: 'JetBrains Mono', monospace; 
+        background: rgba(255,255,255,0.05); padding: 3px 8px; border-radius: 6px;
+        width: fit-content; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    
+    .agent-timer {
+        font-family: 'JetBrains Mono', monospace; font-size: 18px; font-weight: 700;
+        color: var(--mad-primary); opacity: 0.5; transition: opacity 0.3s;
+        min-width: 60px; text-align: right;
+    }
+    .active-turn .agent-timer { color: #fff; opacity: 1; text-shadow: 0 0 15px var(--mad-primary); }
+
+    /* Log Area */
+    .log-container {
+        flex: 1; display: flex; flex-direction: column;
+        margin-top: 10px; border-top: 1px solid rgba(255,255,255,0.05);
+        background: rgba(0,0,0,0.2);
+    }
+    
+    .log-tabs {
+        display: flex; background: rgba(0,0,0,0.2);
+    }
+    .log-tab {
+        flex: 1; padding: 10px; text-align: center; font-size: 11px;
+        cursor: pointer; color: #999; text-transform: uppercase; font-weight: 700;
+        transition: all 0.2s; letter-spacing: 0.5px;
+    }
+    .log-tab:hover { color: #fff; background: rgba(255,255,255,0.05); }
+    .log-tab.active { color: var(--mad-primary); background: rgba(255,255,255,0.05); border-bottom: 2px solid var(--mad-primary); }
+
+    .logs-area { flex: 1; overflow: hidden; position: relative; }
+    .log-content {
+        position: absolute; inset: 0; overflow-y: auto; padding: 16px; display: none;
+        font-family: 'JetBrains Mono', monospace; font-size: 12px; line-height: 1.5; color: #ccc;
+    }
+    .log-content.active { display: block; }
+
+    /* Brain Log Items */
+    .brain-msg {
+        margin-bottom: 8px; padding-left: 10px; border-left: 2px solid #333;
+        color: #aaa;
+    }
+    .brain-msg.error { border-color: #ef4444; color: #fca5a5; }
+    .brain-msg.info { border-color: #f59e0b; color: #fcd34d; }
+    .brain-msg.success { border-color: #10b981; color: #6ee7b7; background: rgba(16, 185, 129, 0.05); padding: 4px 10px; border-radius: 0 4px 4px 0; }
+
+    /* Controls */
+    .controls { padding: 24px; border-top: 1px solid rgba(255,255,255,0.05); display: flex; flex-direction: column; gap: 16px; }
+    .control-row { display: flex; gap: 12px; align-items: center; }
+    .time-control { 
+        display: flex; align-items: center; gap: 8px; 
+        background: rgba(255,255,255,0.05); padding: 4px 12px; border-radius: 8px; 
+        border: 1px solid rgba(255,255,255,0.1); font-size: 12px; color: var(--mad-primary);
+        flex: 1;
+    }
+    .time-control select { background: transparent; border: none; color: #fff; font-weight: 700; cursor: pointer; width: auto; }
+    
+    /* Modal Override */
+    .modal-backdrop {
+        position: fixed; inset: 0; background: rgba(0,0,0,0.9); backdrop-filter: blur(8px);
+        z-index: 100; display: none; align-items: center; justify-content: center;
+    }
+    .selector-modal {
+        background: var(--mad-bg-core); border: 1px solid var(--mad-primary); 
+        padding: 24px; border-radius: 16px; width: 500px; 
+        box-shadow: 0 0 50px var(--mad-glow);
+        display: flex; flex-direction: column;
+    }
+    .engine-grid {
+        display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); 
+        gap: 12px; max-height: 300px; overflow-y: auto; margin: 16px 0;
+        padding-right: 4px;
+    }
+    .eng-item {
+        background: rgba(255,255,255,0.05); padding: 16px; border-radius: 12px; 
+        cursor: pointer; text-align: center; border: 1px solid transparent;
+        transition: all 0.2s; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+    }
+    .eng-item:hover { background: rgba(255,255,255,0.1); transform: translateY(-2px); border-color: rgba(255,255,255,0.2); }
+    .eng-item.selected { border-color: var(--mad-primary); background: rgba(255,255,255,0.1); }
+    
+    .eng-icon { font-size: 24px; margin-bottom: 4px; width: 48px; height: 48px; object-fit: cover; border-radius: 8px; }
+    .eng-name { font-weight: 700; font-size: 13px; color: #fff; }
+    .eng-sub { font-size: 10px; color: var(--text-muted); background: rgba(0,0,0,0.3); padding: 2px 6px; border-radius: 4px; }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--mad-primary); border-radius: 3px; }
+    
+    /* Board Adjustments */
+    #board-container {
+        box-shadow: 0 0 60px var(--mad-glow);
+        border: 8px solid rgba(255,255,255,0.05);
+        border-radius: 8px;
+        position: relative; /* for absolute overlay children */
+    }
+    
+    .btn-primary { background: var(--mad-primary); box-shadow: 0 0 15px var(--mad-glow); border:none; color:white; font-weight:800;}
+    .btn-primary:hover { filter: brightness(1.2); transform:scale(1.02); }
+    
+    /* Context Menu */
+    #context-menu {
+        position: absolute;
+        background: rgba(20, 20, 20, 0.95);
+        border: 1px solid var(--mad-primary);
+        border-radius: 8px;
+        padding: 8px 0;
+        display: none;
+        z-index: 1000;
+        min-width: 150px;
+        backdrop-filter: blur(10px);
+        box-shadow: 0 5px 20px rgba(0,0,0,0.5);
+    }
+    .ctx-item {
+        padding: 8px 16px;
+        font-size: 13px;
+        color: #fff;
+        cursor: pointer;
+        display: flex; align-items: center; gap: 8px;
+    }
+    .ctx-item:hover { background: var(--mad-glow); }
+    .ctx-header {
+        font-size: 10px; text-transform: uppercase; color: var(--mad-primary);
+        padding: 4px 16px; font-weight: 800; opacity: 0.7;
+    }
+    .ctx-icon { width: 16px; text-align: center; }
+    
+    /* Eval Bar */
+    #eval-bar-wrapper {
+        height: min(80vh, 55vw);
+        width: 24px;
+        display: flex;
+        flex-direction: column;
+    }
+    .eval-bar-bg {
+        width: 100%; height: 100%;
+        background: #1a1a1a; border-radius: 4px;
+        overflow: hidden; position: relative;
+        box-shadow: inset 0 0 5px rgba(0,0,0,0.5);
+        border: 1px solid var(--mad-primary);
+        opacity: 0.7;
+    }
+    #eval-bar-fill {
+        width: 100%; height: 50%;
+        background: var(--mad-primary); position: absolute; bottom: 0; left: 0;
+        transition: height 0.5s;
+        box-shadow: 0 0 10px var(--mad-primary);
+    }
+
+    /* CONVERSATION PANEL - MAD STYLE */
+    .chat-overlay {
+        position: absolute; bottom: 20px; right: 20px;
+        width: 320px; height: 350px;
+        background: rgba(5, 5, 5, 0.95);
+        backdrop-filter: blur(20px);
+        border: 1px solid var(--mad-primary);
+        border-radius: 16px;
+        display: flex; flex-direction: column;
+        z-index: 50;
+        box-shadow: 0 0 50px var(--mad-glow);
+        transform: translateY(20px); opacity: 0; pointer-events: none;
+        /* Only animate opacity/transform, ignoring top/left to allow dragging */
+        transition: opacity 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    .chat-overlay.visible { transform: translateY(0); opacity: 1; pointer-events: all; }
+    
+    .chat-header {
+        padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,0.1);
+        font-size: 12px; font-weight: 800; text-transform: uppercase;
+        display: flex; justify-content: space-between; align-items: center;
+        color: var(--mad-primary); letter-spacing: 1px; text-shadow: 0 0 10px var(--mad-primary);
+        cursor: move; /* Draggable handle */
+    }
+    
+    .chat-close { cursor: pointer; opacity: 0.6; transition:opacity 0.2s; font-size: 16px; }
+    .chat-close:hover { opacity: 1; color: #fff; }
+    
+    .chat-scroll {
+        flex: 1; overflow-y: auto; padding: 12px;
+        display: flex; flex-direction: column; gap: 10px;
+    }
+    
+    .chat-bubble {
+        max-width: 85%; padding: 8px 12px; border-radius: 12px;
+        font-size: 12px; line-height: 1.4; color: #e2e8f0;
+        animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        position: relative; font-family: 'Courier New', monospace;
+    }
+    @keyframes popIn { from{opacity:0; transform:scale(0.9);} to{opacity:1; transform:scale(1);} }
+    
+    .chat-bubble.white {
+        align-self: flex-start;
+        background: rgba(255,255,255,0.1);
+        border-bottom-left-radius: 2px;
+        border: 1px solid rgba(255,255,255,0.2);
+    }
+    .chat-bubble.black {
+        align-self: flex-end;
+        background: rgba(0,0,0,0.8);
+        border-bottom-right-radius: 2px;
+        border: 1px solid var(--mad-primary);
+        color: var(--mad-primary);
+    }
+    .chat-sender { font-size: 9px; opacity: 0.6; margin-bottom: 2px; font-weight: 700; text-transform: uppercase; }
+
+  </style>
+</head>
+<body>
+
+  <div class="main-layout">
+    <div class="board-panel">
+       <div class="arena-glow"></div>
+       
+       <!-- Eval Bar -->
+       <div id="eval-bar-wrapper">
+           <div class="eval-bar-bg">
+               <div id="eval-bar-fill"></div>
+           </div>
+       </div>
+
+       <div id="board-container">
+          <div id="board"></div>
+       </div>
+
+       <!-- Chat Overlay -->
+       <div id="mad-chat-overlay" class="chat-overlay">
+           <div class="chat-header">
+               <span>Psych Link</span>
+               <span class="chat-close" onclick="toggleChat()">×</span>
+           </div>
+           <div class="chat-scroll" id="chat-content">
+               <div style="text-align:center; opacity:0.4; font-size:11px; margin-top:20px; font-family:monospace;">SILENCE IN THE VOID</div>
+           </div>
+       </div>
+    </div>
+
+    <div class="sidebar">
+       <div class="sidebar-header">
+          <h2>MAD ARENA</h2>
+          <div id="status-msg">NO RULES - TOTAL CHAOS</div>
+          <div class="header-buttons">
+              <button class="icon-btn" id="chatBtn" title="Trash Talk" onclick="toggleChat()">💬</button>
+              <button class="icon-btn" id="flipBtn" title="Flip Board">🔄</button>
+              <button class="icon-btn" id="madSettingsBtn" title="Mad Settings">⚙️</button>
+          </div>
+       </div>
+
+       <div class="agents-container">
+          <!-- White -->
+          <div class="agent-card" id="card-white">
+             <div class="agent-avatar" onclick="openSelector('white')">
+                 <img id="img-white" src="../assets/pieces/wK.png">
+             </div>
+             <div class="agent-info">
+                <div class="agent-name" id="name-white">White Agent</div>
+                <div class="agent-model" id="model-white">Select Engine...</div>
+             </div>
+             <div class="agent-timer" id="timer-white">--s</div>
+          </div>
+
+          <!-- Black -->
+          <div class="agent-card" id="card-black">
+             <div class="agent-avatar" onclick="openSelector('black')">
+                 <img id="img-black" src="../assets/pieces/bK.png">
+             </div>
+             <div class="agent-info">
+                <div class="agent-name" id="name-black">Black Agent</div>
+                <div class="agent-model" id="model-black">Select Engine...</div>
+             </div>
+             <div class="agent-timer" id="timer-black">--s</div>
+          </div>
+       </div>
+
+       <div class="log-container">
+           <div class="log-tabs">
+               <div class="log-tab active" onclick="switchTab('chat')">Match Log</div>
+               <div class="log-tab" onclick="switchTab('brain')">Mad Brain</div>
+           </div>
+           <div class="logs-area">
+               <div id="log-chat" class="log-content active"></div>
+               <div id="log-brain" class="log-content">
+                   <div class="brain-msg info">Mad Brain initialized.</div>
+               </div>
+           </div>
+       </div>
+
+       <div class="controls">
+          <div class="control-row">
+              <div class="time-control">
+                  <label>Min. Delay:</label>
+                  <select id="moveTimeSelect">
+                      <option value="0">Instant</option>
+                      <option value="5000">5s</option>
+                      <option value="10000" selected>10s</option>
+                      <option value="15000">15s</option>
+                      <option value="30000">30s</option>
+                  </select>
+              </div>
+          </div>
+          <div class="control-row">
+              <button id="startBtn" class="btn-primary" style="flex:2; height: 48px; font-size: 14px;">START CHAOS</button>
+              <button id="reviewBtn" class="btn-secondary" style="flex:1; height: 48px;" title="Review Game" disabled>Review</button>
+              <button id="resetBtn" class="btn-secondary" style="width: 48px; height: 48px;" title="Reset Board">↺</button>
+          </div>
+       </div>
+    </div>
+  </div>
+
+  <!-- Context Menu -->
+  <div id="context-menu">
+      <div class="ctx-header">Spawn Piece</div>
+      <div class="ctx-item" onclick="spawnPiece('wQ')"><span class="ctx-icon">♕</span> White Queen</div>
+      <div class="ctx-item" onclick="spawnPiece('bQ')"><span class="ctx-icon">♛</span> Black Queen</div>
+      <div class="ctx-item" onclick="spawnPiece('wN')"><span class="ctx-icon">♘</span> White Knight</div>
+      <div class="ctx-item" onclick="spawnPiece('bN')"><span class="ctx-icon">♞</span> Black Knight</div>
+      <div style="border-top:1px solid rgba(255,255,255,0.1); margin:4px 0;"></div>
+      <div class="ctx-item" onclick="spawnPiece('')"><span class="ctx-icon">✕</span> Clear Square</div>
+  </div>
+
+  <!-- Engine Selector Modal -->
+  <div class="modal-backdrop" id="selectorModal">
+      <div class="selector-modal">
+          <h3 style="margin:0; font-size: 16px; color:var(--mad-primary);">Select Mad Intelligence</h3>
+          <div class="engine-grid" id="engineGrid"></div>
+          <button class="btn-secondary" onclick="closeSelector()" style="width:100%;">Cancel</button>
+      </div>
+  </div>
+
+  <!-- Load MAD Logic -->
+  <script src="../java/mad_brain.js"></script>
+  <script>
+    // Initialize Mad Brain
+    const brain = new MadBrain();
+    let whiteConfig = null;
+    let blackConfig = null;
+    let gameRunning = false;
+    let activeColor = 'white'; 
+    let timerInterval = null;
+    let isFlipped = false;
+    let showReport = true;
+    
+    const boardEl = document.getElementById('board');
+    const logChat = document.getElementById('log-chat');
+    const logBrain = document.getElementById('log-brain');
+    const moveTimeSelect = document.getElementById('moveTimeSelect');
+    const evalBarFill = document.getElementById('eval-bar-fill');
+    const reviewBtn = document.getElementById('reviewBtn');
+    
+    const chatOverlay = document.getElementById('mad-chat-overlay');
+    const chatContent = document.getElementById('chat-content');
+    const chatBtn = document.getElementById('chatBtn');
+
+    // --- Chat UI & Draggable ---
+    window.toggleChat = () => {
+        chatOverlay.classList.toggle('visible');
+        chatBtn.classList.toggle('active', chatOverlay.classList.contains('visible'));
+    };
+
+    // Draggable Logic
+    const chatHeader = chatOverlay.querySelector('.chat-header');
+    let isDragging = false;
+    let startX, startY, initialLeft, initialTop;
+
+    chatHeader.addEventListener('mousedown', (e) => {
+        if(e.target.classList.contains('chat-close')) return;
+        
+        isDragging = true;
+        startX = e.clientX;
+        startY = e.clientY;
+        
+        const rect = chatOverlay.getBoundingClientRect();
+        const parentRect = chatOverlay.parentElement.getBoundingClientRect();
+        
+        // Switch to top/left positioning
+        chatOverlay.style.left = (rect.left - parentRect.left) + 'px';
+        chatOverlay.style.top = (rect.top - parentRect.top) + 'px';
+        chatOverlay.style.bottom = 'auto';
+        chatOverlay.style.right = 'auto';
+        chatOverlay.style.transform = 'none';
+        
+        initialLeft = parseFloat(chatOverlay.style.left);
+        initialTop = parseFloat(chatOverlay.style.top);
+        
+        chatOverlay.style.cursor = 'grabbing';
+    });
+
+    document.addEventListener('mousemove', (e) => {
+        if(!isDragging) return;
+        e.preventDefault();
+        const dx = e.clientX - startX;
+        const dy = e.clientY - startY;
+        chatOverlay.style.left = (initialLeft + dx) + 'px';
+        chatOverlay.style.top = (initialTop + dy) + 'px';
+    });
+
+    document.addEventListener('mouseup', () => {
+        isDragging = false;
+        if(chatOverlay.style.cursor === 'grabbing') chatOverlay.style.cursor = 'default';
+    });
+
+    function addChatMessage(turn, text) {
+        if (!text) return;
+        
+        // Clear placeholder
+        if(chatContent.querySelector('div').textContent === "SILENCE IN THE VOID") {
+            chatContent.innerHTML = "";
+        }
+        
+        const bubble = document.createElement('div');
+        bubble.className = `chat-bubble ${turn === 'w' ? 'white' : 'black'}`;
+        
+        const sender = document.createElement('div');
+        sender.className = 'chat-sender';
+        sender.textContent = turn === 'w' ? (whiteConfig?.name || "White") : (blackConfig?.name || "Black");
+        
+        const msg = document.createElement('div');
+        msg.textContent = text;
+        
+        bubble.appendChild(sender);
+        bubble.appendChild(msg);
+        chatContent.appendChild(bubble);
+        chatContent.scrollTop = chatContent.scrollHeight;
+    }
+    
+    document.getElementById('flipBtn').onclick = () => {
+        isFlipped = !isFlipped;
+        renderBoard();
+    };
+
+    function applyTheme(themeName) {
+        document.documentElement.setAttribute('data-mad-theme', themeName);
+        renderBoard();
+    }
+
+    (async () => {
+        const cfg = await window.electronAPI.getMadSettings();
+        brain.configure(cfg);
+        applyTheme(cfg.theme || 'inferno');
+        showReport = cfg.showReport !== false;
+    })();
+
+    window.electronAPI.onMadSettingsChanged((cfg) => {
+        brain.configure(cfg);
+        applyTheme(cfg.theme || 'inferno');
+        showReport = cfg.showReport !== false;
+        addBrainLog(`System Reconfigured`, 'info');
+    });
+
+    document.getElementById('madSettingsBtn').onclick = () => {
+        window.electronAPI.openMadSettings();
+    };
+    
+    let draggedPiece = null;
+    let dragSource = null; 
+    let contextTarget = null; 
+
+    function handleDragStart(e, r, c, piece) {
+        if (!piece) return;
+        draggedPiece = piece;
+        dragSource = { r, c };
+        e.dataTransfer.setData('text/plain', piece);
+        e.dataTransfer.effectAllowed = 'move';
+        setTimeout(() => e.target.style.opacity = '0.5', 0);
+    }
+
+    function handleDragEnd(e) {
+        e.target.style.opacity = '1';
+        draggedPiece = null;
+        dragSource = null;
+    }
+
+    function handleDragOver(e) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }
+
+    function handleDrop(e, r, c) {
+        e.preventDefault();
+        if (!draggedPiece || !dragSource) return;
+        brain.setPiece(r, c, draggedPiece);
+        if (dragSource.r !== r || dragSource.c !== c) { brain.setPiece(dragSource.r, dragSource.c, ""); }
+        renderBoard();
+    }
+    
+    function handleRightClick(e, r, c) {
+        e.preventDefault();
+        contextTarget = { r, c };
+        const menu = document.getElementById('context-menu');
+        menu.style.display = 'block';
+        menu.style.left = e.pageX + 'px';
+        menu.style.top = e.pageY + 'px';
+    }
+    
+    window.spawnPiece = (pieceCode) => {
+        if(contextTarget) {
+            brain.setPiece(contextTarget.r, contextTarget.c, pieceCode);
+            renderBoard();
+        }
+        document.getElementById('context-menu').style.display = 'none';
+    };
+    
+    document.addEventListener('click', (e) => {
+        if(!e.target.closest('#context-menu')) document.getElementById('context-menu').style.display = 'none';
+    });
+
+    function renderBoard(lastMove) {
+        boardEl.innerHTML = "";
+        const style = getComputedStyle(document.documentElement);
+        const lightCol = style.getPropertyValue('--mad-sq-light').trim() || '#eec';
+        const darkCol = style.getPropertyValue('--mad-sq-dark').trim() || '#833';
+        
+        for(let r=0; r<8; r++) {
+            for(let c=0; c<8; c++) {
+                const visualR = isFlipped ? 7-r : r;
+                const visualC = isFlipped ? 7-c : c;
+                const sq = document.createElement('div');
+                const isLight = (visualR+visualC)%2===0;
+                sq.className = "square";
+                sq.style.backgroundColor = isLight ? lightCol : darkCol;
+                
+                sq.ondragover = handleDragOver;
+                sq.ondrop = (e) => handleDrop(e, visualR, visualC);
+                sq.oncontextmenu = (e) => handleRightClick(e, visualR, visualC);
+                
+                if(lastMove) {
+                    const f = parseSq(lastMove.from);
+                    const t = parseSq(lastMove.to);
+                    if((f.r===visualR && f.c===visualC) || (t.r===visualR && t.c===visualC)) {
+                        sq.style.backgroundColor = "rgba(255, 255, 255, 0.5)";
+                    }
+                }
+
+                const p = brain.board[visualR][visualC];
+                if(p) {
+                    const piece = document.createElement('div');
+                    piece.className = 'piece';
+                    piece.style.backgroundImage = `url('../assets/pieces/${p}.png')`;
+                    piece.draggable = true;
+                    piece.ondragstart = (e) => handleDragStart(e, visualR, visualC, p);
+                    piece.ondragend = handleDragEnd;
+                    sq.appendChild(piece);
+                }
+                boardEl.appendChild(sq);
+            }
+        }
+    }
+    
+    function parseSq(s) { return {c: s.charCodeAt(0)-97, r: 8-parseInt(s[1])}; }
+
+    function addChat(msg, color) {
+        const div = document.createElement('div');
+        div.style.marginBottom = "6px";
+        div.style.paddingBottom = "6px";
+        div.style.borderBottom = "1px solid rgba(255,0,0,0.1)";
+        div.style.color = color === 'w' ? "#fff" : "var(--mad-primary)";
+        div.innerHTML = `<b style="opacity:0.5; margin-right:6px;">${color==='w'?"W":"B"}</b> ${msg}`;
+        logChat.appendChild(div);
+        logChat.scrollTop = logChat.scrollHeight;
+    }
+
+    function addBrainLog(msg, type="info") {
+        const div = document.createElement('div');
+        div.className = `brain-msg ${type}`;
+        div.textContent = msg;
+        logBrain.appendChild(div);
+        logBrain.scrollTop = logBrain.scrollHeight;
+    }
+
+    // --- GAME LOOP ---
+    async function gameLoop() {
+        if(!gameRunning) return;
+        
+        const turn = brain.turn;
+        const cfg = turn === 'w' ? whiteConfig : blackConfig;
+        const cardId = turn === 'w' ? 'card-white' : 'card-black';
+        const otherCard = turn === 'w' ? 'card-black' : 'card-white';
+        const timerId = turn === 'w' ? 'timer-white' : 'timer-black';
+        const otherTimerId = turn === 'w' ? 'timer-black' : 'timer-white';
+        
+        document.getElementById(cardId).classList.add('active-turn');
+        document.getElementById(otherCard).classList.remove('active-turn');
+        document.getElementById('status-msg').textContent = `${turn==='w'?"White":"Black"} is plotting...`;
+        document.getElementById(otherTimerId).textContent = "--s";
+
+        const minDelayMs = parseInt(moveTimeSelect.value) || 0;
+        const startTime = Date.now();
+        
+        if(timerInterval) clearInterval(timerInterval);
+        let timeLeft = minDelayMs / 1000;
+        const timerEl = document.getElementById(timerId);
+        
+        if (minDelayMs > 0) {
+            timerEl.textContent = timeLeft.toFixed(1) + 's';
+            timerInterval = setInterval(() => {
+                timeLeft -= 0.1;
+                if(timeLeft < 0) timeLeft = 0;
+                timerEl.textContent = timeLeft.toFixed(1) + 's';
+            }, 100);
+        } else {
+            timerEl.textContent = "0.0s";
+        }
+
+        try {
+            const configForBrain = { ...cfg, moveTime: 0 };
+            const result = await brain.generateMove(configForBrain, (log) => addBrainLog(log, "error"));
+            
+            const elapsed = Date.now() - startTime;
+            const remainingWait = minDelayMs - elapsed;
+            
+            if (remainingWait > 0) {
+                await new Promise(r => setTimeout(r, remainingWait));
+            }
+            
+            clearInterval(timerInterval);
+            timerEl.textContent = "0.0s";
+            
+            if(!gameRunning) return; 
+
+            const move = result.move;
+            const comment = result.comment;
+            addBrainLog(`Action: ${move}`, "success");
+            
+            // APPLY MOVE
+            const moveResult = brain.applyMove(move);
+            
+            if (moveResult === "KING_CAPTURE_ATTEMPT") {
+                addBrainLog(`🚫 ILLEGAL: AI attempted to capture King. Turn Skipped.`, "error");
+                brain.turn = brain.turn === 'w' ? 'b' : 'w'; 
+                setTimeout(gameLoop, 100);
+                return;
+            } else if (moveResult === "ILLEGAL_KING_MOVE") {
+                addBrainLog(`🚫 ILLEGAL: King cannot teleport. Turn Skipped.`, "error");
+                brain.turn = brain.turn === 'w' ? 'b' : 'w'; 
+                setTimeout(gameLoop, 100);
+                return;
+            } else if (moveResult === false) {
+                addBrainLog(`🚫 INVALID: Move ${move} rejected. Retrying...`, "error");
+                setTimeout(gameLoop, 100); 
+                return;
+            }
+            
+            renderBoard({ from: move.substring(0,2), to: move.substring(2,4) });
+            addChat(`${move} ${comment ? `<span style="color:var(--mad-primary)">(${comment})</span>` : ''}`, turn);
+            
+            if(comment) addChatMessage(turn, comment); // Send to Chat Overlay
+            
+            window.electronAPI.requestAnalysis(brain.boardToFen());
+            
+            // CHECK STATUS
+            const status = brain.checkGameStatus();
+            
+            if (status.check) {
+                addBrainLog("⚠️ CHECK!", "info");
+                if (status.over && status.reason === "Checkmate") {
+                    gameRunning = false;
+                    document.getElementById('status-msg').textContent = `${status.winner} Wins by Checkmate!`;
+                    addBrainLog(`GAME OVER: ${status.winner} Checkmated the King!`, "success");
+                    
+                    reviewBtn.disabled = false;
+                    
+                    // Report Logic
+                    if (showReport) {
+                        setTimeout(() => {
+                            const madData = brain.getMadReport();
+                            window.electronAPI.openMadReport({ ...madData, winner: status.winner });
+                        }, 1000);
+                    }
+                    return;
+                }
+            }
+
+            setTimeout(gameLoop, 500); 
+
+        } catch(e) {
+            console.error(e);
+            clearInterval(timerInterval);
+            addBrainLog(`Error: ${e.message}`, "error");
+            gameRunning = false;
+            document.getElementById('startBtn').textContent = "Resume";
+        }
+    }
+
+    document.getElementById('startBtn').onclick = () => {
+        if(gameRunning) {
+            gameRunning = false;
+            clearInterval(timerInterval);
+            document.getElementById('startBtn').textContent = "Resume";
+            return;
+        }
+        if(!whiteConfig || !blackConfig) {
+            alert("Select two mad engines first.");
+            return;
+        }
+        gameRunning = true;
+        document.getElementById('startBtn').textContent = "Pause";
+        reviewBtn.disabled = true;
+        addBrainLog("Mad Match Started", "info");
+        gameLoop();
+    };
+
+    document.getElementById('resetBtn').onclick = () => {
+        gameRunning = false;
+        clearInterval(timerInterval);
+        brain.reset();
+        renderBoard();
+        logChat.innerHTML = "";
+        logBrain.innerHTML = "";
+        chatContent.innerHTML = "<div style='text-align:center; opacity:0.4; font-size:11px; margin-top:20px; font-family:monospace;'>SILENCE IN THE VOID</div>";
+        document.getElementById('startBtn').textContent = "START CHAOS";
+        document.getElementById('card-white').classList.remove('active-turn');
+        document.getElementById('card-black').classList.remove('active-turn');
+        document.getElementById('timer-white').textContent = "--s";
+        document.getElementById('timer-black').textContent = "--s";
+        document.getElementById('status-msg').textContent = "NO RULES";
+        reviewBtn.disabled = true;
+        evalBarFill.style.height = "50%";
+        addBrainLog("Board Reset", "info");
+    };
+    
+    document.getElementById('reviewBtn').onclick = () => {
+        // MadBrain history structure: { uci, san, tag }
+        // Needs adaptation for review if format differs slightly
+        const payload = { 
+            fen: brain.boardToFen(), 
+            moves: brain.moveHistory.map(m => ({ 
+                from: m.uci.substring(0,2), 
+                to: m.uci.substring(2,4),
+                san: m.san,
+                tag: m.tag === 'teleport' ? 'blunder' : (m.tag === 'betrayal' ? 'mistake' : null)
+            })) 
+        };
+        window.electronAPI.startReviewMode(payload);
+    };
+
+    window.openSelector = async (color) => {
+        activeColor = color;
+        document.getElementById('selectorModal').style.display = 'flex';
+        const grid = document.getElementById('engineGrid');
+        grid.innerHTML = "<div style='text-align:center; padding:20px; grid-column:1/-1;'>Loading...</div>";
+        
+        const engines = await window.electronAPI.enginesGetAll();
+        
+        // FILTER: Only LLMs allowed in Mad Arena
+        const llms = engines.filter(e => e.type === 'llm');
+        
+        grid.innerHTML = "";
+        if(llms.length === 0) {
+            grid.innerHTML = "<div style='padding:20px; text-align:center; grid-column:1/-1; color:#fca5a5;'>No AI Personas found.<br>UCI Engines are too rigid for Mad Arena.<br>Please add an LLM Provider in Settings > Engines.</div>";
+            return;
+        }
+        
+        llms.forEach(e => {
+            const div = document.createElement('div');
+            div.className = 'eng-item';
+            let avatarSrc = e.avatar || '../assets/pieces/bN.png';
+            div.innerHTML = `<img class="eng-icon" src="${avatarSrc}" onerror="this.src='../assets/icon/chessly.png'"><div class="eng-name">${e.name}</div><div class="eng-sub">${e.model}</div>`;
+            div.onclick = () => selectEngine(e);
+            grid.appendChild(div);
+        });
+    };
+
+    function selectEngine(eng) {
+        const cfg = { provider: eng.provider, apiKey: eng.apiKey, model: eng.model, engineId: eng.id, name: eng.name };
+        let avatarSrc = eng.avatar || '../assets/pieces/bN.png';
+        
+        if(activeColor === 'white') {
+            whiteConfig = cfg;
+            document.getElementById('name-white').textContent = eng.name;
+            document.getElementById('model-white').textContent = eng.model;
+            const img = document.getElementById('img-white');
+            img.src = avatarSrc;
+            img.onerror = () => img.src = '../assets/icon/chessly.png';
+        } else {
+            blackConfig = cfg;
+            document.getElementById('name-black').textContent = eng.name;
+            document.getElementById('model-black').textContent = eng.model;
+            const img = document.getElementById('img-black');
+            img.src = avatarSrc;
+            img.onerror = () => img.src = '../assets/icon/chessly.png';
+        }
+        closeSelector();
+    }
+
+    window.closeSelector = () => { document.getElementById('selectorModal').style.display = 'none'; };
+    window.switchTab = (tab) => {
+        document.querySelectorAll('.log-tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.log-content').forEach(c => c.classList.remove('active'));
+        if(tab === 'chat') {
+            document.querySelector('.log-tab:nth-child(1)').classList.add('active');
+            document.getElementById('log-chat').classList.add('active');
+        } else {
+            document.querySelector('.log-tab:nth-child(2)').classList.add('active');
+            document.getElementById('log-brain').classList.add('active');
+        }
+    };
+    
+    window.electronAPI.onEvalScore((score) => {
+        if(typeof score === 'number') {
+            const clamped = Math.max(-10, Math.min(10, score));
+            let pct = 50 + (clamped * 5);
+            pct = Math.max(5, Math.min(95, pct));
+            evalBarFill.style.height = pct + "%";
+        }
+    });
+
+    renderBoard();
+  </script>
+</body>
+</html>
