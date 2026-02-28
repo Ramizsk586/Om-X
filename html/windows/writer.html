@@ -1,0 +1,306 @@
+<div class="writer-root">
+    <div class="panel-header">
+        <h2>Writer Pipeline</h2>
+        <p>Configure the backend engine for professional tone and grammar adjustments.</p>
+    </div>
+
+    <style>
+        .writer-root {
+            --surface: #0f1014;
+            --surface-alt: #131826;
+            --field: #0c111b;
+            --border: #232938;
+            --border-strong: #313a50;
+            --text-primary: #e8ecf8;
+            --text-secondary: #9ca6bd;
+            --accent: var(--accent-color, #7c9a92);
+        }
+
+        .settings-section-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 24px;
+            margin-bottom: 16px;
+            box-shadow: 0 12px 28px rgba(0, 0, 0, 0.24);
+        }
+
+        .card-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 2px;
+            display: block;
+            font-family: 'Noto Sans', sans-serif;
+        }
+
+        .card-subtitle {
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-bottom: 16px;
+            display: block;
+            font-family: 'Noto Sans', sans-serif;
+        }
+
+        .config-box {
+            background: var(--surface-alt);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 18px;
+        }
+
+        .form-row {
+            display: flex;
+            flex-direction: column;
+            gap: 9px;
+            margin-bottom: 16px;
+        }
+
+        .form-row:last-child {
+            margin-bottom: 0;
+        }
+
+        .form-label {
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-family: 'Noto Sans', sans-serif;
+        }
+
+        .form-select, .form-input {
+            width: 100%;
+            min-height: 48px;
+            background: var(--field);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 12px 14px;
+            color: var(--text-primary);
+            font-size: 14px;
+            outline: none;
+            font-family: 'Noto Sans', sans-serif;
+            transition: border-color 0.15s ease, box-shadow 0.15s ease;
+        }
+
+        .form-select:focus, .form-input:focus {
+            border-color: var(--border-strong);
+            box-shadow: 0 0 0 3px rgba(124, 154, 146, 0.18);
+        }
+
+        .form-select option {
+            background: var(--field);
+            color: var(--text-primary);
+            font-size: 14px;
+            line-height: 1.5;
+        }
+
+        .custom-model-input {
+            margin-top: 8px;
+            font-family: 'Noto Sans', monospace;
+        }
+
+        .verify-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 14px;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            background: #0e1320;
+            margin-top: 14px;
+        }
+
+        .btn-verify {
+            background: #171e2f;
+            border: 1px solid var(--border-strong);
+            color: var(--text-primary);
+            padding: 11px 18px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 700;
+            cursor: pointer;
+            font-family: 'Noto Sans', sans-serif;
+            transition: all 0.15s;
+        }
+
+        .btn-verify:hover {
+            background: #202a41;
+        }
+
+        .btn-verify:active {
+            background: #121929;
+        }
+
+        .status-text {
+            display: inline-flex;
+            align-items: center;
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-family: 'Noto Sans', sans-serif;
+            background: #121827;
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            padding: 6px 10px;
+            min-height: 28px;
+        }
+
+        .status-text:empty {
+            display: none;
+        }
+
+        .status-text.success {
+            color: #9dd7c9;
+            border-color: rgba(157, 215, 201, 0.45);
+            background: rgba(74, 148, 127, 0.14);
+        }
+
+        .status-text.error {
+            color: #ffb5b5;
+            border-color: rgba(255, 130, 130, 0.45);
+            background: rgba(164, 65, 65, 0.16);
+        }
+
+        .modes-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(180px, 1fr));
+            gap: 14px;
+        }
+
+        .mode-card {
+            background: #131a2a;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            min-height: 92px;
+            padding: 18px;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .mode-card:hover {
+            background: #1a2237;
+        }
+
+        .mode-card.active,
+        .mode-card.selected {
+            border-color: var(--accent);
+            background: #1f2a44;
+        }
+
+        .mode-name {
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--text-primary);
+            margin-bottom: 6px;
+            font-family: 'Noto Sans', sans-serif;
+        }
+
+        .mode-desc {
+            font-size: 12px;
+            color: var(--text-secondary);
+            font-family: 'Noto Sans', sans-serif;
+            line-height: 1.45;
+        }
+
+        @media (max-width: 760px) {
+            .settings-section-card {
+                padding: 20px;
+            }
+
+            .verify-row {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .btn-verify {
+                width: 100%;
+            }
+
+            .modes-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+
+    <!-- Intelligence Configuration -->
+    <section class="settings-section-card">
+        <span class="card-title">Intelligence Engine</span>
+        <span class="card-subtitle">Select the active provider for linguistic synthesis.</span>
+        
+        <div class="config-box">
+            <div class="form-row">
+                <label class="form-label">Provider</label>
+                <select id="writer-provider-select" class="form-select">
+                    <option value="google">Google Gemini</option>
+                    <option value="openai">OpenAI</option>
+                    <option value="groq">Groq</option>
+                    <option value="openrouter">OpenRouter</option>
+                    <option value="mistral">Mistral AI</option>
+                    <option value="sarvamai">SarvamAI</option>
+                    <option value="cohere">Cohere</option>
+                    <option value="ollama">Ollama (Local)</option>
+                </select>
+            </div>
+
+            <div id="writer-api-key-group" class="form-row">
+                <label class="form-label">API Access Token</label>
+                <input type="password" id="writer-api-key" class="form-input" placeholder="Enter your API key">
+            </div>
+
+            <div class="form-row">
+                <label class="form-label">Model Target</label>
+                <select id="writer-model-select" class="form-select"></select>
+                <input type="text" id="writer-custom-model" class="hidden form-input custom-model-input" placeholder="Custom model ID">
+            </div>
+
+            <div class="verify-row">
+                <button id="btn-verify-writer" class="btn-verify">Verify Connection</button>
+                <span id="writer-verify-status" class="status-text"></span>
+            </div>
+        </div>
+    </section>
+
+    <!-- Writing Modes -->
+    <section class="settings-section-card">
+        <span class="card-title">Writing Modes</span>
+        <span class="card-subtitle">Choose the writing style that best fits your needs.</span>
+        
+        <div class="modes-grid">
+            <div class="mode-card selected" data-mode="balanced">
+                <div class="mode-name">Balanced</div>
+                <div class="mode-desc">Fix grammar & typos</div>
+            </div>
+            
+            <div class="mode-card" data-mode="professional">
+                <div class="mode-name">Professional</div>
+                <div class="mode-desc">Formal & business tone</div>
+            </div>
+            
+            <div class="mode-card" data-mode="creative">
+                <div class="mode-name">Creative</div>
+                <div class="mode-desc">Fluency & style</div>
+            </div>
+        </div>
+    </section>
+    
+    <div id="writer-status" class="save-status" style="display:none"></div>
+    <button id="btn-save-writer" class="hidden"></button>
+
+    <script>
+        document.querySelectorAll('.writer-root .mode-card').forEach(card => {
+            card.addEventListener('click', () => {
+                document.querySelectorAll('.writer-root .mode-card').forEach(c => {
+                    c.classList.remove('active');
+                    c.classList.remove('selected');
+                });
+                card.classList.add('active');
+                card.classList.add('selected');
+            });
+        });
+    </script>
+</div>
+

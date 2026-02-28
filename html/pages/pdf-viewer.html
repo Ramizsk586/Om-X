@@ -1,0 +1,788 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Omni PDF Station</title>
+  <link rel="stylesheet" href="../../css/base/reset.css">
+  <link rel="stylesheet" href="../../css/base/variables.css">
+  <link rel="stylesheet" href="../../css/base/base.css">
+  <link rel="stylesheet" href="../../css/themes/all-themes.css">
+    <style>
+    body {
+      background: #202124;
+      color: #e8eaed;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      font-family: 'Segoe UI', 'Inter', sans-serif;
+    }
+
+    .app-shell {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+      background: #525659;
+      min-height: 0;
+    }
+
+    .pdf-toolbar {
+      height: 56px;
+      background: #323639;
+      border-bottom: 1px solid #3d4144;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 12px;
+      z-index: 1000;
+    }
+
+    .tool-group {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 0;
+    }
+
+    .icon-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 4px;
+      background: transparent;
+      border: 1px solid transparent;
+      color: #dfe1e5;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.16s ease, border-color 0.16s ease;
+    }
+
+    .icon-btn:hover { background: #3a3f42; border-color: #4a4f52; }
+    .icon-btn.active { background: #1a73e8; border-color: #1a73e8; color: #fff; }
+    .icon-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    .divider { width: 1px; height: 22px; background: #4a4f52; margin: 0 6px; }
+
+    .pdf-sidebar {
+      width: 300px;
+      background: #2b2f33;
+      border-right: 1px solid #3d4144;
+      display: flex;
+      flex-direction: column;
+      padding: 14px;
+      height: calc(100vh - 56px);
+      overflow-y: auto;
+      overflow-x: hidden;
+      overscroll-behavior: contain;
+      -webkit-overflow-scrolling: touch;
+      min-height: 0;
+      flex-shrink: 0;
+      gap: 14px;
+      scrollbar-width: thin;
+      scrollbar-color: #6b7074 #2b2f33;
+    }
+
+    .pdf-sidebar::-webkit-scrollbar { width: 10px; }
+    .pdf-sidebar::-webkit-scrollbar-track { background: #2b2f33; }
+    .pdf-sidebar::-webkit-scrollbar-thumb {
+      background: #6b7074;
+      border-radius: 8px;
+      border: 2px solid #2b2f33;
+    }
+
+    .thumb-card {
+      width: 100%;
+      border-radius: 4px;
+      border: 2px solid transparent;
+      background: #1f1f1f;
+      cursor: pointer;
+      transition: border-color 0.15s ease;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      flex: 0 0 auto;
+    }
+
+    .thumb-card.active { border-color: #8ab4f8; }
+    .thumb-card canvas {
+      width: 100%;
+      height: 180px;
+      display: block;
+      background: #fff;
+      image-rendering: auto;
+      object-fit: fill;
+    }
+    .thumb-label { font-size: 18px; color: #dfe1e5; padding: 8px 0 10px; }
+
+    .pdf-main {
+      flex: 1;
+      position: relative;
+      background: #525659;
+      overflow: auto;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      padding: 16px;
+    }
+
+    .canvas-container {
+      position: relative;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.35);
+      border-radius: 2px;
+      overflow: hidden;
+      background: #fff;
+    }
+
+    .ai-resize-handle {
+      width: 8px;
+      flex-shrink: 0;
+      cursor: col-resize;
+      background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0));
+      border-left: 1px solid rgba(255,255,255,0.04);
+      border-right: 1px solid rgba(0,0,0,0.24);
+      position: relative;
+    }
+    .ai-resize-handle.hidden { display: none; }
+    .ai-resize-handle::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 3px;
+      height: 42px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.14);
+    }
+
+    .ai-panel {
+      width: 440px;
+      min-width: 300px;
+      max-width: 65vw;
+      background: #2b2f33;
+      border-left: 1px solid #3d4144;
+      display: flex;
+      flex-direction: column;
+      z-index: 1000;
+    }
+
+    .ai-panel.hidden { display: none; }
+    .ai-panel-header {
+      padding: 12px 14px;
+      border-bottom: 1px solid #3d4144;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: #323639;
+    }
+    .ai-head-main { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+    .ai-panel-title { font-size: 11px; font-weight: 800; letter-spacing: 1px; color: #e8eaed; text-transform: uppercase; }
+    .ai-panel-subtitle { font-size: 11px; color: #b6bcc4; max-width: 260px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .ai-header-actions { display: flex; gap: 8px; align-items: center; }
+    .ai-header-btn {
+      width: 34px;
+      height: 34px;
+      border-radius: 8px;
+      border: 1px solid #4a4f52;
+      background: #2a2e31;
+      color: #dfe1e5;
+      transition: background 0.16s ease, border-color 0.16s ease, color 0.16s ease;
+    }
+    .ai-header-btn:hover { background: #3a3f42; border-color: #61666a; color: #ffffff; }
+    .ai-header-btn.close-btn:hover { border-color: #8ab4f8; color: #8ab4f8; }
+    .ai-header-btn.reset-btn:hover { border-color: #f28b82; color: #f28b82; }
+    .ai-chat-toolbar { display: flex; gap: 8px; flex-wrap: wrap; padding: 10px 12px; border-bottom: 1px solid #3d4144; background: #2e3236; }
+    .ai-chip { height: 28px; padding: 0 10px; border-radius: 999px; border: 1px solid #4a4f52; background: #262a2e; color: #dfe1e5; font-size: 10px; font-weight: 800; letter-spacing: 0.7px; text-transform: uppercase; cursor: pointer; }
+    .ai-chip:hover { background: #34393e; border-color: #60666c; }
+    .ai-chat-area { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 12px; background: linear-gradient(180deg, rgba(255,255,255,0.015), transparent 34%); }
+    .ai-msg { padding: 12px 14px; border-radius: 12px; font-size: 13px; line-height: 1.55; max-width: 96%; border: 1px solid transparent; }
+    .ai-msg.user { align-self: flex-end; background: #e8eaed; color: #202124; }
+    .ai-msg.ai { align-self: flex-start; background: #3a3f42; color: #e8eaed; border-color: #43484c; }
+
+    .thought-container { margin-bottom: 12px; background: rgba(255, 255, 255, 0.03); border: 1px solid #4a4f52; border-radius: 8px; overflow: hidden; }
+    .thought-header { padding: 10px 12px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; background: rgba(255, 255, 255, 0.02); }
+    .thought-title-wrap { display: flex; align-items: center; gap: 8px; font-size: 10px; font-weight: 700; color: #8ab4f8; text-transform: uppercase; letter-spacing: 0.8px; }
+    .thought-arrow { width: 14px; height: 14px; transition: transform 0.22s ease; opacity: 0.75; }
+    .thought-container.collapsed .thought-arrow { transform: rotate(-90deg); }
+    .thought-content { padding: 12px; font-size: 12px; color: #c8cdd2; line-height: 1.5; border-top: 1px solid #4a4f52; white-space: pre-wrap; }
+    .thought-container.collapsed .thought-content { display: none; }
+
+    .typewriter-cursor { display: inline-block; width: 2px; height: 1.1em; background: #8ab4f8; margin-left: 2px; vertical-align: middle; animation: cursorBlink 1s infinite; }
+    @keyframes cursorBlink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+
+    .neural-loader { display: flex; align-items: center; gap: 10px; color: #8ab4f8; font-size: 11px; font-weight: 700; letter-spacing: 0.8px; }
+    .pulse-dot { width: 7px; height: 7px; background: currentColor; border-radius: 50%; animation: loaderPulse 1.2s infinite; }
+    @keyframes loaderPulse { 0%, 100% { opacity: 0.3; transform: scale(1); } 50% { opacity: 1; transform: scale(1.35); } }
+
+    .ai-input-wrapper { padding: 12px; border-top: 1px solid #3d4144; background: #323639; }
+    .ai-input-box { display: flex; gap: 10px; background: #202124; padding: 10px; border-radius: 10px; border: 1px solid #4a4f52; align-items: flex-end; }
+    .ai-input-box textarea { flex: 1; background: transparent; border: none; color: #e8eaed; font-size: 13px; outline: none; min-height: 22px; max-height: 120px; resize: none; line-height: 1.4; }
+    .ai-send-btn { width: 34px; height: 34px; border-radius: 8px; border: 1px solid #4b5c74; background: #294a79; color: #dbeafe; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .ai-send-btn:hover { filter: brightness(1.08); }
+    .ai-compose-hint { margin-top: 8px; color: #9aa1ab; font-size: 10px; letter-spacing: 0.4px; }
+
+    .config-panel {
+      position: fixed;
+      inset: 0;
+      background: rgba(10, 12, 16, 0.6);
+      backdrop-filter: blur(6px);
+      z-index: 2000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+    }
+
+    .config-card {
+      width: min(780px, 92vw);
+      max-height: min(80vh, 720px);
+      overflow-y: auto;
+      background: #12161c;
+      border: 1px solid #2a313c;
+      border-radius: 16px;
+      padding: 16px;
+      box-shadow: 0 22px 46px rgba(0,0,0,0.42);
+    }
+    .config-card::-webkit-scrollbar { width: 8px; }
+    .config-card::-webkit-scrollbar-track { background: transparent; }
+    .config-card::-webkit-scrollbar-thumb {
+      background: rgba(138, 180, 248, 0.38);
+      border-radius: 8px;
+      border: 2px solid transparent;
+      background-clip: content-box;
+    }
+
+    .config-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 14px;
+      padding: 0 0 12px;
+      border-bottom: 1px solid #242b35;
+    }
+    .config-header h3 {
+      font-size: 16px;
+      font-weight: 700;
+      color: #edf2f7;
+      letter-spacing: 0.2px;
+      line-height: 1.1;
+      text-transform: none;
+    }
+    #btn-close-config {
+      width: 30px;
+      height: 30px;
+      border-radius: 8px;
+      background: #151b26;
+      border: 1px solid #2a3241;
+      color: #b8c2d5;
+      font-size: 16px;
+      line-height: 1;
+    }
+    #btn-close-config:hover {
+      background: #1a2130;
+      border-color: #3a4459;
+      color: #ffffff;
+    }
+    .form-group { margin-bottom: 10px; display: flex; flex-direction: column; gap: 6px; }
+    .form-group label {
+      font-size: 10px;
+      font-weight: 900;
+      color: #8b93a5;
+      text-transform: uppercase;
+      letter-spacing: 0.9px;
+      line-height: 1;
+    }
+    .form-group input, .form-group select {
+      background: #141923;
+      border: 1px solid #293041;
+      border-radius: 10px;
+      padding: 10px 12px;
+      min-height: 42px;
+      color: #f3f7ff;
+      font-size: 14px;
+      outline: none;
+      transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+    }
+    .form-group input:focus, .form-group select:focus {
+      border-color: #4d5c78;
+      box-shadow: 0 0 0 3px rgba(107, 124, 164, 0.22);
+      background: #171e2b;
+    }
+
+    .btn-save-config {
+      width: 100%;
+      margin-top: 8px;
+      padding: 12px;
+      background: linear-gradient(180deg, #2a3345 0%, #202736 100%);
+      color: #fff;
+      border: 1px solid #3a455a;
+      border-radius: 10px;
+      font-weight: 800;
+      font-size: 12px;
+      letter-spacing: 0.6px;
+      text-transform: uppercase;
+      cursor: pointer;
+      box-shadow: 0 6px 14px rgba(0,0,0,0.26);
+      transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
+    }
+    .btn-save-config:hover:not(:disabled) { filter: brightness(1.05); box-shadow: 0 8px 18px rgba(0,0,0,0.32); }
+    .btn-save-config:disabled { opacity: 0.45; cursor: not-allowed; }
+    .verify-row { display: flex; gap: 8px; align-items: flex-end; }
+    .verify-row .form-group { flex: 1; margin-bottom: 0; }
+    .btn-verify-action {
+      height: 42px;
+      min-width: 126px;
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      background: #20252f;
+      color: #fff;
+      border: 1px solid #313947;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .btn-verify-action:hover:not(:disabled) { background: #2a3040; border-color: #4b5770; }
+    .btn-verify-action.success { background: #10b981; border-color: #10b981; color: #fff; }
+    .btn-verify-action.fail { background: #ef4444; border-color: #ef4444; color: #fff; }
+    .btn-verify-action:disabled { opacity: 0.4; cursor: not-allowed; }
+    .verify-status {
+      font-size: 11px;
+      font-weight: 700;
+      color: #99a3b5;
+      margin: 10px 0 0;
+      min-height: 16px;
+      line-height: 1.45;
+      padding: 10px 12px;
+      border-radius: 8px;
+      background: #171d26;
+      border: 1px solid #283141;
+    }
+    .verify-status.success { color: #16c78a; background: rgba(16,185,129,0.12); border-color: rgba(16,185,129,0.35); }
+    .verify-status.fail { color: #ff7b7b; background: rgba(239,68,68,0.12); border-color: rgba(239,68,68,0.35); }
+    .profile-picker-subtitle {
+      color: #9aa5b7;
+      font-size: 12px;
+      line-height: 1.4;
+      margin-bottom: 12px;
+    }
+    .profile-picker-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .profile-picker-card {
+      border: 1px solid #273042;
+      border-radius: 12px;
+      background: #121824;
+      padding: 10px;
+      cursor: pointer;
+      transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease;
+    }
+    .profile-picker-card:hover {
+      border-color: #40506d;
+      transform: translateY(-1px);
+    }
+    .profile-picker-card.active {
+      border-color: #8ab4f8;
+      box-shadow: 0 0 0 2px rgba(138,180,248,0.15) inset;
+      background: #131d2e;
+    }
+    .profile-picker-provider {
+      color: #9fb4dc;
+      font-size: 10px;
+      font-weight: 900;
+      letter-spacing: 0.9px;
+      text-transform: uppercase;
+    }
+    .profile-picker-model {
+      color: #edf3ff;
+      font-size: 13px;
+      font-weight: 700;
+      margin-top: 4px;
+      overflow-wrap: anywhere;
+    }
+    .profile-picker-meta {
+      margin-top: 8px;
+      color: #93a0b8;
+      font-size: 11px;
+      line-height: 1.35;
+      overflow-wrap: anywhere;
+    }
+    .profile-picker-empty {
+      border: 1px dashed #324057;
+      border-radius: 12px;
+      padding: 14px;
+      color: #94a3b8;
+      background: #101722;
+      font-size: 12px;
+      margin-bottom: 10px;
+    }
+    .draw-canvas {
+      position: absolute;
+      inset: 0;
+      z-index: 5;
+      pointer-events: none;
+      background: transparent;
+    }
+    .draw-canvas.active {
+      pointer-events: auto;
+      cursor: crosshair;
+    }
+    .draw-panel {
+      position: absolute;
+      top: 68px;
+      right: 18px;
+      width: 320px;
+      background: #24272b;
+      border: 1px solid #3a3f45;
+      border-radius: 14px;
+      box-shadow: 0 18px 34px rgba(0,0,0,0.38);
+      z-index: 1300;
+      overflow: hidden;
+    }
+    .draw-panel.hidden { display: none; }
+    .draw-panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 12px;
+      border-bottom: 1px solid #3a3f45;
+      background: #2a2e33;
+    }
+    .draw-panel-title {
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.9px;
+      text-transform: uppercase;
+      color: #e8eaed;
+    }
+    .draw-panel-body {
+      padding: 12px;
+      display: grid;
+      gap: 14px;
+    }
+    .draw-section-title {
+      font-size: 10px;
+      font-weight: 800;
+      color: #cbd5e1;
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+    .draw-tool-grid {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .draw-tool-btn {
+      height: 40px;
+      border-radius: 10px;
+      border: 1px solid #48505a;
+      background: #2a2f35;
+      color: #dfe1e5;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all .16s ease;
+    }
+    .draw-tool-btn:hover { background: #343a42; border-color: #5d6672; }
+    .draw-tool-btn.active { background: #2d4f84; border-color: #3f6ab0; color: #cfe1ff; }
+    .draw-size-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .draw-size-btn {
+      width: 40px;
+      height: 40px;
+      border-radius: 999px;
+      border: 1px solid #48505a;
+      background: #2a2f35;
+      color: #fff;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .draw-size-btn.active { background: #2d4f84; border-color: #3f6ab0; }
+    .draw-size-dot {
+      background: #dfe1e5;
+      border-radius: 999px;
+      display: block;
+    }
+    .draw-color-grid {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .draw-color-btn {
+      width: 100%;
+      aspect-ratio: 1;
+      border-radius: 999px;
+      border: 2px solid rgba(255,255,255,0.18);
+      cursor: pointer;
+      background: var(--swatch, #000);
+      transition: transform .12s ease, border-color .12s ease, box-shadow .12s ease;
+    }
+    .draw-color-btn:hover { transform: scale(1.03); }
+    .draw-color-btn.active {
+      border-color: #8ab4f8;
+      box-shadow: 0 0 0 2px rgba(138,180,248,0.2);
+    }
+    .draw-panel-actions {
+      display: flex;
+      gap: 8px;
+    }
+    .draw-action-btn {
+      flex: 1;
+      height: 38px;
+      border-radius: 10px;
+      border: 1px solid #495466;
+      background: #2c3138;
+      color: #fff;
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      cursor: pointer;
+    }
+    .draw-action-btn.primary {
+      background: #2d4f84;
+      border-color: #3f6ab0;
+      color: #dceaff;
+    }
+    .draw-action-btn:hover { filter: brightness(1.06); }
+
+    @media (max-width: 720px) {
+      .config-panel { padding: 10px; }
+      .config-card { width: 100%; max-height: 90vh; padding: 12px; border-radius: 12px; }
+      .config-header h3 { font-size: 14px; letter-spacing: 0.8px; }
+      .verify-row { flex-direction: column; align-items: stretch; }
+      .btn-verify-action { width: 100%; min-width: 0; }
+      .form-group input, .form-group select { min-height: 40px; font-size: 13px; }
+      .form-group label { font-size: 10px; letter-spacing: 0.8px; }
+    }
+
+    .reading-highlight { position: absolute; background: rgba(255, 255, 0, 0.2); border-radius: 2px; pointer-events: none; transition: all 0.1s linear; }
+    .selection-overlay { position: absolute; border: 2px solid #1a73e8; background: rgba(26, 115, 232, 0.18); display: none; pointer-events: none; }
+    .scanner-line { position: absolute; left: 0; right: 0; height: 2px; background: #1a73e8; display: none; z-index: 10; pointer-events: none; }
+    .summary-scan-overlay {
+      position: absolute;
+      background: rgba(26, 115, 232, 0.14);
+      display: none;
+      z-index: 11;
+      pointer-events: none;
+    }
+    .summary-scan-box {
+      position: absolute;
+      border-top: 1px solid rgba(138, 180, 248, 0.8);
+      border-bottom: 1px solid rgba(138, 180, 248, 0.8);
+      background: linear-gradient(180deg, rgba(138, 180, 248, 0.26), rgba(138, 180, 248, 0.08));
+      box-shadow: 0 0 18px rgba(26, 115, 232, 0.24);
+      display: none;
+      z-index: 12;
+      pointer-events: none;
+      transition: top 0.03s linear;
+    }
+    .summary-scan-line {
+      position: absolute;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, rgba(26, 115, 232, 0), rgba(26, 115, 232, 0.95), rgba(26, 115, 232, 0));
+      box-shadow: 0 0 12px rgba(26, 115, 232, 0.65);
+      display: none;
+      z-index: 13;
+      pointer-events: none;
+      transition: top 0.03s linear;
+    }
+
+    .page-indicator {
+      position: absolute;
+      bottom: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(32, 33, 36, 0.92);
+      padding: 8px 16px;
+      border-radius: 16px;
+      color: #e8eaed;
+      font-size: 12px;
+      font-weight: 700;
+      border: 1px solid #4a4f52;
+    }
+
+    .ai-msg strong { font-weight: 700; color: #fff; }
+    .ai-msg ul { padding-left: 18px; margin: 10px 0; }
+    .ai-msg li { list-style: disc; margin-bottom: 6px; }
+    .ai-msg h3, .ai-msg h4 { font-weight: 700; color: #fff; font-size: 12px; margin: 10px 0 6px; }
+
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body class="theme-midnight-blend">
+  <header class="pdf-toolbar">
+    <div class="tool-group">
+      <div class="divider"></div>
+      <button id="btn-thumbnails" class="icon-btn" title="Toggle Thumbnails">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M3 5h5v5H3V5zm0 7h5v5H3v-5zm7-7h5v5h-5V5zm0 7h5v5h-5v-5zm7-7h5v5h-5V5zm0 7h5v5h-5v-5z"/></svg>
+      </button>
+      <div class="divider"></div>
+      <span id="pdf-filename" style="font-size: 13px; font-weight: 700; color: #fff; max-width: 200px; overflow: hidden; text-overflow: ellipsis;">Open PDF...</span>
+    </div>
+
+    <div class="tool-group">
+      <button id="btn-prev" class="icon-btn"><svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg></button>
+      <span style="font-size:12px; font-weight:800;"><span id="curr-page">1</span> / <span id="total-pages">--</span></span>
+      <button id="btn-next" class="icon-btn"><svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg></button>
+      <div class="divider"></div>
+      <button id="btn-zoom-out" class="icon-btn"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M19 13H5v-2h14v2z"/></svg></button>
+      <span id="zoom-val" style="font-size:11px; font-weight:900; width:40px; text-align:center;">100%</span>
+      <button id="btn-zoom-in" class="icon-btn"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg></button>
+    </div>
+
+    <div class="tool-group">
+      <button id="btn-select-area" class="icon-btn" title="Select Area">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M3 5v4h2V5h4V3H5c-1.1 0-2 .9-2 2zm2 10H3v4c0 1.1.9 2 2 2h4v-2H5v-4zm14 4h-4v2h4c1.1 0 2-.9 2-2v-4h-2v4zm0-16h-4v2h4v4h2V5c0-1.1-.9-2-2-2z"/></svg>
+      </button>
+      <button id="btn-draw" class="icon-btn" title="Draw">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zm2.92 2.33H5v-.92l8.06-8.06.92.92L5.92 19.58zM20.71 7.04a1.003 1.003 0 0 0 0-1.42L18.37 3.29a1.003 1.003 0 0 0-1.42 0L15.13 5.1l3.75 3.75 1.83-1.81z"/></svg>
+      </button>
+      <button id="btn-clear-draw" class="icon-btn" title="Clear Drawing (Page)">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M16.24 3c-.46 0-.9.19-1.22.53L4.56 14a1.72 1.72 0 0 0 0 2.43L8.1 20h8.14c.46 0 .9-.18 1.22-.5l3.98-3.98c.67-.67.67-1.76 0-2.43L17.46 3.5c-.32-.32-.76-.5-1.22-.5zM8.93 18l-2.95-2.95 7.9-7.9 2.95 2.95L8.93 18zM18 20H8v-2h10v2z"/></svg>
+      </button>
+      <div class="divider"></div>
+      <button id="btn-summarize" class="icon-btn" title="Summarize">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M14,17H7V15H14V17ZM17,13H7V11H17V13ZM17,9H7V7H17V9ZM19,3H5C3.89,3,3,3.89,3,5V19A2,2,0,0,0,5,21H19a2,2,0,0,0,2-2V5A2,2,0,0,0,19,3Z"/></svg>
+      </button>
+      <button id="btn-toggle-ai" class="icon-btn" title="AI Panel">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M21 16.5C21 16.88 20.79 17.21 20.47 17.38L12.57 21.82C12.41 21.94 12.21 22 12 22C11.79 22 11.59 21.94 11.43 21.82L3.53 17.38C3.21 17.21 3 16.88 3 16.5V7.5C3 7.12 3.21 6.79 3.53 6.62L11.43 2.18C11.59 2.06 11.79 2 12 2C12.21 2 12.41 2.06 12.57 2.18L20.47 6.62C20.79 6.79 21 7.12 21 7.5V16.5Z"/></svg>
+      </button>
+      <div class="divider"></div>
+      <button id="btn-open-config" class="icon-btn" title="AI Config">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.56-1.62.94l2.39-.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47.12-.61l2.03 1.58c-.05.3-.07.63-.07.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.03-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="app-shell">
+    <aside id="pdf-sidebar" class="pdf-sidebar hidden">
+      <!-- Thumbs injected -->
+    </aside>
+
+    <main id="pdf-container" class="pdf-main">
+      <div id="canvas-wrapper" class="canvas-container">
+        <canvas id="pdf-render-canvas"></canvas>
+        <canvas id="pdf-draw-canvas" class="draw-canvas"></canvas>
+        <div id="selection-box" class="selection-overlay"></div>
+      </div>
+    </main>
+
+    <div id="ai-resize-handle" class="ai-resize-handle hidden" aria-hidden="true"></div>
+    <aside id="ai-panel" class="ai-panel hidden">
+      <div class="ai-panel-header">
+        <div class="ai-head-main">
+          <span class="ai-panel-title">AI Assistant</span>
+          <span id="ai-profile-label" class="ai-panel-subtitle">No profile selected</span>
+        </div>
+        <div class="ai-header-actions">
+          <button id="btn-clear-chat" class="icon-btn ai-header-btn reset-btn" title="Reset Session" aria-label="Reset Session">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 12a9 9 0 1 0 3-6.7"/>
+              <polyline points="3 3 3 9 9 9"/>
+            </svg>
+          </button>
+          <button id="btn-close-ai" class="icon-btn ai-header-btn close-btn" title="Close AI Panel" aria-label="Close AI Panel">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M18 6L6 18"/>
+              <path d="M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+      <div class="ai-chat-toolbar">
+        <button id="btn-ai-quick-summary" class="ai-chip" type="button">Summarize Page</button>
+        <button id="btn-ai-quick-keypoints" class="ai-chip" type="button">Key Points</button>
+        <button id="btn-ai-quick-explain" class="ai-chip" type="button">Explain Simple</button>
+      </div>
+      <div id="ai-messages" class="ai-chat-area">
+        <div class="ai-msg ai">PDF loaded. Ask anything about this document.</div>
+      </div>
+      <div class="ai-input-wrapper">
+        <div class="ai-input-box">
+          <textarea id="ai-input" placeholder="Ask about this page or selected content..." autocomplete="off" rows="1"></textarea>
+          <button id="btn-ai-send" class="ai-send-btn"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg></button>
+        </div>
+        <div class="ai-compose-hint">Enter to send, Shift+Enter for new line</div>
+      </div>
+    </aside>
+
+    <div id="page-nav-overlay" class="page-indicator">PAGE 1</div>
+
+    <div id="draw-panel" class="draw-panel hidden">
+      <div class="draw-panel-header">
+        <div class="draw-panel-title">Draw Tools</div>
+        <button id="btn-close-draw-panel" class="icon-btn" title="Close Draw Panel">×</button>
+      </div>
+      <div class="draw-panel-body">
+        <div>
+          <div class="draw-section-title">Tool</div>
+          <div class="draw-tool-grid" id="draw-tool-grid">
+            <button type="button" class="draw-tool-btn" data-tool="pen" title="Pen">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zm2.92 2.33H5v-.92l8.06-8.06.92.92L5.92 19.58zM20.71 7.04a1.003 1.003 0 0 0 0-1.42L18.37 3.29a1.003 1.003 0 0 0-1.42 0L15.13 5.1l3.75 3.75 1.83-1.81z"/></svg>
+            </button>
+            <button type="button" class="draw-tool-btn" data-tool="line" title="Line">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M4 18l14-14 2 2-14 14H4v-2z"/></svg>
+            </button>
+            <button type="button" class="draw-tool-btn" data-tool="rect" title="Rectangle">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="6" width="16" height="12" rx="1"/></svg>
+            </button>
+            <button type="button" class="draw-tool-btn" data-tool="ellipse" title="Ellipse">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="12" rx="8" ry="5"/></svg>
+            </button>
+            <button type="button" class="draw-tool-btn" data-tool="eraser" title="Eraser">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M16.24 3c-.46 0-.9.19-1.22.53L4.56 14a1.72 1.72 0 0 0 0 2.43L8.1 20h8.14c.46 0 .9-.18 1.22-.5l3.98-3.98c.67-.67.67-1.76 0-2.43L17.46 3.5c-.32-.32-.76-.5-1.22-.5zm-7.3 15l-2.96-2.95 7.91-7.9 2.95 2.95L8.94 18z"/></svg>
+            </button>
+          </div>
+        </div>
+        <div>
+          <div class="draw-section-title">Size</div>
+          <div class="draw-size-row" id="draw-size-row"></div>
+        </div>
+        <div>
+          <div class="draw-section-title">Color</div>
+          <div class="draw-color-grid" id="draw-color-grid"></div>
+        </div>
+        <div class="draw-panel-actions">
+          <button type="button" id="btn-draw-mode-toggle" class="draw-action-btn primary">Enable Draw</button>
+          <button type="button" id="btn-draw-clear-page" class="draw-action-btn">Clear Page</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PDF AI Config Modal -->
+  <div id="config-overlay" class="config-panel hidden">
+    <div class="config-card">
+        <div class="config-header">
+            <h3>PDF AI Profile</h3>
+            <button id="btn-close-config" class="icon-btn" aria-label="Close Settings">×</button>
+        </div>
+        <div class="profile-picker-subtitle">Choose one of your verified AI profiles from AI Settings. The PDF assistant will use the selected profile for summarize/chat actions.</div>
+        <div id="config-profile-list" class="profile-picker-grid"></div>
+        <div id="config-profile-empty" class="profile-picker-empty hidden">No verified profiles found. Verify a provider in AI Settings first, then return here.</div>
+        <div id="config-verify-status" class="verify-status">Select a verified profile and save.</div>
+        <button id="btn-save-config" class="btn-save-config">Save Selected Profile</button>
+    </div>
+  </div>
+
+  <script src="https://esm.sh/pdfjs-dist@5.4.530/build/pdf.min.mjs" type="module"></script>
+  <script type="module" src="../../java/renderer/pdfViewerRenderer.js"></script>
+</body>
+</html>

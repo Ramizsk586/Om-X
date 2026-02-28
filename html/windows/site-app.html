@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' https: http: data: blob:; script-src 'self' 'unsafe-inline' https: http:; style-src 'self' 'unsafe-inline'; img-src 'self' https: http: data: blob:; frame-src https: http:; child-src https: http: data: blob:; connect-src 'self' https: http:;">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Om-X App</title>
+  <link rel="stylesheet" href="../../css/layout/site-app.css" />
+</head>
+<body class="site-app">
+  <div class="site-app-drag" id="site-app-drag"></div>
+  <div class="site-app-body">
+    <div id="site-app-view"></div>
+  </div>
+
+  <div id="site-app-context-menu" class="site-app-context-menu hidden">
+    <button type="button" class="site-app-context-item" data-action="back">Back</button>
+    <button type="button" class="site-app-context-item" data-action="reload">Reload</button>
+    <button type="button" class="site-app-context-item danger" data-action="close">Close</button>
+    <div class="site-app-context-sep"></div>
+    <button type="button" class="site-app-context-item" data-action="minimize">Minimize</button>
+    <button type="button" class="site-app-context-item" data-action="maximize">Maximize</button>
+    <button type="button" class="site-app-context-item" data-action="devtools">Dev Tools</button>
+  </div>
+
+  <script type="module" src="../../java/renderer/siteAppRenderer.js"></script>
+</body>
+</html>

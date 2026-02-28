@@ -1,0 +1,1345 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dark Sky - Om-X</title>
+  <style>
+    :root {
+      --bg-0: #05080f;
+      --bg-1: #0c1324;
+      --bg-2: #151d33;
+      --accent: #69f0d0;
+      --accent-hot: #ff9b54;
+      --warning: #ffcf64;
+      --danger: #ff5b6e;
+      --text: #edf4ff;
+      --ui: rgba(7, 12, 22, 0.76);
+      --border: rgba(130, 175, 255, 0.24);
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      font-family: "Segoe UI", Tahoma, sans-serif;
+      color: var(--text);
+      background: radial-gradient(1200px 800px at 50% -12%, #2a3e67 0%, var(--bg-2) 28%, var(--bg-0) 72%);
+    }
+    #app {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+    }
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      image-rendering: crisp-edges;
+    }
+    .hud {
+      position: absolute;
+      top: 14px;
+      left: 14px;
+      right: 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+      z-index: 5;
+      user-select: none;
+      pointer-events: none;
+    }
+    .hud-left, .hud-right {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .chip {
+      padding: 8px 12px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--ui);
+      font-size: 12px;
+      letter-spacing: 0.4px;
+      min-width: 118px;
+      box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
+    }
+    .chip b {
+      color: var(--accent);
+      margin-left: 6px;
+    }
+    .chip b.warn {
+      color: var(--warning);
+    }
+    .chip b.hot {
+      color: var(--accent-hot);
+    }
+    .power-chip {
+      min-width: 180px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .power-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 11px;
+      color: #d8e6ff;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+    }
+    .power-bar {
+      width: 100%;
+      height: 7px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.12);
+      overflow: hidden;
+    }
+    .power-fill {
+      width: 0%;
+      height: 100%;
+      border-radius: 999px;
+      background: linear-gradient(90deg, #7fc7ff, #7dff9e);
+      transition: width 0.1s linear;
+    }
+    .power-fill.weapon {
+      background: linear-gradient(90deg, #7fc7ff, #7a8bff 48%, #ff9b54 100%);
+    }
+    .overlay {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      z-index: 8;
+      background: rgba(2, 5, 11, 0.74);
+      backdrop-filter: blur(4px);
+    }
+    .panel {
+      width: min(680px, 92vw);
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      background: linear-gradient(160deg, rgba(10, 16, 30, 0.95), rgba(8, 13, 24, 0.88));
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.55);
+      padding: 22px 24px;
+    }
+    h1 {
+      margin: 0 0 8px;
+      font-size: 30px;
+      letter-spacing: 0.8px;
+    }
+    p {
+      margin: 0 0 10px;
+      line-height: 1.45;
+      color: #c8d6f6;
+      font-size: 14px;
+    }
+    .keys {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 10px;
+      margin-bottom: 14px;
+    }
+    .keys span {
+      padding: 5px 8px;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      font-size: 12px;
+      color: #dbe5ff;
+    }
+    .btn {
+      border: 0;
+      border-radius: 10px;
+      background: linear-gradient(140deg, #6bf7d8, #51c8ff);
+      color: #031018;
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      padding: 10px 16px;
+      cursor: pointer;
+    }
+    .btn.secondary {
+      background: linear-gradient(140deg, #7a8bff, #a785ff);
+      color: #f3f7ff;
+    }
+    .btn-row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 4px;
+    }
+    .subtle {
+      color: #9db0d6;
+      font-size: 12px;
+      margin-top: 12px;
+    }
+    .screen-flash {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background: rgba(255, 255, 255, 0);
+      z-index: 4;
+      transition: background 0.08s linear;
+    }
+    .hidden { display: none; }
+    @media (max-width: 760px) {
+      .hud {
+        top: 8px;
+        left: 8px;
+        right: 8px;
+      }
+      .chip {
+        min-width: 95px;
+        padding: 7px 10px;
+      }
+      .power-chip {
+        min-width: 150px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <canvas id="game"></canvas>
+    <div id="screenFlash" class="screen-flash"></div>
+    <div class="hud">
+      <div class="hud-left">
+        <div class="chip">Score <b id="score">0</b></div>
+        <div class="chip">Level <b id="level">1</b></div>
+        <div class="chip">Hull <b id="hp">6</b></div>
+        <div class="chip">Combo <b id="combo">x1.0</b></div>
+        <div class="chip">Kills <b id="kills">0</b></div>
+      </div>
+      <div class="hud-right">
+        <div class="chip power-chip">
+          <div class="power-row"><span>Blaster Heat</span><b id="weaponHeat">0%</b></div>
+          <div class="power-bar"><div id="weaponFill" class="power-fill weapon"></div></div>
+        </div>
+        <div class="chip power-chip">
+          <div class="power-row"><span>Shield</span><b id="shieldTime">0.0s</b></div>
+          <div class="power-bar"><div id="shieldFill" class="power-fill"></div></div>
+        </div>
+        <div class="chip power-chip">
+          <div class="power-row"><span>Slow Time</span><b id="slowTime">0.0s</b></div>
+          <div class="power-bar"><div id="slowFill" class="power-fill"></div></div>
+        </div>
+        <div class="chip power-chip">
+          <div class="power-row"><span>Overdrive</span><b id="overdriveTime">0.0s</b></div>
+          <div class="power-bar"><div id="overdriveFill" class="power-fill"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="startOverlay" class="overlay">
+      <div class="panel">
+        <h1>Dark Sky</h1>
+        <p>Advanced storm-combat flight. Dodge meteors and lightning, fire your blaster to destroy threats, and grab energy shards to stabilize your ship.</p>
+        <div class="keys">
+          <span>Move: WASD / Arrow Keys</span>
+          <span>Dash: Space</span>
+          <span>Pulse: F</span>
+          <span>Shoot: Hold J / K / Enter / Mouse</span>
+          <span>Pause: P</span>
+          <span>Powerups: Shield, Slow, Overdrive</span>
+        </div>
+        <div class="btn-row">
+          <button id="startBtn" class="btn">Launch Mission</button>
+        </div>
+        <p class="subtle">Integrated mini app for Om-X Electron Games.</p>
+      </div>
+    </div>
+
+    <div id="endOverlay" class="overlay hidden">
+      <div class="panel">
+        <h1>Mission Failed</h1>
+        <p>Your score: <b id="finalScore">0</b></p>
+        <p>Best combo: <b id="bestCombo">x1.0</b></p>
+        <div class="btn-row">
+          <button id="retryBtn" class="btn">Retry</button>
+          <button id="menuBtn" class="btn secondary">Back to Briefing</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (() => {
+      const canvas = document.getElementById("game");
+      const ctx = canvas.getContext("2d");
+      const ui = {
+        score: document.getElementById("score"),
+        level: document.getElementById("level"),
+        hp: document.getElementById("hp"),
+        combo: document.getElementById("combo"),
+        kills: document.getElementById("kills"),
+        weaponHeat: document.getElementById("weaponHeat"),
+        shieldTime: document.getElementById("shieldTime"),
+        slowTime: document.getElementById("slowTime"),
+        overdriveTime: document.getElementById("overdriveTime"),
+        weaponFill: document.getElementById("weaponFill"),
+        shieldFill: document.getElementById("shieldFill"),
+        slowFill: document.getElementById("slowFill"),
+        overdriveFill: document.getElementById("overdriveFill"),
+        startOverlay: document.getElementById("startOverlay"),
+        endOverlay: document.getElementById("endOverlay"),
+        finalScore: document.getElementById("finalScore"),
+        bestCombo: document.getElementById("bestCombo"),
+        startBtn: document.getElementById("startBtn"),
+        retryBtn: document.getElementById("retryBtn"),
+        menuBtn: document.getElementById("menuBtn"),
+        flash: document.getElementById("screenFlash")
+      };
+
+      let w = 1280;
+      let h = 720;
+      let running = false;
+      let paused = false;
+      let t = 0;
+      let score = 0;
+      let level = 1;
+      let combo = 1;
+      let comboDecay = 0;
+      let bestCombo = 1;
+      let kills = 0;
+      let shake = 0;
+      let meteorTimer = 0;
+      let shardTimer = 0;
+      let powerTimer = 0;
+      let boltTimer = 0;
+      let droneTimer = 0;
+      let nebulae = [];
+      let stars = [];
+      let clouds = [];
+      let rain = [];
+      let meteors = [];
+      let projectiles = [];
+      let shards = [];
+      let powerDrops = [];
+      let bolts = [];
+      let drones = [];
+      let particles = [];
+      const keys = new Set();
+      const pointer = { down: false };
+      const powerMax = { shield: 8, slow: 6, overdrive: 7 };
+      const power = { shield: 0, slow: 0, overdrive: 0 };
+
+      const ship = {
+        x: 0,
+        y: 0,
+        vx: 0,
+        vy: 0,
+        r: 18,
+        hp: 6,
+        maxHp: 6,
+        dashCd: 0,
+        pulseCd: 0,
+        pulseFx: 0,
+        fireCd: 0,
+        heat: 0,
+        heatMax: 100,
+        overheat: 0,
+        muzzleFx: 0,
+        invuln: 0
+      };
+
+      const rand = (a, b) => a + Math.random() * (b - a);
+      const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+
+      function resize() {
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+        w = window.innerWidth;
+        h = window.innerHeight;
+        canvas.width = Math.floor(w * dpr);
+        canvas.height = Math.floor(h * dpr);
+        canvas.style.width = w + "px";
+        canvas.style.height = h + "px";
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      }
+
+      function syncHud() {
+        ui.score.textContent = String(Math.floor(score));
+        ui.level.textContent = String(level);
+        ui.hp.textContent = String(Math.max(0, ship.hp));
+        ui.combo.textContent = `x${combo.toFixed(1)}`;
+        ui.kills.textContent = String(kills);
+        ui.weaponHeat.textContent = `${Math.floor(clamp(ship.heat, 0, 100))}%`;
+        ui.shieldTime.textContent = `${power.shield.toFixed(1)}s`;
+        ui.slowTime.textContent = `${power.slow.toFixed(1)}s`;
+        ui.overdriveTime.textContent = `${power.overdrive.toFixed(1)}s`;
+        ui.weaponFill.style.width = `${clamp((ship.heat / ship.heatMax) * 100, 0, 100)}%`;
+        ui.shieldFill.style.width = `${clamp((power.shield / powerMax.shield) * 100, 0, 100)}%`;
+        ui.slowFill.style.width = `${clamp((power.slow / powerMax.slow) * 100, 0, 100)}%`;
+        ui.overdriveFill.style.width = `${clamp((power.overdrive / powerMax.overdrive) * 100, 0, 100)}%`;
+      }
+
+      function flash(color, alpha) {
+        ui.flash.style.background = color.replace("ALPHA", String(alpha));
+        setTimeout(() => { ui.flash.style.background = color.replace("ALPHA", "0"); }, 60);
+      }
+
+      function addParticles(x, y, n, rgb, speed = 280, life = 0.6) {
+        for (let i = 0; i < n; i++) {
+          const a = Math.random() * Math.PI * 2;
+          const m = rand(speed * 0.3, speed);
+          particles.push({
+            x, y,
+            vx: Math.cos(a) * m,
+            vy: Math.sin(a) * m,
+            life: rand(life * 0.4, life),
+            age: 0,
+            size: rand(1.4, 4),
+            rgb
+          });
+        }
+      }
+
+      function resetGame() {
+        score = 0;
+        level = 1;
+        combo = 1;
+        comboDecay = 0;
+        bestCombo = 1;
+        kills = 0;
+        shake = 0;
+        meteorTimer = 0;
+        shardTimer = 0;
+        powerTimer = 0;
+        boltTimer = 0;
+        droneTimer = 0;
+        meteors = [];
+        projectiles = [];
+        shards = [];
+        powerDrops = [];
+        bolts = [];
+        drones = [];
+        particles = [];
+        Object.keys(power).forEach((k) => { power[k] = 0; });
+        ship.x = w * 0.5;
+        ship.y = h * 0.78;
+        ship.vx = 0;
+        ship.vy = 0;
+        ship.hp = ship.maxHp;
+        ship.dashCd = 0;
+        ship.pulseCd = 0;
+        ship.pulseFx = 0;
+        ship.fireCd = 0;
+        ship.heat = 0;
+        ship.overheat = 0;
+        ship.muzzleFx = 0;
+        ship.invuln = 0;
+        syncHud();
+      }
+
+      function initStars() {
+        stars = [];
+        const count = Math.max(120, Math.floor((w * h) / 11000));
+        for (let i = 0; i < count; i++) {
+          stars.push({
+            x: Math.random() * w,
+            y: Math.random() * h,
+            z: 0.3 + Math.random() * 1.2,
+            tw: Math.random() * 6.2
+          });
+        }
+        nebulae = [];
+        for (let i = 0; i < 6; i++) {
+          nebulae.push({
+            x: rand(-120, w + 120),
+            y: rand(-80, h * 0.65),
+            r: rand(140, 260),
+            vx: rand(-8, 12),
+            vy: rand(-4, 6),
+            phase: rand(0, Math.PI * 2),
+            hue: rand(190, 290),
+            alpha: rand(0.035, 0.09)
+          });
+        }
+        clouds = [];
+        for (let i = 0; i < 12; i++) {
+          clouds.push({
+            x: rand(-180, w + 180),
+            y: rand(40, h * 0.64),
+            w: rand(180, 420),
+            h: rand(70, 160),
+            vx: rand(-16, 20),
+            alpha: rand(0.03, 0.08),
+            phase: Math.random() * 6.28
+          });
+        }
+        rain = [];
+        for (let i = 0; i < 120; i++) {
+          rain.push({
+            x: Math.random() * w,
+            y: Math.random() * h,
+            len: rand(9, 22),
+            v: rand(280, 560),
+            tilt: rand(-0.2, 0.2)
+          });
+        }
+      }
+
+      function addMeteor() {
+        const speedBase = 220 + level * 60;
+        const size = 12 + Math.random() * (20 + level * 1.5);
+        const armored = level >= 6 && Math.random() < Math.min(0.45, 0.08 + level * 0.03);
+        const hp = armored ? Math.min(8, 2 + Math.floor(size / 14) + Math.floor(level / 4)) : 1;
+        meteors.push({
+          x: Math.random() * (w - 120) + 60,
+          y: -40,
+          vx: (Math.random() - 0.5) * 70,
+          vy: speedBase + Math.random() * 150,
+          r: size,
+          hp,
+          maxHp: hp,
+          spin: rand(-3.2, 3.2),
+          rot: rand(0, Math.PI * 2),
+          armored,
+          hit: false
+        });
+      }
+
+      function addDrone() {
+        const side = Math.random() < 0.5 ? -1 : 1;
+        const hp = level >= 8 ? (Math.random() < 0.38 ? 2 : 1) : 1;
+        drones.push({
+          x: side < 0 ? -50 : w + 50,
+          y: rand(h * 0.2, h * 0.74),
+          vx: side < 0 ? rand(120, 210) : -rand(120, 210),
+          vy: rand(-40, 40),
+          amp: rand(18, 50),
+          freq: rand(1.6, 2.8),
+          base: t,
+          r: 14,
+          hp,
+          maxHp: hp
+        });
+      }
+
+      function addShard() {
+        shards.push({
+          x: Math.random() * (w - 100) + 50,
+          y: -20,
+          vy: 180 + Math.random() * 80,
+          r: 10,
+          phase: Math.random() * 6.28
+        });
+      }
+
+      function addPowerDrop() {
+        const options = ["shield", "slow", "overdrive"];
+        const kind = options[Math.floor(Math.random() * options.length)];
+        powerDrops.push({
+          kind,
+          x: rand(70, w - 70),
+          y: -20,
+          vy: rand(140, 210),
+          r: 12,
+          phase: Math.random() * 6.28
+        });
+      }
+
+      function addProjectile() {
+        const overdrive = power.overdrive > 0;
+        const speed = overdrive ? 980 : 860;
+        const spread = overdrive ? 0.13 : 0.08;
+        const a = -Math.PI / 2 + rand(-spread, spread);
+        const velCarryX = ship.vx * 0.22;
+        const velCarryY = ship.vy * 0.18;
+        const damage = overdrive ? 2 : 1;
+        const pr = overdrive ? 4.2 : 3.4;
+        projectiles.push({
+          x: ship.x + Math.cos(a) * (ship.r - 2),
+          y: ship.y + Math.sin(a) * (ship.r - 2),
+          vx: Math.cos(a) * speed + velCarryX,
+          vy: Math.sin(a) * speed + velCarryY,
+          r: pr,
+          damage,
+          life: overdrive ? 1.05 : 0.9,
+          age: 0
+        });
+        ship.muzzleFx = 0.09;
+      }
+
+      function destroyMeteor(i, bonus = 0) {
+        const m = meteors[i];
+        if (!m) return;
+        kills += 1;
+        const gain = (m.armored ? 90 : 52) + level * 5 + bonus;
+        score += gain * combo;
+        combo = Math.min(5.5, combo + (m.armored ? 0.11 : 0.07));
+        comboDecay = 2.2;
+        if (combo > bestCombo) bestCombo = combo;
+        addParticles(m.x, m.y, m.armored ? 26 : 18, m.armored ? "255,197,132" : "255,154,112", 330, 0.62);
+        if (m.armored && m.r > 14) {
+          for (let n = 0; n < 2; n++) {
+            const tiny = Math.max(8, m.r * rand(0.34, 0.48));
+            meteors.push({
+              x: m.x + rand(-10, 10),
+              y: m.y + rand(-10, 10),
+              vx: m.vx * rand(0.4, 0.7) + rand(-90, 90),
+              vy: m.vy * rand(0.45, 0.72),
+              r: tiny,
+              hp: 1,
+              maxHp: 1,
+              spin: rand(-4, 4),
+              rot: rand(0, Math.PI * 2),
+              armored: false,
+              hit: false
+            });
+          }
+        }
+        meteors.splice(i, 1);
+      }
+
+      function destroyDrone(i, bonus = 0) {
+        const d = drones[i];
+        if (!d) return;
+        kills += 1;
+        score += (110 + level * 7 + bonus) * combo;
+        combo = Math.min(5.5, combo + 0.1);
+        comboDecay = 2.6;
+        if (combo > bestCombo) bestCombo = combo;
+        addParticles(d.x, d.y, 24, "255,118,176", 340, 0.66);
+        drones.splice(i, 1);
+      }
+
+      function addBolt() {
+        const x = Math.random() * (w - 140) + 70;
+        const width = 12 + Math.random() * 24;
+        bolts.push({
+          x,
+          y: -20,
+          w: width,
+          h: h + 40,
+          ttl: 0.62,
+          phase: "warn"
+        });
+      }
+
+      function circleHit(a, b, pad = 0) {
+        const dx = a.x - b.x;
+        const dy = a.y - b.y;
+        const rr = a.r + b.r + pad;
+        return dx * dx + dy * dy <= rr * rr;
+      }
+
+      function rectHitCircle(rx, ry, rw, rh, c) {
+        const cx = Math.max(rx, Math.min(c.x, rx + rw));
+        const cy = Math.max(ry, Math.min(c.y, ry + rh));
+        const dx = c.x - cx;
+        const dy = c.y - cy;
+        return dx * dx + dy * dy <= c.r * c.r;
+      }
+
+      function applyDamage(n) {
+        if (power.shield > 0 || ship.invuln > 0) return;
+        ship.hp -= n;
+        ship.invuln = 0.35;
+        combo = Math.max(1, combo - 0.35);
+        shake = Math.min(10, shake + 5);
+        addParticles(ship.x, ship.y, 20, "255,110,124", 360, 0.55);
+        flash("rgba(255,88,110,ALPHA)", 0.2);
+        syncHud();
+        if (ship.hp <= 0) {
+          running = false;
+          ui.finalScore.textContent = String(Math.floor(score));
+          ui.bestCombo.textContent = `x${bestCombo.toFixed(1)}`;
+          ui.endOverlay.classList.remove("hidden");
+        }
+      }
+
+      function activatePower(kind) {
+        if (kind === "shield") {
+          power.shield = Math.min(powerMax.shield, power.shield + 5.5);
+          addParticles(ship.x, ship.y, 24, "126,199,255", 280, 0.75);
+        } else if (kind === "slow") {
+          power.slow = Math.min(powerMax.slow, power.slow + 4.4);
+          addParticles(ship.x, ship.y, 24, "181,148,255", 280, 0.75);
+        } else if (kind === "overdrive") {
+          power.overdrive = Math.min(powerMax.overdrive, power.overdrive + 5.2);
+          addParticles(ship.x, ship.y, 24, "255,173,95", 300, 0.75);
+        }
+        combo = Math.min(5.5, combo + 0.14);
+        comboDecay = 2.4;
+        if (combo > bestCombo) bestCombo = combo;
+        syncHud();
+      }
+
+      function pulse() {
+        if (ship.pulseCd > 0) return;
+        ship.pulseCd = 8;
+        ship.pulseFx = 0.55;
+        let removed = 0;
+        for (let i = meteors.length - 1; i >= 0; i--) {
+          const m = meteors[i];
+          const dx = m.x - ship.x;
+          const dy = m.y - ship.y;
+          if (dx * dx + dy * dy < 210 * 210) {
+            removed++;
+            destroyMeteor(i, 24);
+          }
+        }
+        for (let i = drones.length - 1; i >= 0; i--) {
+          const d = drones[i];
+          const dx = d.x - ship.x;
+          const dy = d.y - ship.y;
+          if (dx * dx + dy * dy < 220 * 220) {
+            removed += 2;
+            destroyDrone(i, 38);
+          }
+        }
+        score += removed * 32;
+        combo = Math.min(5.5, combo + removed * 0.05);
+        comboDecay = 2;
+        if (combo > bestCombo) bestCombo = combo;
+        addParticles(ship.x, ship.y, 44, "125,255,158", 430, 0.75);
+        flash("rgba(155,255,195,ALPHA)", 0.17);
+        syncHud();
+      }
+
+      function update(dt) {
+        if (!running || paused) return;
+        t += dt;
+        if (shake > 0) shake = Math.max(0, shake - 16 * dt);
+        if (ship.invuln > 0) ship.invuln -= dt;
+        if (ship.pulseCd > 0) ship.pulseCd -= dt;
+        if (ship.pulseFx > 0) ship.pulseFx -= dt;
+        if (ship.fireCd > 0) ship.fireCd -= dt;
+        if (ship.muzzleFx > 0) ship.muzzleFx -= dt;
+        if (ship.overheat > 0) ship.overheat -= dt;
+        const coolRate = ship.overheat > 0 ? 20 : 30;
+        ship.heat = Math.max(0, ship.heat - coolRate * dt);
+
+        const timeScale = power.slow > 0 ? 0.58 : 1;
+        const scoreRate = (24 + level * 3.6 + kills * 0.04) * (power.overdrive > 0 ? 1.7 : 1) * combo;
+        score += dt * scoreRate;
+        level = Math.min(22, 1 + Math.floor(score / 760));
+        if (comboDecay > 0) comboDecay -= dt;
+        else combo = Math.max(1, combo - dt * 0.45);
+        power.shield = Math.max(0, power.shield - dt);
+        power.slow = Math.max(0, power.slow - dt);
+        power.overdrive = Math.max(0, power.overdrive - dt);
+
+        const accel = power.overdrive > 0 ? 2400 : 1800;
+        const drag = 0.88;
+        const maxSpeed = (430 + level * 18) * (power.overdrive > 0 ? 1.18 : 1);
+        let ax = 0;
+        let ay = 0;
+        if (keys.has("ArrowLeft") || keys.has("KeyA")) ax -= 1;
+        if (keys.has("ArrowRight") || keys.has("KeyD")) ax += 1;
+        if (keys.has("ArrowUp") || keys.has("KeyW")) ay -= 1;
+        if (keys.has("ArrowDown") || keys.has("KeyS")) ay += 1;
+
+        ship.vx += ax * accel * dt;
+        ship.vy += ay * accel * dt;
+
+        if (ship.dashCd > 0) ship.dashCd -= dt;
+        if (keys.has("Space") && ship.dashCd <= 0) {
+          const len = Math.hypot(ax, ay) || 1;
+          ship.vx += (ax / len) * 500;
+          ship.vy += (ay / len) * 500;
+          ship.dashCd = 0.65;
+          ship.invuln = Math.max(ship.invuln, 0.12);
+          addParticles(ship.x, ship.y, 16, "130,240,255", 260, 0.45);
+        }
+        if (keys.has("KeyF")) pulse();
+
+        const wantsFire = pointer.down || keys.has("KeyJ") || keys.has("KeyK") || keys.has("Enter") || keys.has("NumpadEnter");
+        if (wantsFire && ship.fireCd <= 0 && ship.overheat <= 0) {
+          addProjectile();
+          ship.fireCd = power.overdrive > 0 ? 0.06 : 0.095;
+          ship.heat += power.overdrive > 0 ? 8 : 11;
+          if (ship.heat >= ship.heatMax) {
+            ship.heat = ship.heatMax;
+            ship.overheat = 1.15;
+            flash("rgba(255,158,102,ALPHA)", 0.2);
+            addParticles(ship.x, ship.y, 20, "255,169,112", 260, 0.6);
+          }
+        }
+
+        ship.vx *= drag;
+        ship.vy *= drag;
+        const sp = Math.hypot(ship.vx, ship.vy);
+        if (sp > maxSpeed) {
+          ship.vx = (ship.vx / sp) * maxSpeed;
+          ship.vy = (ship.vy / sp) * maxSpeed;
+        }
+
+        ship.x += ship.vx * dt;
+        ship.y += ship.vy * dt;
+        ship.x = Math.max(ship.r + 6, Math.min(w - ship.r - 6, ship.x));
+        ship.y = Math.max(ship.r + 6, Math.min(h - ship.r - 6, ship.y));
+
+        meteorTimer += dt;
+        shardTimer += dt;
+        powerTimer += dt;
+        boltTimer += dt;
+        droneTimer += dt;
+
+        const meteorGap = Math.max(0.2, 1.02 - level * 0.07);
+        if (meteorTimer >= meteorGap) {
+          meteorTimer = 0;
+          addMeteor();
+          if (Math.random() < Math.min(0.45, level * 0.06)) addMeteor();
+        }
+
+        if (shardTimer >= 2.5) {
+          shardTimer = 0;
+          addShard();
+        }
+        if (powerTimer >= 6.4) {
+          powerTimer = 0;
+          addPowerDrop();
+        }
+
+        if (boltTimer >= Math.max(2.2, 5.2 - level * 0.26)) {
+          boltTimer = 0;
+          if (Math.random() > 0.42) addBolt();
+        }
+        if (droneTimer >= Math.max(1.9, 5.7 - level * 0.18)) {
+          droneTimer = 0;
+          if (Math.random() > 0.4) addDrone();
+        }
+
+        for (const n of nebulae) {
+          n.phase += dt * 0.4;
+          n.x += n.vx * dt * (power.slow > 0 ? 0.72 : 1);
+          n.y += n.vy * dt * (power.slow > 0 ? 0.72 : 1);
+          if (n.x < -n.r - 120) n.x = w + n.r + 120;
+          if (n.x > w + n.r + 120) n.x = -n.r - 120;
+          if (n.y < -n.r - 80) n.y = h * 0.6;
+          if (n.y > h * 0.86) n.y = -n.r * 0.35;
+        }
+        for (const s of stars) {
+          s.y += (20 + s.z * 45) * dt * (power.slow > 0 ? 0.7 : 1);
+          if (s.y > h + 2) {
+            s.y = -2;
+            s.x = Math.random() * w;
+          }
+        }
+        for (const c of clouds) {
+          c.x += c.vx * dt * (power.slow > 0 ? 0.6 : 1);
+          c.phase += dt;
+          if (c.x < -c.w - 100) c.x = w + 120;
+          if (c.x > w + c.w + 100) c.x = -120;
+        }
+        for (const r of rain) {
+          r.y += r.v * dt * (power.slow > 0 ? 0.65 : 1);
+          r.x += r.tilt * r.v * dt;
+          if (r.y > h + 20) { r.y = -20; r.x = Math.random() * w; }
+          if (r.x < -10) r.x = w + 10;
+          if (r.x > w + 10) r.x = -10;
+        }
+
+        for (let i = projectiles.length - 1; i >= 0; i--) {
+          const p = projectiles[i];
+          p.age += dt;
+          p.x += p.vx * dt * (power.slow > 0 ? 1.15 : 1);
+          p.y += p.vy * dt * (power.slow > 0 ? 1.15 : 1);
+          if (p.age >= p.life || p.y < -40 || p.y > h + 40 || p.x < -40 || p.x > w + 40) {
+            projectiles.splice(i, 1);
+            continue;
+          }
+
+          let hit = false;
+          for (let j = meteors.length - 1; j >= 0; j--) {
+            const m = meteors[j];
+            if (!circleHit(p, m, -1)) continue;
+            m.hp -= p.damage;
+            m.vx += p.vx * 0.02;
+            m.vy += p.vy * 0.02;
+            addParticles(p.x, p.y, 8, m.armored ? "255,214,164" : "255,146,112", 210, 0.3);
+            if (m.hp <= 0) {
+              destroyMeteor(j, 26);
+            }
+            hit = true;
+            break;
+          }
+          if (!hit) {
+            for (let j = drones.length - 1; j >= 0; j--) {
+              const d = drones[j];
+              if (!circleHit(p, d, -2)) continue;
+              d.hp -= p.damage;
+              addParticles(p.x, p.y, 8, "255,138,189", 230, 0.35);
+              if (d.hp <= 0) {
+                destroyDrone(j, 30);
+              }
+              hit = true;
+              break;
+            }
+          }
+          if (hit) {
+            projectiles.splice(i, 1);
+          }
+        }
+
+        for (let i = meteors.length - 1; i >= 0; i--) {
+          const m = meteors[i];
+          m.x += m.vx * dt * timeScale;
+          m.y += m.vy * dt * timeScale;
+          m.rot += m.spin * dt;
+          if (m.y > h + 80 || m.x < -100 || m.x > w + 100) {
+            meteors.splice(i, 1);
+            continue;
+          }
+          if (!m.hit && circleHit(m, ship, -3)) {
+            m.hit = true;
+            applyDamage(m.armored ? 2 : 1);
+            addParticles(m.x, m.y, 12, "255,176,122", 300, 0.5);
+            meteors.splice(i, 1);
+          }
+        }
+
+        for (let i = shards.length - 1; i >= 0; i--) {
+          const s = shards[i];
+          s.y += s.vy * dt * timeScale;
+          s.phase += dt * 6;
+          if (s.y > h + 30) {
+            shards.splice(i, 1);
+            continue;
+          }
+          if (circleHit(s, ship, -4)) {
+            score += 110;
+            if (ship.hp < ship.maxHp) {
+              ship.hp++;
+            }
+            combo = Math.min(5.5, combo + 0.12);
+            comboDecay = 2.4;
+            if (combo > bestCombo) bestCombo = combo;
+            addParticles(s.x, s.y, 16, "115,255,228", 280, 0.6);
+            shards.splice(i, 1);
+            syncHud();
+          }
+        }
+
+        for (let i = powerDrops.length - 1; i >= 0; i--) {
+          const p = powerDrops[i];
+          p.y += p.vy * dt * timeScale;
+          p.phase += dt * 4;
+          if (p.y > h + 30) {
+            powerDrops.splice(i, 1);
+            continue;
+          }
+          if (circleHit(p, ship, -5)) {
+            activatePower(p.kind);
+            powerDrops.splice(i, 1);
+          }
+        }
+
+        for (let i = bolts.length - 1; i >= 0; i--) {
+          const b = bolts[i];
+          b.ttl -= dt;
+          if (b.phase === "warn" && b.ttl <= 0) {
+            b.phase = "hit";
+            b.ttl = 0.22;
+            flash("rgba(255,248,185,ALPHA)", 0.16);
+            addParticles(b.x + b.w * 0.5, h * 0.55, 14, "255,236,154", 210, 0.45);
+          } else if (b.ttl <= 0) {
+            bolts.splice(i, 1);
+            continue;
+          }
+          if (b.phase === "hit" && rectHitCircle(b.x, 0, b.w, h, ship)) {
+            applyDamage(1);
+          }
+        }
+
+        for (let i = drones.length - 1; i >= 0; i--) {
+          const d = drones[i];
+          d.x += d.vx * dt * timeScale;
+          d.y += d.vy * dt * timeScale;
+          d.y += Math.sin((t - d.base) * d.freq) * d.amp * dt;
+          if (d.x < -80 || d.x > w + 80 || d.y < -80 || d.y > h + 80) {
+            drones.splice(i, 1);
+            continue;
+          }
+          if (circleHit(d, ship, -3)) {
+            applyDamage(1);
+            addParticles(d.x, d.y, 14, "255,112,144", 260, 0.5);
+            drones.splice(i, 1);
+          }
+        }
+
+        for (let i = particles.length - 1; i >= 0; i--) {
+          const p = particles[i];
+          p.age += dt;
+          if (p.age >= p.life) {
+            particles.splice(i, 1);
+            continue;
+          }
+          p.x += p.vx * dt;
+          p.y += p.vy * dt;
+          p.vx *= 0.97;
+          p.vy *= 0.97;
+        }
+        if (Math.random() < 0.55) {
+          const speed = Math.hypot(ship.vx, ship.vy);
+          if (speed > 110) {
+            const a = Math.atan2(ship.vy, ship.vx) + Math.PI + rand(-0.32, 0.32);
+            particles.push({
+              x: ship.x + Math.cos(a) * rand(10, 18),
+              y: ship.y + Math.sin(a) * rand(10, 18),
+              vx: Math.cos(a) * rand(40, 130),
+              vy: Math.sin(a) * rand(40, 130),
+              life: rand(0.2, 0.45),
+              age: 0,
+              size: rand(1.2, 2.8),
+              rgb: power.overdrive > 0 ? "255,189,117" : "108,242,209"
+            });
+          }
+        }
+        syncHud();
+      }
+
+      function drawShip() {
+        const speedTilt = Math.max(-0.55, Math.min(0.55, ship.vx / 520));
+        ctx.save();
+        ctx.translate(ship.x, ship.y);
+        ctx.rotate(speedTilt);
+
+        if (power.shield > 0) {
+          const alpha = 0.16 + Math.sin(t * 9) * 0.05;
+          ctx.strokeStyle = `rgba(126,199,255,${alpha})`;
+          ctx.lineWidth = 5;
+          ctx.beginPath();
+          ctx.arc(0, 0, ship.r + 10 + Math.sin(t * 6) * 1.4, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+
+        const grad = ctx.createLinearGradient(0, -ship.r, 0, ship.r);
+        grad.addColorStop(0, "#eaf7ff");
+        grad.addColorStop(0.6, "#8dd5ff");
+        grad.addColorStop(1, "#3a90c7");
+
+        ctx.beginPath();
+        ctx.moveTo(0, -ship.r - 6);
+        ctx.lineTo(ship.r - 2, ship.r);
+        ctx.lineTo(0, ship.r - 8);
+        ctx.lineTo(-ship.r + 2, ship.r);
+        ctx.closePath();
+        ctx.fillStyle = grad;
+        ctx.fill();
+
+        ctx.beginPath();
+        ctx.arc(0, -2, 6, 0, Math.PI * 2);
+        ctx.fillStyle = "#092a3f";
+        ctx.fill();
+
+        ctx.fillStyle = "rgba(255,255,255,0.2)";
+        ctx.beginPath();
+        ctx.arc(0, -2, 2.3, 0, Math.PI * 2);
+        ctx.fill();
+
+        const thrust = Math.max(0.2, Math.abs(ship.vx) * 0.004 + Math.abs(ship.vy) * 0.004);
+        ctx.beginPath();
+        ctx.moveTo(-5, ship.r - 8);
+        ctx.lineTo(0, ship.r + 14 + thrust * 14);
+        ctx.lineTo(5, ship.r - 8);
+        ctx.closePath();
+        ctx.fillStyle = power.overdrive > 0 ? "rgba(255,177,91,0.95)" : "rgba(107,243,210,0.95)";
+        ctx.fill();
+
+        if (ship.muzzleFx > 0) {
+          const muzzleAlpha = clamp(ship.muzzleFx / 0.09, 0, 1);
+          ctx.fillStyle = `rgba(125,220,255,${0.45 * muzzleAlpha})`;
+          ctx.beginPath();
+          ctx.moveTo(-4, -ship.r - 4);
+          ctx.lineTo(0, -ship.r - 20 - muzzleAlpha * 8);
+          ctx.lineTo(4, -ship.r - 4);
+          ctx.closePath();
+          ctx.fill();
+        }
+        ctx.restore();
+
+        if (ship.pulseFx > 0) {
+          const pct = 1 - ship.pulseFx / 0.55;
+          const radius = 35 + pct * 235;
+          const alpha = (1 - pct) * 0.35;
+          ctx.strokeStyle = `rgba(125,255,158,${alpha})`;
+          ctx.lineWidth = 4;
+          ctx.beginPath();
+          ctx.arc(ship.x, ship.y, radius, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+        if (ship.overheat > 0) {
+          const alpha = clamp(ship.overheat / 1.15, 0, 1) * 0.24;
+          ctx.strokeStyle = `rgba(255,165,118,${alpha})`;
+          ctx.lineWidth = 4;
+          ctx.beginPath();
+          ctx.arc(ship.x, ship.y, ship.r + 15 + Math.sin(t * 20) * 2.5, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+      }
+
+      function drawCloud(c) {
+        ctx.save();
+        ctx.translate(c.x, c.y + Math.sin(c.phase) * 7);
+        ctx.fillStyle = `rgba(188,211,255,${c.alpha})`;
+        ctx.beginPath();
+        ctx.ellipse(0, 0, c.w * 0.5, c.h * 0.33, 0, 0, Math.PI * 2);
+        ctx.ellipse(c.w * 0.2, c.h * 0.06, c.w * 0.4, c.h * 0.26, 0, 0, Math.PI * 2);
+        ctx.ellipse(-c.w * 0.2, c.h * 0.04, c.w * 0.35, c.h * 0.24, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+
+      function draw() {
+        const horizon = h * 0.73;
+        const stormPulse = 0.5 + Math.sin(t * 2.4) * 0.5;
+        if (shake > 0) ctx.save();
+        if (shake > 0) ctx.translate(rand(-shake, shake), rand(-shake, shake));
+
+        const skyGrad = ctx.createLinearGradient(0, 0, 0, h);
+        skyGrad.addColorStop(0, "#131d38");
+        skyGrad.addColorStop(0.5, "#0c1730");
+        skyGrad.addColorStop(1, "#060b16");
+        ctx.fillStyle = skyGrad;
+        ctx.fillRect(0, 0, w, h);
+
+        for (const n of nebulae) {
+          const nr = n.r * (0.94 + Math.sin(t * 0.22 + n.phase) * 0.08);
+          const g = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, nr);
+          g.addColorStop(0, `hsla(${n.hue}, 82%, 68%, ${n.alpha})`);
+          g.addColorStop(0.6, `hsla(${n.hue + 14}, 74%, 46%, ${n.alpha * 0.45})`);
+          g.addColorStop(1, "rgba(10,16,34,0)");
+          ctx.fillStyle = g;
+          ctx.beginPath();
+          ctx.arc(n.x, n.y, nr, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        for (const s of stars) {
+          const twinkle = 0.45 + Math.sin(t * 1.8 + s.tw) * 0.4;
+          ctx.fillStyle = `rgba(190,225,255,${0.3 + twinkle * 0.45})`;
+          ctx.fillRect(s.x, s.y, s.z, s.z);
+        }
+        for (const c of clouds) drawCloud(c);
+        ctx.strokeStyle = "rgba(160,197,255,0.13)";
+        for (const r of rain) {
+          ctx.beginPath();
+          ctx.moveTo(r.x, r.y);
+          ctx.lineTo(r.x + r.tilt * r.len, r.y + r.len);
+          ctx.stroke();
+        }
+
+        ctx.fillStyle = "rgba(143,175,255,0.05)";
+        for (let i = 0; i < 4; i++) {
+          const y = horizon - 220 + i * 52 + Math.sin(t * 0.6 + i) * 8;
+          ctx.fillRect(0, y, w, 22);
+        }
+
+        for (const b of bolts) {
+          if (b.phase === "warn") {
+            ctx.fillStyle = "rgba(255,204,120,0.08)";
+            ctx.fillRect(b.x - 10, 0, b.w + 20, h);
+            ctx.fillStyle = "rgba(255,224,148,0.28)";
+            ctx.fillRect(b.x, 0, b.w, h);
+          } else {
+            ctx.fillStyle = "rgba(255,247,210,0.8)";
+            ctx.fillRect(b.x, 0, b.w, h);
+            ctx.fillStyle = "rgba(255,232,146,0.35)";
+            ctx.fillRect(b.x - 20, 0, b.w + 40, h);
+          }
+        }
+
+        for (const m of meteors) {
+          const tailLen = Math.min(64, 22 + m.r * 1.5);
+          const speed = Math.hypot(m.vx, m.vy) || 1;
+          const tx = (m.vx / speed) * tailLen;
+          const ty = (m.vy / speed) * tailLen;
+          const trail = ctx.createLinearGradient(m.x, m.y, m.x - tx, m.y - ty);
+          trail.addColorStop(0, m.armored ? "rgba(255,201,138,0.3)" : "rgba(255,182,128,0.26)");
+          trail.addColorStop(1, "rgba(255,134,108,0)");
+          ctx.strokeStyle = trail;
+          ctx.lineWidth = Math.max(2, m.r * 0.34);
+          ctx.beginPath();
+          ctx.moveTo(m.x, m.y);
+          ctx.lineTo(m.x - tx, m.y - ty);
+          ctx.stroke();
+
+          ctx.save();
+          ctx.translate(m.x, m.y);
+          ctx.rotate(m.rot);
+          const g = ctx.createRadialGradient(-m.r * 0.2, -m.r * 0.2, 3, 0, 0, m.r + 8);
+          g.addColorStop(0, "#fff0da");
+          g.addColorStop(0.45, m.armored ? "#ffcb8a" : "#ffb27a");
+          g.addColorStop(1, m.armored ? "#7b3b2b" : "#8e273d");
+          ctx.fillStyle = g;
+          ctx.beginPath();
+          ctx.arc(0, 0, m.r, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = "rgba(255,255,255,0.12)";
+          ctx.fillRect(-m.r * 0.42, -m.r * 0.14, m.r * 0.84, 2.4);
+          ctx.restore();
+
+          if (m.maxHp > 1) {
+            const hpPct = clamp(m.hp / m.maxHp, 0, 1);
+            ctx.strokeStyle = "rgba(12,18,28,0.7)";
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.arc(m.x, m.y, m.r + 5, -Math.PI / 2, Math.PI * 1.5);
+            ctx.stroke();
+            ctx.strokeStyle = m.armored ? "rgba(255,202,129,0.9)" : "rgba(255,133,109,0.9)";
+            ctx.beginPath();
+            ctx.arc(m.x, m.y, m.r + 5, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * hpPct);
+            ctx.stroke();
+          }
+        }
+        for (const d of drones) {
+          ctx.save();
+          ctx.translate(d.x, d.y);
+          ctx.fillStyle = "rgba(255,126,168,0.2)";
+          ctx.beginPath();
+          ctx.arc(0, 0, d.r + 8, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = "#ff7ea8";
+          ctx.beginPath();
+          ctx.moveTo(0, -d.r);
+          ctx.lineTo(d.r, 0);
+          ctx.lineTo(0, d.r);
+          ctx.lineTo(-d.r, 0);
+          ctx.closePath();
+          ctx.fill();
+          if (d.maxHp > 1) {
+            const hpPct = clamp(d.hp / d.maxHp, 0, 1);
+            ctx.strokeStyle = "rgba(19,26,40,0.8)";
+            ctx.lineWidth = 2.6;
+            ctx.beginPath();
+            ctx.arc(0, 0, d.r + 6, -Math.PI / 2, Math.PI * 1.5);
+            ctx.stroke();
+            ctx.strokeStyle = "rgba(255,151,198,0.95)";
+            ctx.beginPath();
+            ctx.arc(0, 0, d.r + 6, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * hpPct);
+            ctx.stroke();
+          }
+          ctx.restore();
+        }
+
+        for (const p of projectiles) {
+          const glow = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r * 3.2);
+          glow.addColorStop(0, power.overdrive > 0 ? "rgba(255,194,124,0.95)" : "rgba(117,223,255,0.95)");
+          glow.addColorStop(1, "rgba(88,189,255,0)");
+          ctx.fillStyle = glow;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.r * 3.2, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = power.overdrive > 0 ? "rgba(255,221,166,0.95)" : "rgba(230,247,255,0.95)";
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        for (const s of shards) {
+          ctx.save();
+          ctx.translate(s.x, s.y + Math.sin(s.phase) * 3);
+          ctx.rotate(t * 4 + s.x * 0.01);
+          ctx.fillStyle = "rgba(115,255,228,0.95)";
+          ctx.fillRect(-4, -10, 8, 20);
+          ctx.fillRect(-10, -4, 20, 8);
+          ctx.restore();
+        }
+        for (const p of powerDrops) {
+          const colors = { shield: "126,199,255", slow: "181,148,255", overdrive: "255,173,95" };
+          const c = colors[p.kind] || "180,255,220";
+          const bob = Math.sin(p.phase) * 3;
+          ctx.save();
+          ctx.translate(p.x, p.y + bob);
+          ctx.rotate(t * 2.2 + p.phase);
+          ctx.fillStyle = `rgba(${c},0.17)`;
+          ctx.beginPath();
+          ctx.arc(0, 0, p.r + 8, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = `rgba(${c},0.95)`;
+          ctx.fillRect(-3, -10, 6, 20);
+          ctx.fillRect(-10, -3, 20, 6);
+          ctx.restore();
+        }
+        for (const p of particles) {
+          const left = 1 - p.age / p.life;
+          ctx.fillStyle = `rgba(${p.rgb},${Math.max(0, left * 0.9)})`;
+          ctx.fillRect(p.x, p.y, p.size, p.size);
+        }
+
+        drawShip();
+
+        ctx.fillStyle = `rgba(255,160,120,${0.08 + stormPulse * 0.12})`;
+        ctx.fillRect(0, horizon, w, h - horizon);
+        const vignette = ctx.createRadialGradient(w * 0.5, h * 0.5, Math.min(w, h) * 0.35, w * 0.5, h * 0.5, Math.max(w, h) * 0.72);
+        vignette.addColorStop(0, "rgba(0,0,0,0)");
+        vignette.addColorStop(1, "rgba(0,0,0,0.42)");
+        ctx.fillStyle = vignette;
+        ctx.fillRect(0, 0, w, h);
+        if (paused && running) {
+          ctx.fillStyle = "rgba(0,0,0,0.36)";
+          ctx.fillRect(0, 0, w, h);
+          ctx.fillStyle = "#dff0ff";
+          ctx.font = "700 26px 'Segoe UI', sans-serif";
+          ctx.fillText("PAUSED", w * 0.5 - 56, h * 0.5);
+        }
+        if (shake > 0) ctx.restore();
+      }
+
+      let last = performance.now();
+      function frame(now) {
+        const dt = Math.min(0.033, (now - last) / 1000);
+        last = now;
+        update(dt);
+        draw();
+        requestAnimationFrame(frame);
+      }
+
+      document.addEventListener("keydown", (e) => {
+        if (e.code === "KeyP" && !e.repeat) paused = !paused;
+        keys.add(e.code);
+        if (["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.code)) {
+          e.preventDefault();
+        }
+      });
+      document.addEventListener("keyup", (e) => keys.delete(e.code));
+      canvas.addEventListener("pointerdown", () => {
+        pointer.down = true;
+      });
+      window.addEventListener("pointerup", () => {
+        pointer.down = false;
+      });
+      window.addEventListener("blur", () => {
+        pointer.down = false;
+        keys.clear();
+      });
+
+      ui.startBtn.addEventListener("click", () => {
+        ui.startOverlay.classList.add("hidden");
+        ui.endOverlay.classList.add("hidden");
+        resetGame();
+        running = true;
+        paused = false;
+      });
+
+      ui.retryBtn.addEventListener("click", () => {
+        ui.endOverlay.classList.add("hidden");
+        resetGame();
+        running = true;
+        paused = false;
+      });
+      ui.menuBtn.addEventListener("click", () => {
+        ui.endOverlay.classList.add("hidden");
+        ui.startOverlay.classList.remove("hidden");
+        running = false;
+      });
+
+      window.addEventListener("resize", () => {
+        resize();
+        initStars();
+      });
+
+      resize();
+      initStars();
+      resetGame();
+      requestAnimationFrame(frame);
+    })();
+  </script>
+</body>
+</html>

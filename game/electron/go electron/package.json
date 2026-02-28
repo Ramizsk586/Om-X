@@ -1,0 +1,11 @@
+{
+  "name": "go-game",
+  "version": "1.0.0",
+  "description": "Go Game Standalone",
+  "main": "java/main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "author": "GameHub",
+  "license": "MIT"
+}

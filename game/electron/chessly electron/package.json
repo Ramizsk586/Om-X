@@ -1,0 +1,44 @@
+{
+  "name": "chessly",
+  "version": "1.1.0",
+  "description": "Next-gen Chess GUI with AI Arena and Deep Analysis",
+  "main": "java/main.js",
+  "author": "Chessly",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder",
+    "pack": "electron-builder --dir"
+  },
+  "build": {
+    "appId": "com.chessly.app",
+    "productName": "Chessly",
+    "directories": {
+      "output": "dist",
+      "buildResources": "icon"
+    },
+    "files": [
+      "**/*",
+      "!dist/*"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icon/chessly.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    },
+    "mac": {
+      "target": "dmg",
+      "icon": "assets/icon/chessly.png"
+    },
+    "linux": {
+      "target": "AppImage",
+      "icon": "assets/icon/chessly.png"
+    }
+  }
+}

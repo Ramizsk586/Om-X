@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Omni Canvas</title>
+  <link rel="stylesheet" href="../../css/base/reset.css">
+  <link rel="stylesheet" href="../../css/base/variables.css">
+  <link rel="stylesheet" href="../../css/base/base.css">
+  <link rel="stylesheet" href="../../css/pages/omni-canvas.css">
+</head>
+<body>
+  <div class="canvas-app">
+    <header class="canvas-topbar drag-region">
+      <div class="top-left">
+        <div class="title-stack">
+          <div class="app-title">Omni Canvas</div>
+          <div class="app-subtitle">AI Markdown Studio</div>
+        </div>
+        <div id="model-pill" class="model-pill">Model: Loading...</div>
+      </div>
+      <div class="top-config">
+        <div class="config-field">
+          <label for="provider-select-canvas">Provider</label>
+          <select id="provider-select-canvas"></select>
+        </div>
+        <div class="config-field">
+          <label for="model-select-canvas">Model</label>
+          <select id="model-select-canvas"></select>
+        </div>
+        <button id="btn-refresh-models" class="btn ghost">Refresh</button>
+        <button id="btn-apply-model" class="btn primary">Apply</button>
+      </div>
+    </header>
+
+    <main class="canvas-main">
+      <section class="panel chat-panel">
+        <div class="panel-header">
+          <div>
+            <div class="panel-title">AI Assistant</div>
+            <div class="panel-subtitle">AI shows one-line updates here. Full content updates in Markdown.</div>
+          </div>
+        </div>
+        <div id="chat-messages" class="chat-messages"></div>
+        <div class="chat-input">
+          <textarea id="chat-input" rows="3" placeholder="Ask the AI to edit, rewrite, or expand..."></textarea>
+          <div class="chat-actions">
+            <div class="style-picker">
+              <label for="style-select">Style</label>
+              <select id="style-select">
+                <option value="default">Default</option>
+                <option value="poem">Poem</option>
+                <option value="letter">Letter</option>
+                <option value="story">Short Story</option>
+                <option value="application">Application</option>
+                <option value="email">Email</option>
+                <option value="blog">Blog</option>
+                <option value="report">Report</option>
+                <option value="script">Script</option>
+                <option value="summary">Summary</option>
+              </select>
+            </div>
+            <div class="style-picker">
+              <label for="language-select">Language</label>
+              <select id="language-select">
+                <option value="auto">Auto</option>
+                <option value="English">English</option>
+                <option value="Hindi">Hindi</option>
+                <option value="Bengali">Bengali</option>
+                <option value="Spanish">Spanish</option>
+                <option value="French">French</option>
+                <option value="German">German</option>
+                <option value="Portuguese">Portuguese</option>
+                <option value="Italian">Italian</option>
+                <option value="Dutch">Dutch</option>
+                <option value="Polish">Polish</option>
+                <option value="Russian">Russian</option>
+                <option value="Ukrainian">Ukrainian</option>
+                <option value="Greek">Greek</option>
+                <option value="Turkish">Turkish</option>
+                <option value="Arabic">Arabic</option>
+                <option value="Hebrew">Hebrew</option>
+                <option value="Urdu">Urdu</option>
+                <option value="Persian">Persian</option>
+                <option value="Chinese (Simplified)">Chinese (Simplified)</option>
+                <option value="Chinese (Traditional)">Chinese (Traditional)</option>
+                <option value="Japanese">Japanese</option>
+                <option value="Korean">Korean</option>
+                <option value="Thai">Thai</option>
+                <option value="Vietnamese">Vietnamese</option>
+                <option value="Indonesian">Indonesian</option>
+                <option value="Malay">Malay</option>
+                <option value="Tamil">Tamil</option>
+                <option value="Telugu">Telugu</option>
+                <option value="Kannada">Kannada</option>
+                <option value="Malayalam">Malayalam</option>
+                <option value="Marathi">Marathi</option>
+                <option value="Punjabi">Punjabi</option>
+                <option value="Gujarati">Gujarati</option>
+                <option value="Swahili">Swahili</option>
+              </select>
+            </div>
+            <button id="btn-send" class="btn primary">Send</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel doc-panel">
+        <div class="panel-header doc-header">
+          <div class="doc-title">
+            <span class="label">Filename</span>
+            <input id="filename-input" type="text" value="untitled.md" />
+          </div>
+          <div class="doc-actions">
+            <button id="btn-view-toggle" class="btn ghost">Preview</button>
+            <button data-action="suggest" class="btn subtle">Suggest</button>
+            <button data-action="improve" class="btn subtle">Improve</button>
+            <button data-action="comment" class="btn subtle">Comment</button>
+            <button data-action="colorize" class="btn subtle">Colorize</button>
+          </div>
+        </div>
+        <div class="doc-content">
+          <div class="editor-wrap">
+            <pre id="canvas-highlight" aria-hidden="true"></pre>
+            <textarea id="canvas-editor" spellcheck="false" placeholder="Start writing..."></textarea>
+          </div>
+          <div id="canvas-preview" class="canvas-preview hidden"></div>
+        </div>
+      </section>
+    </main>
+
+    <div id="loading-indicator" class="loading hidden">
+      <div class="spinner"></div>
+      <div class="loading-text">Thinking...</div>
+    </div>
+
+    <div id="canvas-context-footer" class="context-footer hidden">
+      <button id="btn-new" class="btn ghost">New</button>
+      <button id="btn-undo" class="btn ghost">Undo</button>
+      <button id="btn-redo" class="btn ghost">Redo</button>
+      <button id="btn-clear-chat" class="btn ghost">Clear</button>
+      <span class="context-divider"></span>
+      <button id="btn-minimize" class="btn ghost">Min</button>
+      <button id="btn-maximize" class="btn ghost">Max</button>
+      <button id="btn-close" class="btn danger">Close</button>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="../../java/renderer/omniCanvasRenderer.js"></script>
+</body>
+</html>

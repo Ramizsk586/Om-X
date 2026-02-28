@@ -1,0 +1,155 @@
+
+
+
+
+
+
+
+
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>Game Report</title>
+  <link rel="stylesheet" href="css/styles.css" />
+  <style>body { padding: 16px; display: flex; flex-direction: column; gap: 12px; height: 100vh; overflow: hidden; }</style>
+</head>
+<body>
+  <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+    <h1 style="margin:0; font-size:20px;">Game Report</h1>
+    <div id="openingBadge" style="background:rgba(255,255,255,0.1); color:#fff; padding:4px 10px; border-radius:16px; font-size:11px; font-weight:700; border:1px solid rgba(255,255,255,0.1);">Checking Opening...</div>
+  </div>
+
+  <div class="card">
+    <h2>Last Match Moves</h2>
+    <div id="movesList" style="max-height:160px; overflow-y:auto; font-size:12px; padding-right:4px;">
+      <!-- moves will be injected here -->
+    </div>
+    <div id="statsRow" style="display:none; gap:12px; margin-top:6px;">
+      <!-- stats will be injected here -->
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Analysis & Annotations</h2>
+    <div style="display:flex; justify-content:space-between; gap:8px; margin-bottom:6px;">
+      <button id="generateBtn" class="btn-primary" style="flex:1;">Generate Report</button>
+      <button id="reviewBtn" class="btn-secondary" style="flex:1;">Review Game</button>
+    </div>
+    <textarea id="reportOutput" readonly style="width:100%; min-height:140px; resize:vertical; background:rgba(0,0,0,0.3);"
+      placeholder="Click &quot;Generate Report&quot; to build a textual summary here.">
+    </textarea>
+    <div style="font-size:11px; opacity:0.7; margin-top:4px;">
+      Report includes Book vs Novelty analysis if database is connected.
+    </div>
+  </div>
+
+  <script>
+    const movesListDiv = document.getElementById("movesList");
+    const reportOutput = document.getElementById("reportOutput");
+    const generateBtn = document.getElementById("generateBtn");
+    const reviewBtn = document.getElementById("reviewBtn");
+    const openingBadge = document.getElementById("openingBadge");
+    const statsRow = document.getElementById("statsRow");
+
+    let lastGame = { fen: null, moves: [] };
+    let openingName = "Unknown Opening";
+    let noveltyMove = 0;
+
+    function computeStats() {
+      const tags = lastGame.moves.reduce((acc, mv) => { if(mv.tag) acc[mv.tag] = (acc[mv.tag] || 0) + 1; return acc; }, {});
+      const total = lastGame.moves.length;
+      
+      const good = (tags.good || 0) + (tags.best || 0) + (tags.excellent || 0);
+      const bad = (tags.blunder || 0) + (tags.mistake || 0);
+      
+      const hasAnalysis = good + bad > 0;
+      
+      if (!hasAnalysis) {
+          statsRow.innerHTML = `<div class="eng-meta" style="opacity:0.6">Run Game Review to see accuracy stats.</div>`;
+      } else {
+          const accuracy = total > 0 ? Math.round((good / total) * 100) : 0;
+          statsRow.innerHTML = `<div class="eng-meta">Accuracy: ${accuracy}%</div><div class="eng-meta">Blunders: ${tags.blunder || 0}</div><div class="eng-meta">Mistakes: ${tags.mistake || 0}</div><div class="eng-meta">Best: ${tags.best || 0}</div>`;
+      }
+      statsRow.style.display = "flex";
+    }
+
+    function renderMoves() {
+      movesListDiv.innerHTML = "";
+      if (!lastGame.moves || !lastGame.moves.length) { movesListDiv.textContent = "No saved game yet."; statsRow.style.display = "none"; return; }
+      
+      computeStats();
+      
+      let html = ''; let whiteNum = 1;
+      for (let i = 0; i < lastGame.moves.length; i += 2) {
+        const w = lastGame.moves[i];
+        const wTag = w.tag ? `<span class="move-tag tag-${w.tag}">${w.tag.toUpperCase()}</span>` : '';
+        
+        html += `<div class="move-pair"><span class="move-num">${whiteNum}.</span><span class="move-white">${w.san||w.from+w.to}</span>${wTag}`;
+        if (i + 1 < lastGame.moves.length) {
+          const b = lastGame.moves[i + 1];
+          const bTag = b.tag ? `<span class="move-tag tag-${b.tag}">${b.tag.toUpperCase()}</span>` : '';
+          html += `<span class="move-black" style="margin-left:8px;">${b.san||b.from+b.to}</span>${bTag}`;
+        }
+        html += `</div>`;
+        whiteNum++;
+      }
+      movesListDiv.innerHTML = html;
+    }
+
+    // Simple SAN generator to fallback if SAN missing from game history
+    function getSan(index) {
+        const m = lastGame.moves[index];
+        if (m.san && m.san.length < 6) return m.san; // Use stored if short/clean
+        // Fallback logic if we had full engine context, but here we approximate for DB
+        return m.from + m.to; // Fallback to UCI if SAN not reliable
+    }
+
+    async function analyzeOpening() {
+        if (!lastGame.moves || !lastGame.moves.length) return;
+        
+        // Construct sequence
+        const sanMoves = [];
+        for(let m of lastGame.moves) {
+            sanMoves.push(m.san || (m.from + m.to)); // Try to use what we have
+        }
+        
+        // Identify Opening
+        openingName = await window.electronAPI.dbGetOpening(sanMoves);
+        openingBadge.textContent = openingName;
+        
+        // Find Novelty
+        noveltyMove = 0;
+        for(let i=1; i<=sanMoves.length; i++) {
+            const stats = await window.electronAPI.dbGetStats(sanMoves.slice(0, i));
+            if(!stats.found) { noveltyMove = i; break; }
+        }
+    }
+
+    async function generateTextReport() {
+      if (!lastGame.moves || !lastGame.moves.length) { reportOutput.value = "No game moves found to analyse."; return; }
+      
+      const total = lastGame.moves.length;
+      
+      let text = `Game Analysis Report\nOpening: ${openingName}\n`;
+      if (noveltyMove > 0) text += `Novelty played at move ${Math.ceil(noveltyMove/2)} (${noveltyMove % 2 !== 0 ? 'White' : 'Black'})\n`;
+      else text += `Game followed book lines throughout.\n`;
+      
+      text += `Total Moves: ${total}\n\nMove-by-Move:\n\n`;
+      lastGame.moves.forEach((mv, idx) => { 
+          const num = Math.floor(idx / 2) + 1; 
+          if(idx % 2 === 0) text += `${num}. `;
+          const tagStr = mv.tag ? ` [${mv.tag.toUpperCase()}]` : '';
+          text += `${mv.san || mv.from+mv.to}${tagStr} `;
+          if(idx % 2 !== 0) text += "\n";
+      });
+      reportOutput.value = text;
+    }
+
+    generateBtn.addEventListener("click", generateTextReport);
+    reviewBtn.addEventListener("click", () => { window.electronAPI?.startReviewMode(lastGame); });
+    if (window.electronAPI?.onLastGame) { window.electronAPI.onLastGame((data) => { lastGame = data || { fen: null, moves: [] }; renderMoves(); analyzeOpening(); }); }
+    window.addEventListener("DOMContentLoaded", async () => { window.electronAPI?.requestLastGame(); });
+  </script>
+</body>
+</html>

@@ -1,0 +1,72 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Chessly LAN</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <audio id="snd-move" src="/assets/sounds/move-self.mp3"></audio>
+    <audio id="snd-capture" src="/assets/sounds/capture.mp3"></audio>
+    <audio id="snd-notify" src="/assets/sounds/move-check.mp3"></audio>
+
+    <div id="login-screen">
+        <div class="card">
+            <div class="logo">Chessly LAN</div>
+            <div class="subtitle">Join the local match</div>
+            
+            <input type="text" id="playerName" placeholder="Your Name" maxlength="12" autocomplete="off" autofocus>
+            
+            <div style="text-align:left; font-size:12px; color:#9ca3af; margin-bottom:8px;">Choose Avatar:</div>
+            <div class="avatar-grid" id="avatarGrid">
+                <!-- Injected by JS -->
+            </div>
+            
+            <button id="joinBtn" class="btn-primary">Join Game</button>
+        </div>
+    </div>
+
+    <div id="game-screen" class="hidden">
+        <!-- Opponent Bar -->
+        <div class="player-bar opponent-bar">
+            <div class="avatar"><img src="/assets/pieces/wK.png" id="opponentAvatar" alt="Host"></div>
+            <div class="player-details">
+                <div class="player-name" id="opponentName">Host (White)</div>
+                <div class="player-status">Opponent</div>
+            </div>
+        </div>
+
+        <!-- Board -->
+        <div id="board-wrapper">
+            <div id="board-container">
+                <div id="board"></div>
+                <div id="anim-layer"></div>
+                
+                <div id="game-over-overlay" class="hidden">
+                    <div class="go-content">
+                        <h2 class="go-title" id="go-title">Game Over</h2>
+                        <p class="go-reason" id="go-reason">Reason</p>
+                        <div class="go-sub">Waiting for host to restart...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Self Bar -->
+        <div class="player-bar self-bar">
+            <div class="avatar"><img src="/assets/pieces/bK.png" id="myAvatar" alt="Me"></div>
+            <div class="player-details">
+                <div class="player-name" id="myDisplayname">Guest</div>
+                <div id="gameStatus" class="player-status">
+                    <span class="wait-badge">Waiting...</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="client.js"></script>
+</body>
+</html>

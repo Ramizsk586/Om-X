@@ -1,0 +1,773 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>Neural Arena</title>
+  <link rel="stylesheet" href="css/styles.css" />
+  <style>
+    /* Arena Standard Theme (Ported from Mad Arena) */
+    /* Removed :root overrides to ensure Global Theme Sync works */
+
+    body {
+      overflow: hidden;
+      display: flex;
+      background: var(--app-bg);
+      color: var(--text-main);
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    }
+
+    .main-layout {
+        display: flex; width: 100vw; height: 100vh;
+    }
+
+    /* --- Board Panel --- */
+    .board-panel {
+        flex: 1;
+        display: flex; justify-content: center; align-items: center;
+        position: relative;
+        background: radial-gradient(circle at center, rgba(255, 255, 255, 0.03), transparent 60%);
+    }
+    
+    .arena-glow {
+        position: absolute; width: 100%; height: 100%;
+        background: radial-gradient(circle at 50% 50%, var(--glass-bg-hover) 0%, transparent 50%);
+        pointer-events: none; z-index: 0;
+        animation: pulseAtmosphere 10s infinite alternate;
+    }
+    
+    @keyframes pulseAtmosphere {
+        0% { opacity: 0.5; transform: scale(0.95); }
+        100% { opacity: 1; transform: scale(1.05); }
+    }
+
+    /* --- Sidebar --- */
+    .sidebar {
+        width: 400px; min-width: 400px;
+        background: var(--sidebar-bg);
+        backdrop-filter: blur(20px);
+        border-left: 1px solid rgba(255, 255, 255, 0.08);
+        display: flex; flex-direction: column;
+        z-index: 20;
+        box-shadow: -10px 0 60px rgba(0,0,0,0.6);
+    }
+
+    .sidebar-header {
+        padding: 20px 24px;
+        border-bottom: 1px solid rgba(255,255,255,0.05);
+        height: 80px;
+        display: flex; flex-direction: column; justify-content: center;
+        background: rgba(0,0,0,0.2);
+        position: relative;
+    }
+    
+    .header-top { display: flex; justify-content: space-between; align-items: center; width: 100%; }
+    
+    .sidebar-header h2 {
+        margin: 0; font-size: 22px; color: #fff; 
+        text-transform: uppercase; letter-spacing: 3px; font-weight: 900;
+        text-shadow: var(--primary-glow);
+        display: flex; align-items: center; gap: 10px;
+    }
+
+    .status-indicator {
+        font-size: 11px; color: var(--primary-accent); 
+        font-family: 'JetBrains Mono', monospace; text-transform: uppercase; 
+        display: flex; align-items: center; gap: 6px; opacity: 0.8;
+        margin-top: 4px; font-weight: 600; letter-spacing: 1px;
+    }
+    
+    .header-actions { display: flex; gap: 8px; }
+    
+    .icon-btn {
+        width: 36px; height: 36px;
+        background: rgba(255,255,255,0.05);
+        border: var(--card-border);
+        border-radius: 8px;
+        color: var(--text-muted);
+        cursor: pointer;
+        display: flex; align-items: center; justify-content: center;
+        transition: all 0.2s;
+        font-size: 16px;
+    }
+    .icon-btn:hover {
+        background: rgba(255,255,255,0.1);
+        color: #fff;
+        border-color: rgba(255,255,255,0.3);
+        transform: translateY(-1px);
+    }
+    .icon-btn.active {
+        background: rgba(255,255,255,0.1);
+        color: var(--primary-accent);
+        border-color: var(--primary-accent);
+        box-shadow: 0 0 15px rgba(0,0,0,0.2);
+    }
+
+    /* Agents Section - Compact */
+    .agents-container {
+        padding: 20px; 
+        display: flex; flex-direction: column; gap: 12px; /* Compact gap */
+        background: linear-gradient(180deg, rgba(0,0,0,0.1), transparent);
+        flex: 1; /* Take up available space since logs are gone */
+    }
+
+    .agent-card {
+        background: var(--card-bg);
+        border: var(--card-border);
+        border-radius: 16px;
+        padding: 16px 20px;
+        display: flex; align-items: center; gap: 16px;
+        position: relative; overflow: hidden;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        min-height: 100px;
+    }
+    
+    .agent-card:hover {
+        background: rgba(255,255,255,0.06);
+        border-color: rgba(255, 255, 255, 0.15);
+    }
+    
+    .agent-card.active-turn {
+        background: linear-gradient(90deg, rgba(255,255,255,0.05), rgba(255,255,255,0.01));
+        border-color: var(--primary-accent);
+        box-shadow: 0 0 30px rgba(0,0,0,0.2);
+    }
+    
+    .agent-card.active-turn::before {
+        content: ''; position: absolute; top: 0; left: 0; width: 4px; height: 100%;
+        background: var(--primary-accent);
+        box-shadow: 0 0 10px var(--primary-accent);
+    }
+
+    .agent-avatar {
+        width: 64px; height: 64px; border-radius: 14px;
+        background: rgba(0,0,0,0.4); 
+        border: 2px solid rgba(255,255,255,0.1);
+        display: flex; justify-content: center; align-items: center;
+        cursor: pointer; overflow: hidden;
+        transition: all 0.2s ease;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+        flex-shrink: 0;
+    }
+    .agent-avatar:hover { border-color: var(--primary-accent); filter: brightness(1.2); }
+    .agent-avatar img { width: 85%; height: 85%; object-fit: contain; }
+
+    .agent-info { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 6px; min-width: 0; }
+    
+    .agent-name { font-weight: 800; font-size: 16px; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    
+    .agent-model-badge { 
+        font-size: 10px; color: #ccc; font-family: 'JetBrains Mono', monospace; 
+        background: rgba(255,255,255,0.08); padding: 3px 8px; border-radius: 6px;
+        border: 1px solid rgba(255,255,255,0.05); text-transform: uppercase; font-weight: 700;
+        max-width: 140px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    
+    .agent-timer {
+        font-family: 'JetBrains Mono', monospace; font-size: 22px; font-weight: 700;
+        color: rgba(255,255,255,0.5); transition: all 0.3s;
+        min-width: 70px; text-align: right; letter-spacing: -1px;
+    }
+    .active-turn .agent-timer { color: #fff; text-shadow: 0 0 10px var(--primary-accent); }
+
+    /* VS Divider */
+    .vs-divider {
+        display: flex; align-items: center; justify-content: center;
+        height: 20px; opacity: 0.3;
+    }
+    .vs-line { width: 100px; height: 1px; background: linear-gradient(90deg, transparent, #fff, transparent); }
+
+    /* Controls (Pushed to bottom via flex) */
+    .controls { 
+        padding: 24px; 
+        border-top: 1px solid rgba(255,255,255,0.08);
+        background: rgba(0,0,0,0.2);
+        display: flex; flex-direction: column; gap: 12px;
+        margin-top: auto;
+    }
+    
+    .control-row { display: flex; gap: 12px; align-items: center; }
+    
+    .time-selector {
+        flex: 1;
+        background: rgba(255,255,255,0.05);
+        border: 1px solid rgba(255,255,255,0.1);
+        border-radius: 8px;
+        padding: 0 12px;
+        height: 40px;
+        display: flex; align-items: center; justify-content: space-between;
+        font-size: 11px; font-weight: 700; color: var(--text-muted);
+    }
+    .time-selector select {
+        background: transparent; border: none; color: #fff; 
+        font-family: inherit; font-weight: 700; cursor: pointer;
+        outline: none; text-align: right;
+    }
+    
+    .btn-primary {
+        background: var(--primary-accent);
+        color: white; border: none;
+        padding: 0 20px; height: 48px; border-radius: 10px;
+        font-weight: 800; font-size: 13px; text-transform: uppercase; letter-spacing: 1px;
+        cursor: pointer;
+        box-shadow: var(--primary-glow);
+        transition: all 0.2s;
+        display: flex; align-items: center; justify-content: center; gap: 8px;
+        flex: 1;
+    }
+    .btn-primary:hover { transform: translateY(-2px); filter: brightness(1.1); }
+    .btn-primary:active { transform: translateY(0); }
+    
+    .btn-secondary {
+        height: 48px; width: 48px;
+        background: rgba(255,255,255,0.05);
+        border: 1px solid rgba(255,255,255,0.1);
+        border-radius: 10px;
+        color: #fff; cursor: pointer;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 18px; transition: all 0.2s;
+    }
+    .btn-secondary:hover { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.2); }
+
+    /* Board Wrapper */
+    #board-container {
+        box-shadow: 0 30px 80px -10px rgba(0,0,0,0.6);
+        border: 8px solid rgba(255,255,255,0.03);
+        border-radius: 12px;
+        position: relative;
+        background: #0f172a;
+        z-index: 10;
+    }
+
+    /* Modal Styles */
+    .modal-backdrop {
+        position: fixed; inset: 0; background: rgba(0,0,0,0.85); backdrop-filter: blur(10px);
+        z-index: 100; display: none; align-items: center; justify-content: center;
+    }
+    .selector-modal {
+        background: var(--app-bg); border: 1px solid var(--primary-accent);
+        padding: 24px; border-radius: 20px; width: 500px;
+        box-shadow: var(--primary-glow);
+        display: flex; flex-direction: column; gap: 16px;
+        animation: modalUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    @keyframes modalUp { from { opacity: 0; transform: translateY(20px) scale(0.95); } to { opacity: 1; transform: translateY(0) scale(1); } }
+    
+    .engine-grid {
+        display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+        gap: 12px; max-height: 400px; overflow-y: auto;
+        padding: 4px;
+    }
+    .eng-item {
+        background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05);
+        border-radius: 12px; padding: 16px; cursor: pointer;
+        display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center;
+        transition: all 0.2s;
+    }
+    .eng-item:hover { background: rgba(255,255,255,0.08); border-color: var(--primary-accent); transform: translateY(-2px); }
+    .eng-icon { width: 48px; height: 48px; object-fit: contain; }
+    
+    /* Game Over Modal */
+    .go-panel {
+        background: var(--sidebar-bg); border: 1px solid var(--primary-accent);
+        padding: 40px; border-radius: 24px; text-align: center;
+        box-shadow: 0 20px 60px rgba(0,0,0,0.8);
+        max-width: 400px; width: 90%;
+        position: relative;
+    }
+    .go-title { font-size: 32px; font-weight: 900; margin-bottom: 8px; color: #fff; }
+    .go-sub { font-size: 16px; color: var(--primary-accent); margin-bottom: 24px; font-weight: 700; }
+    
+    /* CONVERSATION PANEL */
+    .chat-overlay {
+        position: absolute; bottom: 20px; right: 20px;
+        width: 320px; height: 350px;
+        background: rgba(10, 10, 15, 0.9);
+        backdrop-filter: blur(20px);
+        border: 1px solid var(--primary-accent);
+        border-radius: 16px;
+        display: flex; flex-direction: column;
+        z-index: 50;
+        box-shadow: 0 20px 50px rgba(0,0,0,0.8);
+        transform: translateY(20px); opacity: 0; pointer-events: none;
+        /* ONLY animate opacity and transform for enter/exit, NOT top/left during drag */
+        transition: opacity 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    .chat-overlay.visible { transform: translateY(0); opacity: 1; pointer-events: all; }
+    
+    .chat-header {
+        padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,0.1);
+        font-size: 12px; font-weight: 800; text-transform: uppercase;
+        display: flex; justify-content: space-between; align-items: center;
+        color: var(--primary-accent); letter-spacing: 1px;
+        cursor: move; /* Draggable cursor */
+    }
+    
+    .chat-close { cursor: pointer; opacity: 0.6; transition:opacity 0.2s; font-size: 16px; }
+    .chat-close:hover { opacity: 1; }
+    
+    .chat-scroll {
+        flex: 1; overflow-y: auto; padding: 12px;
+        display: flex; flex-direction: column; gap: 10px;
+    }
+    
+    .chat-bubble {
+        max-width: 85%; padding: 8px 12px; border-radius: 12px;
+        font-size: 12px; line-height: 1.4; color: #e2e8f0;
+        animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        position: relative;
+    }
+    @keyframes popIn { from{opacity:0; transform:scale(0.9);} to{opacity:1; transform:scale(1);} }
+    
+    .chat-bubble.white {
+        align-self: flex-start;
+        background: rgba(255,255,255,0.1);
+        border-bottom-left-radius: 2px;
+        border: 1px solid rgba(255,255,255,0.1);
+    }
+    .chat-bubble.black {
+        align-self: flex-end;
+        background: rgba(0,0,0,0.6);
+        border-bottom-right-radius: 2px;
+        border: 1px solid var(--primary-accent);
+        color: var(--primary-accent);
+    }
+    .chat-sender { font-size: 9px; opacity: 0.6; margin-bottom: 2px; font-weight: 700; text-transform: uppercase; }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+
+  </style>
+</head>
+<body>
+
+  <div class="main-layout">
+    <!-- Left: Board -->
+    <div class="board-panel">
+       <div class="arena-glow"></div>
+       <div id="board-container">
+          <div id="board"></div>
+       </div>
+       
+       <!-- Chat Overlay inside board panel to be positioned relative to it -->
+       <div id="ai-chat-overlay" class="chat-overlay">
+           <div class="chat-header">
+               <span>Neural Uplink</span>
+               <span class="chat-close" onclick="toggleChat()">×</span>
+           </div>
+           <div class="chat-scroll" id="chat-content">
+               <div style="text-align:center; opacity:0.4; font-size:11px; margin-top:20px;">Waiting for signals...</div>
+           </div>
+       </div>
+    </div>
+
+    <!-- Right: Standard Arena Sidebar -->
+    <div class="sidebar">
+       <div class="sidebar-header">
+          <div class="header-top">
+              <h2>Neural Arena</h2>
+              <div class="header-actions">
+                  <button class="icon-btn" id="chatBtn" title="AI Conversation" onclick="toggleChat()">💬</button>
+                  <button class="icon-btn" id="flipBtn" title="Flip Board">🔄</button>
+              </div>
+          </div>
+          <div class="status-indicator">
+              <span id="status-msg">System Ready</span>
+          </div>
+       </div>
+
+       <div class="agents-container">
+          <!-- White Agent -->
+          <div class="agent-card" id="card-white">
+             <div class="agent-avatar" onclick="openSelector('white')">
+                 <img id="img-white" src="../assets/pieces/wK.png">
+             </div>
+             <div class="agent-info">
+                <div class="agent-name" id="name-white">White Agent</div>
+                <div class="agent-model-badge" id="model-white">Select Engine...</div>
+             </div>
+             <div class="agent-timer" id="timer-white">--s</div>
+          </div>
+
+          <div class="vs-divider">
+              <div class="vs-line"></div>
+          </div>
+
+          <!-- Black Agent -->
+          <div class="agent-card" id="card-black">
+             <div class="agent-avatar" onclick="openSelector('black')">
+                 <img id="img-black" src="../assets/pieces/bK.png">
+             </div>
+             <div class="agent-info">
+                <div class="agent-name" id="name-black">Black Agent</div>
+                <div class="agent-model-badge" id="model-black">Select Engine...</div>
+             </div>
+             <div class="agent-timer" id="timer-black">--s</div>
+          </div>
+       </div>
+
+       <div class="controls">
+          <div class="control-row">
+              <div class="time-selector">
+                  <span>MOVE DELAY</span>
+                  <select id="moveTimeSelect">
+                      <option value="1000">1s (Fast)</option>
+                      <option value="3000">3s</option>
+                      <option value="5000">5s (Normal)</option>
+                      <option value="10000" selected>10s (Analysis)</option>
+                      <option value="20000">20s</option>
+                  </select>
+              </div>
+          </div>
+          <div class="control-row">
+              <button id="startBtn" class="btn-primary">
+                  INITIALIZE MATCH
+              </button>
+              <button id="resetBtn" class="btn-secondary" title="Reset Board">
+                  ↺
+              </button>
+          </div>
+       </div>
+    </div>
+  </div>
+
+  <!-- Engine Selector Modal -->
+  <div class="modal-backdrop" id="selectorModal">
+      <div class="selector-modal">
+          <h3 style="margin:0; color:#fff; font-size:16px; text-transform:uppercase; letter-spacing:1px;">Select Intelligence</h3>
+          <div style="height:1px; background:rgba(255,255,255,0.1);"></div>
+          
+          <div class="engine-grid" id="engineGrid"></div>
+          
+          <button class="btn-secondary" onclick="closeSelector()" style="width:100%; height:40px; font-size:13px;">Cancel Operation</button>
+      </div>
+  </div>
+
+  <!-- Game Over Modal -->
+  <div class="modal-backdrop" id="gameOverModal">
+      <div class="go-panel">
+          <div class="go-title" id="goTitle">WHITE WINS</div>
+          <div class="go-sub" id="goReason">Checkmate</div>
+          
+          <!-- Analysis Loader -->
+          <div id="ai-analysis-loader" style="font-size:12px; color:#9ca3af; margin-bottom:20px;">Calculating Performance...</div>
+          
+          <div style="display:flex; gap:12px;">
+              <button class="btn-secondary" onclick="closeGameOver()" style="flex:1; font-size:14px;">New Match</button>
+              <button class="btn-primary" id="reviewBtn" style="flex:1; font-size:14px;">Game Review</button>
+          </div>
+      </div>
+  </div>
+
+  <script src="../java/arena_brain.js"></script>
+  <script>
+    const brain = new ArenaBrain();
+    let whiteConfig = null, blackConfig = null, gameRunning = false, activeColor = 'white', timerInterval = null;
+    let isFlipped = false;
+    
+    const boardEl = document.getElementById('board');
+    const moveTimeSelect = document.getElementById('moveTimeSelect');
+    const gameOverModal = document.getElementById('gameOverModal');
+    const chatOverlay = document.getElementById('ai-chat-overlay');
+    const chatContent = document.getElementById('chat-content');
+    const chatBtn = document.getElementById('chatBtn');
+    
+    // --- Chat Logic & Draggable ---
+    window.toggleChat = () => {
+        chatOverlay.classList.toggle('visible');
+        chatBtn.classList.toggle('active', chatOverlay.classList.contains('visible'));
+        // Reset position on close if desired, or keep it. Here we keep it.
+    };
+    
+    // Draggable Implementation
+    const chatHeader = chatOverlay.querySelector('.chat-header');
+    let isDragging = false;
+    let startX, startY, initialLeft, initialTop;
+
+    chatHeader.addEventListener('mousedown', (e) => {
+        if(e.target.classList.contains('chat-close')) return; // Ignore click on close button
+        
+        isDragging = true;
+        startX = e.clientX;
+        startY = e.clientY;
+        
+        // Get current position rect relative to viewport
+        const rect = chatOverlay.getBoundingClientRect();
+        // Get parent container rect to calculate relative top/left
+        const parentRect = chatOverlay.parentElement.getBoundingClientRect();
+        
+        // Switch from bottom/right to top/left for dragging
+        // Set initial left/top based on current visual position
+        chatOverlay.style.left = (rect.left - parentRect.left) + 'px';
+        chatOverlay.style.top = (rect.top - parentRect.top) + 'px';
+        chatOverlay.style.bottom = 'auto';
+        chatOverlay.style.right = 'auto';
+        chatOverlay.style.transform = 'none'; // Disable transform to avoid conflict
+        
+        initialLeft = parseFloat(chatOverlay.style.left);
+        initialTop = parseFloat(chatOverlay.style.top);
+        
+        chatOverlay.style.cursor = 'grabbing';
+    });
+
+    document.addEventListener('mousemove', (e) => {
+        if(!isDragging) return;
+        e.preventDefault();
+        const dx = e.clientX - startX;
+        const dy = e.clientY - startY;
+        chatOverlay.style.left = (initialLeft + dx) + 'px';
+        chatOverlay.style.top = (initialTop + dy) + 'px';
+    });
+
+    document.addEventListener('mouseup', () => {
+        isDragging = false;
+        if(chatOverlay.style.cursor === 'grabbing') chatOverlay.style.cursor = 'default';
+    });
+    
+    function addChatMessage(turn, text) {
+        if (!text) return;
+        
+        // Clear initial placeholder
+        if(chatContent.querySelector('div').textContent === "Waiting for signals...") {
+            chatContent.innerHTML = "";
+        }
+        
+        const bubble = document.createElement('div');
+        bubble.className = `chat-bubble ${turn === 'w' ? 'white' : 'black'}`;
+        
+        const sender = document.createElement('div');
+        sender.className = 'chat-sender';
+        sender.textContent = turn === 'w' ? (whiteConfig?.name || "White") : (blackConfig?.name || "Black");
+        
+        const msg = document.createElement('div');
+        msg.textContent = text;
+        
+        bubble.appendChild(sender);
+        bubble.appendChild(msg);
+        chatContent.appendChild(bubble);
+        chatContent.scrollTop = chatContent.scrollHeight;
+    }
+
+    // --- Header Buttons ---
+    document.getElementById('flipBtn').onclick = () => {
+        isFlipped = !isFlipped;
+        renderBoard();
+    };
+    
+    function renderBoard(lastMove) {
+        boardEl.innerHTML = "";
+        for(let r=0; r<8; r++) {
+            for(let c=0; c<8; c++) {
+                // Flip logic
+                const visR = isFlipped ? 7-r : r;
+                const visC = isFlipped ? 7-c : c;
+                
+                const sq = document.createElement('div');
+                sq.className = `square ${(visR+visC)%2===0 ? 'light' : 'dark'}`;
+                
+                if(lastMove) {
+                    const f = parseSq(lastMove.from), t = parseSq(lastMove.to);
+                    if((f.r===visR && f.c===visC) || (t.r===visR && t.c===visC)) sq.classList.add('last-move-square');
+                }
+                const p = brain.board[visR][visC];
+                if(p) {
+                    const piece = document.createElement('div');
+                    piece.className = 'piece';
+                    piece.style.backgroundImage = `url('../assets/pieces/${p}.png')`;
+                    sq.appendChild(piece);
+                }
+                boardEl.appendChild(sq);
+            }
+        }
+    }
+    function parseSq(s) { return {c: s.charCodeAt(0)-97, r: 8-parseInt(s[1])}; }
+
+    async function gameLoop() {
+        if(!gameRunning) return;
+        const turn = brain.turn;
+        const cfg = turn === 'w' ? whiteConfig : blackConfig;
+        
+        document.getElementById('card-white').classList.toggle('active-turn', turn === 'w');
+        document.getElementById('card-black').classList.toggle('active-turn', turn === 'b');
+        document.getElementById('status-msg').textContent = `${turn==='w'?"White":"Black"} Neural Network processing...`;
+        document.getElementById('status-msg').style.color = turn === 'w' ? '#fff' : 'var(--primary-accent)';
+        
+        const timerId = turn === 'w' ? 'timer-white' : 'timer-black';
+        const maxTimeMs = parseInt(moveTimeSelect.value);
+        
+        if(timerInterval) clearInterval(timerInterval);
+        let timeLeft = maxTimeMs / 1000;
+        const timerEl = document.getElementById(timerId);
+        
+        timerInterval = setInterval(() => {
+            timeLeft -= 0.1;
+            if(timeLeft < 0) timeLeft = 0;
+            timerEl.textContent = timeLeft.toFixed(1) + 's';
+        }, 100);
+
+        try {
+            const result = await brain.generateMove({ ...cfg, moveTime: maxTimeMs });
+            clearInterval(timerInterval);
+            timerEl.textContent = "0.0s";
+            
+            if(!gameRunning) return; 
+            
+            if(result && result.move) {
+                brain.applyMove(result.move);
+                renderBoard({ from: result.move.substring(0,2), to: result.move.substring(2,4) });
+                
+                // Add Chat
+                if (result.comment) {
+                    addChatMessage(turn, result.comment);
+                }
+                
+                // Request Engine Evaluation
+                window.electronAPI.requestAnalysis(brain.boardToFen());
+            } else {
+                gameRunning = false;
+                document.getElementById('status-msg').textContent = "Error: No Move Generated";
+                return;
+            }
+            
+            // Check Game Over
+            if(brain.getLegalMoves().length === 0) {
+                gameRunning = false;
+                const isCheck = brain.rules.isSquareAttacked(brain.board, brain.rules.findKing(brain.board, brain.turn).r, brain.rules.findKing(brain.board, brain.turn).c, brain.turn === 'w' ? 'b' : 'w');
+                const winner = isCheck ? (brain.turn === 'w' ? "Black" : "White") : "Draw";
+                const reason = isCheck ? "Checkmate" : "Stalemate";
+                
+                showGameOver(winner, reason);
+                return;
+            }
+            setTimeout(gameLoop, 500); 
+        } catch(e) {
+            console.error(e);
+            clearInterval(timerInterval);
+            gameRunning = false;
+            document.getElementById('startBtn').innerHTML = "RESUME MATCH";
+        }
+    }
+    
+    function showGameOver(winner, reason) {
+        document.getElementById('status-msg').textContent = "Match Concluded";
+        document.getElementById('startBtn').innerHTML = "INITIALIZE MATCH";
+        
+        document.getElementById('goTitle').textContent = winner === 'Draw' ? "DRAW" : winner.toUpperCase() + " WINS";
+        document.getElementById('goReason').textContent = reason;
+        gameOverModal.style.display = 'flex';
+        
+        // Trigger Analysis just for the record (even though it's AI vs AI)
+        // We skip ELO update for AI matches usually, but logic can be same
+        // Just for visual effect in this arena
+        document.getElementById('ai-analysis-loader').textContent = "Simulating Post-Game Analysis...";
+        setTimeout(() => {
+             document.getElementById('ai-analysis-loader').textContent = "Analysis Complete";
+        }, 1500);
+    }
+    
+    window.closeGameOver = () => {
+        gameOverModal.style.display = 'none';
+    };
+    
+    document.getElementById('reviewBtn').onclick = () => {
+        const payload = { fen: brain.boardToFen(), moves: brain.history };
+        window.electronAPI.startReviewMode(payload);
+        closeGameOver();
+    };
+
+    document.getElementById('startBtn').onclick = () => {
+        if(gameRunning) {
+            gameRunning = false; clearInterval(timerInterval);
+            document.getElementById('startBtn').innerHTML = "RESUME MATCH";
+            document.getElementById('status-msg').textContent = "System Paused";
+            return;
+        }
+        if(!whiteConfig || !blackConfig) { 
+            alert("Please select engines for both White and Black agents."); 
+            return; 
+        }
+        gameRunning = true;
+        document.getElementById('startBtn').innerHTML = "PAUSE MATCH";
+        gameLoop();
+    };
+
+    document.getElementById('resetBtn').onclick = () => {
+        gameRunning = false; clearInterval(timerInterval);
+        brain.reset(); renderBoard();
+        chatContent.innerHTML = "<div style='text-align:center; opacity:0.4; font-size:11px; margin-top:20px;'>Waiting for signals...</div>";
+        document.getElementById('startBtn').innerHTML = "INITIALIZE MATCH";
+        document.getElementById('card-white').classList.remove('active-turn');
+        document.getElementById('card-black').classList.remove('active-turn');
+        document.getElementById('timer-white').textContent = "--s";
+        document.getElementById('timer-black').textContent = "--s";
+        document.getElementById('status-msg').textContent = "System Ready";
+    };
+
+    window.openSelector = async (color) => {
+        activeColor = color;
+        document.getElementById('selectorModal').style.display = 'flex';
+        const grid = document.getElementById('engineGrid');
+        grid.innerHTML = "<div style='text-align:center; padding:20px; grid-column:1/-1; opacity:0.5;'>Loading Intelligence...</div>";
+        
+        const engines = await window.electronAPI.enginesGetAll();
+        grid.innerHTML = "";
+        
+        if(engines.length === 0) {
+            grid.innerHTML = "<div style='text-align:center; padding:20px; grid-column:1/-1; color:#fca5a5;'>No engines found. Go to Settings > Engines to add one.</div>";
+            return;
+        }
+
+        engines.forEach(e => {
+            const div = document.createElement('div');
+            div.className = "eng-item";
+            const typeLabel = e.type === 'llm' ? "Neural Persona" : "UCI Engine";
+            const avatarSrc = e.avatar || (e.type === 'llm' ? "../assets/pieces/bN.png" : "../assets/icon/chessly.png");
+            
+            div.innerHTML = `
+                <img class="eng-icon" src="${avatarSrc}" onerror="this.src='../assets/icon/chessly.png'">
+                <div style="font-weight:700; color:#fff; font-size:13px;">${e.name}</div>
+                <div style="font-size:10px; color:#94a3b8; background:rgba(255,255,255,0.05); padding:2px 6px; border-radius:4px;">${typeLabel}</div>
+            `;
+            
+            div.onclick = () => {
+                const cfg = e.type === 'llm' ? { provider: e.provider, apiKey: e.apiKey, model: e.model, engineId: e.id, name: e.name } : { engineId: e.id, name: e.name };
+                const nameText = e.name;
+                const modelText = e.type === 'llm' ? e.model : 'Stockfish/UCI';
+                
+                if(activeColor==='white') { 
+                    whiteConfig=cfg; 
+                    document.getElementById('name-white').textContent = nameText; 
+                    document.getElementById('model-white').textContent = modelText;
+                    document.getElementById('img-white').src = avatarSrc;
+                } else { 
+                    blackConfig=cfg; 
+                    document.getElementById('name-black').textContent = nameText; 
+                    document.getElementById('model-black').textContent = modelText;
+                    document.getElementById('img-black').src = avatarSrc;
+                }
+                closeSelector();
+            };
+            grid.appendChild(div);
+        });
+    };
+    
+    window.closeSelector = () => document.getElementById('selectorModal').style.display = 'none';
+    
+    window.electronAPI.onThemeChanged((theme) => {
+        document.documentElement.setAttribute('data-theme', theme);
+    });
+
+    (async () => {
+        const prefs = await window.electronAPI.getPreferences();
+        if (prefs.boardTheme) {
+            document.documentElement.setAttribute('data-theme', prefs.boardTheme);
+        }
+    })();
+
+    renderBoard();
+  </script>
+</body>
+</html>

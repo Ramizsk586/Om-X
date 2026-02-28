@@ -1,0 +1,299 @@
+<div class="translator-root">
+    <div class="panel-header">
+        <h2>Translator Engine</h2>
+        <p>Configure the high-fidelity neural layer for viewport-aware translations.</p>
+    </div>
+
+    <style>
+        .translator-root {
+            --surface: #0f1014;
+            --surface-alt: #131826;
+            --field: #0c111b;
+            --border: #232938;
+            --border-strong: #313a50;
+            --text-primary: #e8ecf8;
+            --text-secondary: #9ca6bd;
+            --accent: var(--accent-color, #7c9a92);
+        }
+
+        .settings-section-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 24px;
+            margin-bottom: 16px;
+            box-shadow: 0 12px 28px rgba(0, 0, 0, 0.24);
+        }
+
+        .card-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 2px;
+            display: block;
+            font-family: 'Noto Sans', sans-serif;
+        }
+
+        .card-subtitle {
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-bottom: 16px;
+            display: block;
+            font-family: 'Noto Sans', sans-serif;
+        }
+
+        .config-box {
+            background: var(--surface-alt);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 18px;
+        }
+
+        .form-row {
+            display: flex;
+            flex-direction: column;
+            gap: 9px;
+            margin-bottom: 16px;
+        }
+
+        .form-row:last-child {
+            margin-bottom: 0;
+        }
+
+        .form-label {
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-family: 'Noto Sans', sans-serif;
+        }
+
+        .form-select, .form-input {
+            width: 100%;
+            min-height: 48px;
+            background: var(--field);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 12px 14px;
+            color: var(--text-primary);
+            font-size: 14px;
+            outline: none;
+            font-family: 'Noto Sans', sans-serif;
+            transition: border-color 0.15s ease, box-shadow 0.15s ease;
+        }
+
+        .form-select {
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            appearance: none;
+            background-image: none;
+        }
+
+        .translator-root .hidden {
+            display: none !important;
+        }
+
+        .form-select:focus, .form-input:focus {
+            border-color: var(--border-strong);
+            box-shadow: 0 0 0 3px rgba(124, 154, 146, 0.18);
+        }
+
+        .form-select option {
+            background: var(--field);
+            color: var(--text-primary);
+            font-size: 14px;
+            line-height: 1.5;
+        }
+
+        .custom-model-input {
+            margin-top: 8px;
+            font-family: 'Noto Sans', monospace;
+        }
+
+        .verify-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 14px;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            background: #0e1320;
+            margin-top: 14px;
+        }
+
+        .btn-verify {
+            background: #171e2f;
+            border: 1px solid var(--border-strong);
+            color: var(--text-primary);
+            padding: 11px 18px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 700;
+            cursor: pointer;
+            font-family: 'Noto Sans', sans-serif;
+            transition: all 0.15s;
+        }
+
+        .btn-verify:hover {
+            background: #202a41;
+        }
+
+        .btn-verify:active {
+            background: #121929;
+        }
+
+        .status-text {
+            display: inline-flex;
+            align-items: center;
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-family: 'Noto Sans', sans-serif;
+            background: #121827;
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            padding: 6px 10px;
+            min-height: 28px;
+        }
+
+        .status-text:empty {
+            display: none;
+        }
+
+        .status-text.success {
+            color: #9dd7c9;
+            border-color: rgba(157, 215, 201, 0.45);
+            background: rgba(74, 148, 127, 0.14);
+        }
+
+        .status-text.error {
+            color: #ffb5b5;
+            border-color: rgba(255, 130, 130, 0.45);
+            background: rgba(164, 65, 65, 0.16);
+        }
+
+        .lang-section {
+            padding: 2px 0;
+        }
+
+        .lang-row {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .lang-btn {
+            background: #131a2a;
+            border: 1px solid var(--border);
+            color: var(--text-secondary);
+            min-height: 44px;
+            padding: 10px 18px;
+            border-radius: 999px;
+            font-size: 13px;
+            font-weight: 700;
+            cursor: pointer;
+            font-family: 'Noto Sans', sans-serif;
+            transition: all 0.15s;
+        }
+
+        .lang-btn:hover {
+            background: #1a2237;
+            color: var(--text-primary);
+        }
+
+        .lang-btn.active {
+            background: #1f2a44;
+            border-color: var(--accent);
+            color: var(--text-primary);
+        }
+
+        @media (max-width: 760px) {
+            .settings-section-card {
+                padding: 20px;
+            }
+
+            .verify-row {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .btn-verify {
+                width: 100%;
+            }
+        }
+    </style>
+
+    <!-- Intelligence Configuration -->
+    <section class="settings-section-card">
+        <span class="card-title">Active Intelligence Engine</span>
+        <span class="card-subtitle">Select the provider used for high-fidelity translation repairs.</span>
+        
+        <div class="config-box">
+            <div class="form-row">
+                <label class="form-label">Provider</label>
+                <select id="trans-provider-select" class="form-select">
+                    <option value="google">Google Gemini</option>
+                    <option value="groq">Groq</option>
+                    <option value="openrouter">OpenRouter</option>
+                    <option value="mistral">Mistral AI</option>
+                    <option value="sarvamai">SarvamAI</option>
+                    <option value="cohere">Cohere</option>
+                    <option value="ollama">Ollama (Local)</option>
+                </select>
+            </div>
+
+            <div id="trans-api-key-group" class="form-row">
+                <label class="form-label">API Access Token</label>
+                <input type="password" id="trans-api-key" class="form-input" placeholder="Enter your API key">
+            </div>
+
+            <div class="form-row">
+                <label class="form-label">Model Configuration</label>
+                <select id="trans-model-select" class="form-select"></select>
+                <input type="text" id="trans-custom-model" class="hidden form-input custom-model-input" placeholder="Custom model ID">
+            </div>
+
+            <div class="verify-row">
+                <button id="btn-verify-trans" class="btn-verify">Verify Connection</button>
+                <span id="trans-verify-status" class="status-text"></span>
+            </div>
+        </div>
+    </section>
+
+    <!-- Global Parameters -->
+    <section class="settings-section-card">
+        <span class="card-title">Default Target Language</span>
+        <span class="card-subtitle">Set the primary language for automatic translations.</span>
+        
+        <div class="lang-section">
+            <div class="lang-row">
+                <button class="lang-btn active" data-lang="en">English</button>
+                <button class="lang-btn" data-lang="hi">Hindi</button>
+                <button class="lang-btn" data-lang="bn">Bengali</button>
+                <button class="lang-btn" data-lang="es">Spanish</button>
+                <button class="lang-btn" data-lang="fr">French</button>
+                <button class="lang-btn" data-lang="ja">Japanese</button>
+                <button class="lang-btn" data-lang="zh">Chinese</button>
+            </div>
+        </div>
+        <select id="trans-default-lang" class="hidden"></select>
+    </section>
+    
+    <div id="trans-status" class="save-status" style="display:none"></div>
+    <button id="btn-save-translator" class="hidden"></button>
+
+    <script>
+        document.querySelectorAll('.translator-root .lang-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.translator-root .lang-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                document.getElementById('trans-default-lang').value = btn.dataset.lang;
+            });
+        });
+    </script>
+</div>
+

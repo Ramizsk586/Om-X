@@ -1,0 +1,704 @@
+{
+  "metadata": {
+    "name": "Om-X Pages and Panels Knowledge Map",
+    "version": "1.0.0",
+    "generated_on": "2026-02-19",
+    "description": "Structured map of Om-X pages, modules, and panel responsibilities.",
+    "sources": [
+      "html/pages/*.html",
+      "html/windows/*.html",
+      "java/renderer/*.js",
+      "java/renderer/ui/*.js"
+    ]
+  },
+  "pages": [
+    {
+      "id": "main_window",
+      "path": "html/windows/main.html",
+      "kind": "window",
+      "title": "Om-X Browser",
+      "purpose": "Primary browser shell and webview host.",
+      "renderer": "java/renderer/renderer.js",
+      "how_it_works": [
+        "Owns sidebar navigation, tab stack, and window controls.",
+        "Creates and manages webview tabs through TabManager.",
+        "Opens Home feature tiles, translator/writer popups, screenshot tools, and context menus.",
+        "Bridges modules like bookmarks, downloads, electron apps, and side panel state."
+      ],
+      "primary_controls": [
+        "btn-nav-home",
+        "btn-nav-ai-chat",
+        "btn-nav-history",
+        "btn-nav-settings",
+        "btn-nav-downloads",
+        "btn-sidebar-toggle",
+        "btn-new-tab",
+        "floating-sidebar-toggle"
+      ],
+      "home_tiles": [
+        "tile-ai-chat",
+        "tile-todo-station",
+        "tile-games",
+        "tile-neural-hub",
+        "tile-history",
+        "tile-minecraft"
+      ]
+    },
+    {
+      "id": "system_window",
+      "path": "html/windows/system.html",
+      "kind": "window",
+      "title": "Settings",
+      "purpose": "Central configuration for browser behavior, security, appearance, and updates.",
+      "renderer": "java/renderer/systemRenderer.js",
+      "how_it_works": [
+        "Uses sidebar .sys-nav-item routing to switch panel-* sections.",
+        "Loads dynamic modules for Search Matrix and Vault when their panels open.",
+        "Reads/writes settings through window.browserAPI.settings.",
+        "Exposes update checks, theme save, block list management, and VirusTotal controls."
+      ],
+      "related_panels": [
+        "panel-system",
+        "panel-security",
+        "panel-password-vault",
+        "panel-appearance",
+        "panel-shortcuts",
+        "panel-search-matrix",
+        "panel-adblocker",
+        "panel-block",
+        "panel-advanced",
+        "panel-creator",
+        "panel-about"
+      ]
+    },
+    {
+      "id": "neural_hub_window",
+      "path": "html/windows/neural-hub.html",
+      "kind": "window",
+      "title": "Omni Neural Hub",
+      "purpose": "AI-focused control center for translator, writer, animations, AI themes, and utility launchers.",
+      "renderer": "java/renderer/neuralHubRenderer.js",
+      "how_it_works": [
+        "Uses sidebar .sys-nav-item routing to switch panel-hub-* sections.",
+        "Mounts translator and writer modules on startup.",
+        "Initializes LLM cards, animation manager, and AI theme manager when tabs are opened.",
+        "Applies active translator/writer settings via global btn-save-all relay."
+      ],
+      "related_panels": [
+        "panel-hub-dashboard",
+        "panel-hub-translator",
+        "panel-hub-writer",
+        "panel-hub-llm-chat",
+        "panel-hub-animations",
+        "panel-hub-music-player",
+        "panel-hub-ai-themes",
+        "panel-hub-panel-tools"
+      ]
+    },
+    {
+      "id": "matrix_search_module",
+      "path": "html/windows/matrix-search.html",
+      "kind": "embedded-module",
+      "mounted_in": "panel-search-matrix",
+      "purpose": "Search engine profile editor and @keyword manager.",
+      "renderer": "java/renderer/matrix-search.js",
+      "how_it_works": [
+        "Shows active search engine cards and keyword inputs.",
+        "Opens engine profile modal for name/icon/url editing.",
+        "Allows default engine selection and profile deletion for non-core entries.",
+        "Persists updates through the main Save Settings button."
+      ]
+    },
+    {
+      "id": "vault_module",
+      "path": "html/windows/vault.html",
+      "kind": "embedded-module",
+      "mounted_in": "panel-password-vault",
+      "purpose": "Secure vault for AI credentials and master passkey management.",
+      "renderer": "java/renderer/vault.js",
+      "how_it_works": [
+        "Starts in locked state and requires master key unlock.",
+        "Manages AI key records (provider/model/email/token).",
+        "Supports passkey rotation with validation.",
+        "Allows global lock action for all active vault sessions."
+      ]
+    },
+    {
+      "id": "translator_module",
+      "path": "html/windows/translate.html",
+      "kind": "embedded-module",
+      "mounted_in": "panel-hub-translator",
+      "purpose": "Translator backend configuration (provider, key, model, default target language).",
+      "renderer": "java/renderer/translate.js",
+      "how_it_works": [
+        "Selects provider/model and optional custom model id.",
+        "Verifies connectivity using AI ping request.",
+        "Stores translator config in app settings.",
+        "Feeds runtime translation flows in the main browser popup."
+      ]
+    },
+    {
+      "id": "writer_module",
+      "path": "html/windows/writer.html",
+      "kind": "embedded-module",
+      "mounted_in": "panel-hub-writer",
+      "purpose": "Writer backend configuration and default writing mode control.",
+      "renderer": "java/renderer/writer.js",
+      "how_it_works": [
+        "Selects provider/model and optional custom model id.",
+        "Verifies connectivity using AI ping request.",
+        "Stores writer config in app settings.",
+        "Provides mode presets: balanced, professional, creative."
+      ]
+    },
+    {
+      "id": "site_app_window",
+      "path": "html/windows/site-app.html",
+      "kind": "window",
+      "title": "Om-X App",
+      "purpose": "Standalone site-app container window with custom context menu controls.",
+      "renderer": "java/renderer/siteAppRenderer.js",
+      "how_it_works": [
+        "Reads app, title, and url from query parameters.",
+        "Shows right-click context actions for back, reload, minimize, maximize, devtools, and close.",
+        "Delegates actions to siteAppAPI bridge."
+      ]
+    },
+    {
+      "id": "home_page",
+      "path": "html/pages/home.html",
+      "kind": "page",
+      "title": "New Tab",
+      "purpose": "Default new-tab landing page.",
+      "renderer": "java/renderer/renderer.js (tab load target)",
+      "how_it_works": [
+        "Loaded as the default HOME_URL for new tabs.",
+        "Used by sidebar Home behavior and search overlay flows."
+      ]
+    },
+    {
+      "id": "history_page",
+      "path": "html/pages/history.html",
+      "kind": "page",
+      "title": "History",
+      "purpose": "Local browsing history viewer and manager.",
+      "renderer": "java/renderer/historyRenderer.js",
+      "how_it_works": [
+        "Fetches history entries from browserAPI.history.get().",
+        "Groups entries by date and supports text search filter.",
+        "Supports item delete and full history clear."
+      ],
+      "primary_controls": [
+        "btn-clear-history"
+      ]
+    },
+    {
+      "id": "todo_page",
+      "path": "html/pages/todo.html",
+      "kind": "page",
+      "title": "Omni To-Do Station",
+      "purpose": "Task list with manual and AI-assisted organization.",
+      "renderer": "java/renderer/todoRenderer.js",
+      "how_it_works": [
+        "Adds and tracks tasks with completion state.",
+        "Clears completed items.",
+        "Uses AI organize action for task restructuring."
+      ],
+      "primary_controls": [
+        "btn-add",
+        "btn-clear-completed",
+        "btn-ai-organize"
+      ]
+    },
+    {
+      "id": "games_page",
+      "path": "html/pages/games.html",
+      "kind": "page",
+      "title": "Om-X Neuro-Arcade",
+      "purpose": "Built-in arcade launcher for browser games plus external Electron game entries.",
+      "renderer": "java/renderer/gamesRenderer.js",
+      "how_it_works": [
+        "Switches between menu and game viewports.",
+        "Hosts multiple built-in game engines (snake, tetris, pacman, etc.).",
+        "Exposes retry/start controls per game.",
+        "Includes launch hooks for standalone Electron games."
+      ],
+      "primary_controls": [
+        "btn-back-to-menu",
+        "btn-snake-retry",
+        "btn-tetris-retry",
+        "btn-pacman-retry",
+        "btn-racer-start",
+        "btn-racer-retry"
+      ]
+    },
+    {
+      "id": "omni_chat_page",
+      "path": "html/pages/omni-chat.html",
+      "kind": "page",
+      "title": "Omni AI Chat",
+      "purpose": "Main AI conversation workspace with mode switching and attachments.",
+      "renderer": "java/renderer/omniChatRenderer.js",
+      "how_it_works": [
+        "Maintains chat sessions and message rendering.",
+        "Supports abilities popup modes (core, quick/deep search, video, wiki, prompt enhance, attach).",
+        "Supports send/stop generation flow and model/provider settings.",
+        "Integrates with response database when messages are prefixed with @."
+      ],
+      "primary_controls": [
+        "btn-new-chat",
+        "btn-chat-settings",
+        "btn-abilities-toggle",
+        "btn-send",
+        "btn-stop",
+        "btn-toggle-quick-search",
+        "btn-toggle-search",
+        "btn-toggle-video",
+        "btn-toggle-wiki",
+        "btn-enhance-popup",
+        "btn-attach-popup"
+      ]
+    },
+    {
+      "id": "ai_settings_page",
+      "path": "html/pages/ai-settings.html",
+      "kind": "page",
+      "title": "Omni AI Settings",
+      "purpose": "Provider/model configuration, search keys, persona options, scraper sandbox, and TTS settings.",
+      "renderer": "java/renderer/aiSettingsRenderer.js",
+      "how_it_works": [
+        "Manages provider cards, model options, and connection verification.",
+        "Configures SerpAPI/Google PSE and web search related parameters.",
+        "Provides Neural Scraper overlay for image/video discovery and export.",
+        "Supports Pocket-TTS and PDF station launch actions."
+      ],
+      "primary_controls": [
+        "btn-save",
+        "btn-verify-ai",
+        "btn-verify-serp",
+        "btn-verify-pse",
+        "btn-scan-local",
+        "btn-scan-lm",
+        "btn-scan-llamacpp",
+        "btn-open-scraper",
+        "btn-start-scrape",
+        "btn-save-all-desktop",
+        "btn-view-saved-gallery",
+        "btn-launch-pdf-station",
+        "btn-test-pocket-tts"
+      ]
+    },
+    {
+      "id": "local_ai_manager_page",
+      "path": "html/pages/local-ai-manager.html",
+      "kind": "page",
+      "title": "Local AI Management",
+      "purpose": "Local runtime/engine provisioning and GPU usage monitoring.",
+      "renderer": "java/renderer/localAiManagerRenderer.js",
+      "how_it_works": [
+        "Displays host CPU and GPU memory/load telemetry.",
+        "Installs local inference runtime/engine when missing.",
+        "Lists available presets and load states.",
+        "Provides global unload/eject action."
+      ],
+      "primary_controls": [
+        "btn-install-engine",
+        "btn-global-unload"
+      ]
+    },
+    {
+      "id": "minecraft_page",
+      "path": "html/pages/minecraft.html",
+      "kind": "page",
+      "title": "Minecraft Server - Om-X",
+      "purpose": "Unified manager for AI player, Bedrock/Java servers, llama.cpp, Pocket-TTS, and live view.",
+      "renderer": "java/renderer/minecraft-renderer.js",
+      "how_it_works": [
+        "Switches between panel-* sections for subsystem operations.",
+        "Provides start/stop and config controls for server runtimes.",
+        "Supports AI player connection and command operations.",
+        "Includes console logs and helper panels."
+      ],
+      "related_panels": [
+        "panel-ai-player",
+        "panel-llama",
+        "panel-server",
+        "panel-llama-cli",
+        "panel-pocket-tts",
+        "panel-java-server",
+        "panel-view-panel",
+        "panel-help-panel"
+      ]
+    },
+    {
+      "id": "pdf_viewer_page",
+      "path": "html/pages/pdf-viewer.html",
+      "kind": "page",
+      "title": "Omni PDF Station",
+      "purpose": "PDF reading workspace with integrated AI assistant panel.",
+      "renderer": "java/renderer/pdfViewerRenderer.js",
+      "how_it_works": [
+        "Renders PDF pages and navigation controls.",
+        "Supports zoom, thumbnail toggle, and area selection.",
+        "Provides AI panel for summarize/read/send actions.",
+        "Stores AI panel config from in-page config overlay."
+      ],
+      "primary_controls": [
+        "btn-prev",
+        "btn-next",
+        "btn-zoom-in",
+        "btn-zoom-out",
+        "btn-thumbnails",
+        "btn-toggle-ai",
+        "btn-summarize",
+        "btn-read",
+        "btn-ai-send"
+      ]
+    },
+    {
+      "id": "security_defense_page",
+      "path": "html/pages/security-defense.html",
+      "kind": "page",
+      "title": "Security Defense",
+      "purpose": "Blocked-access interstitial shown for unsafe targets.",
+      "renderer": "java/renderer/securityDefenseRenderer.js",
+      "how_it_works": [
+        "Displays threat reason context.",
+        "Provides safe return action and details view."
+      ],
+      "primary_controls": [
+        "btn-back",
+        "btn-details"
+      ]
+    },
+    {
+      "id": "omni_canvas_page",
+      "path": "html/pages/omni-canvas.html",
+      "kind": "page",
+      "title": "Omni Canvas",
+      "purpose": "Canvas + chat workspace for model-driven creation and editing.",
+      "renderer": "java/renderer/omniCanvasRenderer.js",
+      "how_it_works": [
+        "Combines editor area and AI command flow.",
+        "Provides model select/refresh controls.",
+        "Supports undo/redo and view mode toggles."
+      ],
+      "primary_controls": [
+        "btn-send",
+        "btn-apply-model",
+        "btn-refresh-models",
+        "btn-undo",
+        "btn-redo",
+        "btn-view-toggle"
+      ]
+    },
+    {
+      "id": "music_page",
+      "path": "html/pages/music.html",
+      "kind": "page",
+      "title": "Music Player - Om-X",
+      "purpose": "Music playback page with multiple player UI styles.",
+      "renderer": "java/renderer/musicRenderer.js",
+      "how_it_works": [
+        "Controls playback state and progress.",
+        "Supports style variants (minimal/card/compact/retro).",
+        "Offers transport and shuffle controls."
+      ],
+      "primary_controls": [
+        "btn-play-minimal",
+        "btn-play-card",
+        "btn-play-compact",
+        "btn-play-retro",
+        "btn-prev",
+        "btn-next",
+        "btn-shuffle",
+        "btn-power"
+      ]
+    }
+  ],
+  "panel_groups": {
+    "system_settings": [
+      {
+        "id": "panel-system",
+        "title": "General Configuration",
+        "host_page": "html/windows/system.html",
+        "purpose": "Core browser behavior toggles.",
+        "primary_controls": [
+          "feat-history",
+          "feat-loading-anim",
+          "feat-ai-chat-btn",
+          "devtools-toggle"
+        ]
+      },
+      {
+        "id": "panel-security",
+        "title": "Security & Defense",
+        "host_page": "html/windows/system.html",
+        "purpose": "Firewall, antivirus, and VirusTotal control center.",
+        "primary_controls": [
+          "feat-firewall",
+          "feat-antivirus",
+          "feat-virustotal",
+          "btn-open-virustotal-popup",
+          "btn-verify-virustotal",
+          "btn-scan-virustotal-url"
+        ]
+      },
+      {
+        "id": "panel-password-vault",
+        "title": "Passwords",
+        "host_page": "html/windows/system.html",
+        "purpose": "Mount point for vault module.",
+        "mounted_module": "html/windows/vault.html"
+      },
+      {
+        "id": "panel-appearance",
+        "title": "Visual Aesthetic",
+        "host_page": "html/windows/system.html",
+        "purpose": "Theme and accent customization.",
+        "primary_controls": [
+          "btn-save-theme",
+          "current-theme-name"
+        ]
+      },
+      {
+        "id": "panel-shortcuts",
+        "title": "Keyboard Shortcuts",
+        "host_page": "html/windows/system.html",
+        "purpose": "Shortcut recording and mapping."
+      },
+      {
+        "id": "panel-search-matrix",
+        "title": "Search Matrix",
+        "host_page": "html/windows/system.html",
+        "purpose": "Mount point for Search Matrix module.",
+        "mounted_module": "html/windows/matrix-search.html"
+      },
+      {
+        "id": "panel-adblocker",
+        "title": "Ad Shield",
+        "host_page": "html/windows/system.html",
+        "purpose": "Ad/tracker filtering and YouTube addon options.",
+        "primary_controls": [
+          "toggle-adblock-master",
+          "toggle-adblock-trackers",
+          "toggle-adblock-social",
+          "toggle-adblock-miners",
+          "toggle-adblock-cosmetic",
+          "toggle-adblock-ytskip",
+          "toggle-adblock-youtube-addon",
+          "btn-open-safe-sites"
+        ]
+      },
+      {
+        "id": "panel-block",
+        "title": "Blocked Websites & Threats",
+        "host_page": "html/windows/system.html",
+        "purpose": "Manual and automatic blocklist management.",
+        "primary_controls": [
+          "block-input-domain",
+          "btn-add-block",
+          "block-list-container"
+        ]
+      },
+      {
+        "id": "panel-advanced",
+        "title": "System Intelligence",
+        "host_page": "html/windows/system.html",
+        "purpose": "Update checks and release lineage.",
+        "primary_controls": [
+          "btn-check-updates",
+          "update-history-container"
+        ]
+      },
+      {
+        "id": "panel-creator",
+        "title": "Architect Profile",
+        "host_page": "html/windows/system.html",
+        "purpose": "Creator profile, social links, and GitHub-synced project tiles."
+      },
+      {
+        "id": "panel-about",
+        "title": "About Om-X",
+        "host_page": "html/windows/system.html",
+        "purpose": "Runtime versions and application build info.",
+        "primary_controls": [
+          "btn-about-check-updates",
+          "about-v-electron",
+          "about-v-chrome",
+          "about-v-node",
+          "about-v-v8"
+        ]
+      }
+    ],
+    "neural_hub": [
+      {
+        "id": "panel-hub-dashboard",
+        "title": "Neural Command Center",
+        "host_page": "html/windows/neural-hub.html",
+        "purpose": "Active engine/latency/uptime telemetry display."
+      },
+      {
+        "id": "panel-hub-translator",
+        "title": "Translator",
+        "host_page": "html/windows/neural-hub.html",
+        "purpose": "Mount point for translator module.",
+        "mounted_module": "html/windows/translate.html"
+      },
+      {
+        "id": "panel-hub-writer",
+        "title": "Syntactic Writer",
+        "host_page": "html/windows/neural-hub.html",
+        "purpose": "Mount point for writer module.",
+        "mounted_module": "html/windows/writer.html"
+      },
+      {
+        "id": "panel-hub-llm-chat",
+        "title": "LLM Chat Hub",
+        "host_page": "html/windows/neural-hub.html",
+        "purpose": "Web-app launcher cards for ChatGPT/custom LLM services."
+      },
+      {
+        "id": "panel-hub-animations",
+        "title": "Loading Animations",
+        "host_page": "html/windows/neural-hub.html",
+        "purpose": "Select and save loading animation profile.",
+        "primary_controls": [
+          "animation-grid",
+          "btn-save-animation"
+        ]
+      },
+      {
+        "id": "panel-hub-music-player",
+        "title": "Music Player",
+        "host_page": "html/windows/neural-hub.html",
+        "purpose": "Enable player and choose visual design.",
+        "primary_controls": [
+          "player-enabled-toggle",
+          "music-player-grid"
+        ]
+      },
+      {
+        "id": "panel-hub-ai-themes",
+        "title": "AI Themes",
+        "host_page": "html/windows/neural-hub.html",
+        "purpose": "Select and persist response-card visual theme.",
+        "primary_controls": [
+          "btn-save-ai-theme",
+          "current-ai-theme-name"
+        ]
+      },
+      {
+        "id": "panel-hub-panel-tools",
+        "title": "Panel Tools",
+        "host_page": "html/windows/neural-hub.html",
+        "purpose": "Launch curated external tools (for example Photopea)."
+      }
+    ],
+    "minecraft_manager": [
+      {
+        "id": "panel-ai-player",
+        "title": "AI Player",
+        "host_page": "html/pages/minecraft.html",
+        "purpose": "AI agent connect, command send, and autonomy controls.",
+        "primary_controls": [
+          "btn-ai-connect",
+          "btn-ai-send-command",
+          "btn-ai-settings",
+          "btn-open-ai-window-bottom"
+        ]
+      },
+      {
+        "id": "panel-llama",
+        "title": "llama.cpp Server",
+        "host_page": "html/pages/minecraft.html",
+        "purpose": "Configure/start/stop local llama.cpp inference service.",
+        "primary_controls": [
+          "btn-browse-llama",
+          "btn-browse-models",
+          "btn-scan-models",
+          "btn-start-llama",
+          "btn-stop-llama",
+          "btn-clear-llama"
+        ]
+      },
+      {
+        "id": "panel-server",
+        "title": "Bedrock Server",
+        "host_page": "html/pages/minecraft.html",
+        "purpose": "Bedrock server path setup and lifecycle control.",
+        "primary_controls": [
+          "btn-browse-bedrock",
+          "btn-start-bedrock",
+          "btn-stop-bedrock",
+          "btn-clear-bedrock"
+        ]
+      },
+      {
+        "id": "panel-llama-cli",
+        "title": "llama.cpp CLI",
+        "host_page": "html/pages/minecraft.html",
+        "purpose": "Command-line generation helper for llama.cpp execution.",
+        "primary_controls": [
+          "btn-browse-llama-cli",
+          "btn-browse-llama-cli-model",
+          "btn-copy-cli-command"
+        ]
+      },
+      {
+        "id": "panel-pocket-tts",
+        "title": "Pocket TTS",
+        "host_page": "html/pages/minecraft.html",
+        "purpose": "Pocket-TTS service configuration and runtime controls.",
+        "primary_controls": [
+          "btn-browse-pockettts",
+          "btn-start-pockettts",
+          "btn-stop-pockettts",
+          "btn-clear-pockettts"
+        ]
+      },
+      {
+        "id": "panel-java-server",
+        "title": "Java Server",
+        "host_page": "html/pages/minecraft.html",
+        "purpose": "Java server folder setup, RAM config, and start/stop controls.",
+        "primary_controls": [
+          "btn-browse-java-folder",
+          "btn-start-java-server",
+          "btn-stop-java-server",
+          "btn-clear-java-console"
+        ]
+      },
+      {
+        "id": "panel-view-panel",
+        "title": "View Panel",
+        "host_page": "html/pages/minecraft.html",
+        "purpose": "Embeds live iframe-based preview.",
+        "primary_controls": [
+          "view-panel-frame"
+        ]
+      },
+      {
+        "id": "panel-help-panel",
+        "title": "Help Panel",
+        "host_page": "html/pages/minecraft.html",
+        "purpose": "Operational help/instructions for the manager subsystems."
+      }
+    ]
+  },
+  "notes": {
+    "save_entry_points": [
+      "System settings are persisted by btn-save-settings.",
+      "Neural Hub translator/writer settings are relayed by btn-save-all to hidden module save buttons.",
+      "AI settings page has its own save and verification pipeline."
+    ],
+    "id_conventions": {
+      "panel_prefix": "panel-*",
+      "button_prefix": "btn-*",
+      "feature_toggle_examples": [
+        "feat-*",
+        "toggle-adblock-*"
+      ]
+    }
+  }
+}

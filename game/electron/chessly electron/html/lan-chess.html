@@ -1,0 +1,582 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>LAN Arena</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <style>
+    /* Arena Standard Theme Reuse */
+    body {
+      overflow: hidden;
+      display: flex;
+      background: var(--app-bg);
+      color: var(--text-main);
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    }
+
+    .main-layout {
+        display: flex; width: 100vw; height: 100vh;
+    }
+
+    /* --- Board Panel --- */
+    .board-panel {
+        flex: 1;
+        display: flex; justify-content: center; align-items: center;
+        position: relative;
+    }
+    
+    .arena-glow {
+        position: absolute; width: 100%; height: 100%;
+        background: radial-gradient(circle at 50% 50%, var(--glass-bg-hover) 0%, transparent 50%);
+        pointer-events: none; z-index: 0;
+    }
+
+    /* --- Sidebar --- */
+    .sidebar {
+        width: 400px; min-width: 400px;
+        background: var(--sidebar-bg);
+        backdrop-filter: blur(20px);
+        border-left: 1px solid rgba(255, 255, 255, 0.08);
+        display: flex; flex-direction: column;
+        z-index: 20;
+        box-shadow: -10px 0 60px rgba(0,0,0,0.6);
+    }
+
+    .sidebar-header {
+        padding: 20px 24px;
+        border-bottom: 1px solid rgba(255,255,255,0.05);
+        height: 80px;
+        display: flex; flex-direction: column; justify-content: center;
+        background: rgba(0,0,0,0.2);
+        position: relative;
+    }
+    
+    .header-top { display: flex; justify-content: space-between; align-items: center; width: 100%; }
+    
+    .sidebar-header h2 {
+        margin: 0; font-size: 22px; color: var(--primary-accent); 
+        text-transform: uppercase; letter-spacing: 3px; font-weight: 900;
+        text-shadow: var(--primary-glow);
+        display: flex; align-items: center; gap: 10px;
+    }
+
+    .status-indicator {
+        font-size: 11px; color: #4ade80; 
+        font-family: 'JetBrains Mono', monospace; text-transform: uppercase; 
+        display: flex; align-items: center; gap: 6px; opacity: 0.8;
+        margin-top: 4px; font-weight: 600; letter-spacing: 1px;
+    }
+    
+    .header-actions { display: flex; gap: 8px; }
+    
+    .icon-btn {
+        width: 36px; height: 36px;
+        background: rgba(255,255,255,0.05);
+        border: var(--card-border);
+        border-radius: 8px;
+        color: var(--text-muted);
+        cursor: pointer;
+        display: flex; align-items: center; justify-content: center;
+        transition: all 0.2s;
+        font-size: 16px;
+    }
+    .icon-btn:hover { background: rgba(255,255,255,0.1); color: #fff; }
+    .icon-btn.active { background: rgba(255,255,255,0.1); color: var(--primary-accent); border-color: var(--primary-accent); }
+
+    /* Agents */
+    .agents-container {
+        padding: 20px; 
+        display: flex; flex-direction: column; gap: 12px; 
+        background: linear-gradient(180deg, rgba(0,0,0,0.1), transparent);
+        flex: 1; 
+    }
+
+    .agent-card {
+        background: var(--card-bg);
+        border: var(--card-border);
+        border-radius: 16px;
+        padding: 16px 20px;
+        display: flex; align-items: center; gap: 16px;
+        position: relative; overflow: hidden;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        min-height: 100px;
+    }
+    
+    .agent-card.active-turn {
+        background: linear-gradient(90deg, rgba(255,255,255,0.05), rgba(255,255,255,0.01));
+        border-color: var(--primary-accent);
+        box-shadow: 0 0 30px rgba(0,0,0,0.2);
+    }
+    .agent-card.active-turn::before {
+        content: ''; position: absolute; top: 0; left: 0; width: 4px; height: 100%;
+        background: var(--primary-accent);
+        box-shadow: 0 0 10px var(--primary-accent);
+    }
+
+    .agent-avatar {
+        width: 64px; height: 64px; border-radius: 14px;
+        background: rgba(0,0,0,0.4); 
+        border: 2px solid rgba(255,255,255,0.1);
+        display: flex; justify-content: center; align-items: center;
+        cursor: pointer; overflow: hidden;
+        flex-shrink: 0;
+    }
+    .agent-avatar img { width: 85%; height: 85%; object-fit: contain; }
+
+    .agent-info { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 6px; min-width: 0; }
+    .agent-name { font-weight: 800; font-size: 16px; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    
+    .agent-badge { 
+        font-size: 10px; color: #ccc; font-family: 'JetBrains Mono', monospace; 
+        background: rgba(255,255,255,0.08); padding: 3px 8px; border-radius: 6px;
+        border: 1px solid rgba(255,255,255,0.05); text-transform: uppercase; font-weight: 700;
+        width: fit-content;
+    }
+
+    /* VS Divider */
+    .vs-divider {
+        display: flex; align-items: center; justify-content: center;
+        height: 20px; opacity: 0.3;
+    }
+    .vs-line { width: 100px; height: 1px; background: linear-gradient(90deg, transparent, #fff, transparent); }
+
+    /* Controls */
+    .controls { 
+        padding: 24px; 
+        border-top: 1px solid rgba(255,255,255,0.08);
+        background: rgba(0,0,0,0.2);
+        display: flex; flex-direction: column; gap: 12px;
+        margin-top: auto;
+    }
+    
+    .btn-primary {
+        background: var(--primary-accent);
+        color: white; border: none;
+        padding: 0 20px; height: 48px; border-radius: 10px;
+        font-weight: 800; font-size: 13px; text-transform: uppercase; letter-spacing: 1px;
+        cursor: pointer;
+        box-shadow: var(--primary-glow);
+        transition: all 0.2s;
+        display: flex; align-items: center; justify-content: center; gap: 8px;
+        width: 100%;
+    }
+    .btn-primary:hover { transform: translateY(-2px); filter: brightness(1.1); }
+    
+    .btn-secondary {
+        height: 48px; flex: 1;
+        background: rgba(255,255,255,0.05);
+        border: 1px solid rgba(255,255,255,0.1);
+        border-radius: 10px;
+        color: #fff; cursor: pointer;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 13px; font-weight: 700; transition: all 0.2s;
+        text-transform: uppercase; letter-spacing: 1px;
+    }
+    .btn-secondary:hover { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.2); }
+
+    /* Board Wrapper */
+    #board-container {
+        box-shadow: 0 30px 80px -10px rgba(0,0,0,0.6);
+        border: 8px solid rgba(255,255,255,0.03);
+        border-radius: 12px;
+        position: relative;
+        background: #0f172a;
+    }
+    
+    /* Overlays */
+    #waitingOverlay {
+        position: absolute; inset: 0; background: rgba(0,0,0,0.85);
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        z-index: 50; backdrop-filter: blur(8px); border-radius: 6px;
+    }
+    .qr-placeholder {
+        width: 100px; height: 100px;
+        background: rgba(255,255,255,0.1);
+        border: 2px dashed rgba(255,255,255,0.2);
+        border-radius: 12px;
+        display: flex; align-items: center; justify-content: center;
+        margin-bottom: 20px; color: rgba(255,255,255,0.4); font-weight: 700;
+    }
+    
+    /* Game Over Modal */
+    .modal-backdrop {
+        position: fixed; inset: 0; background: rgba(0,0,0,0.85); backdrop-filter: blur(10px);
+        z-index: 100; display: none; align-items: center; justify-content: center;
+    }
+    .go-panel {
+        background: var(--sidebar-bg); border: 1px solid var(--primary-accent);
+        padding: 40px; border-radius: 24px; text-align: center;
+        box-shadow: 0 20px 60px rgba(0,0,0,0.8);
+        max-width: 400px; width: 90%;
+    }
+    .go-title { font-size: 32px; font-weight: 900; margin-bottom: 8px; color: #fff; }
+    .go-sub { font-size: 16px; color: var(--primary-accent); margin-bottom: 24px; font-weight: 700; }
+    
+    /* Analysis UI */
+    .lan-analysis-ui { display:none; margin-bottom: 20px; font-size:13px; }
+    .lan-stat-row { display: flex; justify-content: space-around; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 8px; }
+    .lan-stat-val { font-weight: 800; color: #fff; font-size: 16px; }
+    .lan-stat-lbl { font-size: 10px; opacity: 0.6; }
+  </style>
+</head>
+<body>
+
+  <div class="main-layout">
+    <!-- Board Area -->
+    <div class="board-panel">
+       <div class="arena-glow"></div>
+       
+       <div id="board-container">
+          <div id="board"></div>
+          
+          <!-- Waiting Overlay -->
+          <div id="waitingOverlay" class="waiting-overlay">
+              <div class="qr-placeholder">LAN</div>
+              <h2 style="margin:0 0 8px 0; font-size: 22px;">Waiting for Guest...</h2>
+              <p style="color:#9ca3af; font-size:13px; margin:0;">Server Active</p>
+          </div>
+       </div>
+    </div>
+
+    <!-- Sidebar -->
+    <div class="sidebar">
+       <div class="sidebar-header">
+          <div class="header-top">
+              <h2>LAN ARENA</h2>
+              <div class="header-actions">
+                  <button class="icon-btn" id="flipBtn" title="Flip Board">🔄</button>
+              </div>
+          </div>
+          <div class="status-indicator">
+              <span id="status-text">Initializing...</span>
+          </div>
+       </div>
+
+       <div class="agents-container">
+          <!-- Host (Me) -->
+          <div class="agent-card active-turn" id="hostCard">
+             <div class="agent-avatar">
+                 <img id="hostAvatarImg" src="../assets/pieces/wK.png">
+             </div>
+             <div class="agent-info">
+                <div class="agent-name" id="hostName">Host (You)</div>
+                <div class="agent-badge" style="background:rgba(99,102,241,0.2); color:#a5b4fc;">Server Admin</div>
+             </div>
+          </div>
+
+          <div class="vs-divider"><div class="vs-line"></div></div>
+
+          <!-- Guest (Opponent) -->
+          <div class="agent-card" id="clientCard" style="opacity:0.5;">
+             <div class="agent-avatar">
+                 <img id="clientAvatarImg" src="../assets/pieces/bK.png">
+             </div>
+             <div class="agent-info">
+                <div class="agent-name" id="opponentName">Waiting...</div>
+                <div class="agent-badge" id="connStatus" style="background:rgba(239,68,68,0.2); color:#fca5a5;">Disconnected</div>
+             </div>
+          </div>
+       </div>
+
+       <div class="controls">
+          <button class="btn-primary" onclick="window.electronAPI.openLanConfig()">Server Configuration</button>
+          <div style="display:flex; gap:12px;">
+              <button class="btn-secondary" id="resetBtn">Reset Match</button>
+          </div>
+       </div>
+    </div>
+  </div>
+
+  <!-- Game Over Modal -->
+  <div class="modal-backdrop" id="gameOverModal">
+      <div class="go-panel">
+          <div class="go-title" id="goTitle">GAME OVER</div>
+          <div class="go-sub" id="goReason">Match Ended</div>
+          
+          <div id="lan-loader" style="font-size:12px; color:#888; margin-bottom:15px;">Analyzing...</div>
+          
+          <div id="lan-analysis" class="lan-analysis-ui">
+              <div class="lan-stat-row">
+                  <div>
+                      <div class="lan-stat-val" id="acc-val">0%</div>
+                      <div class="lan-stat-lbl">Accuracy</div>
+                  </div>
+                  <div>
+                      <div class="lan-stat-val" id="elo-val">+0</div>
+                      <div class="lan-stat-lbl">Rating</div>
+                  </div>
+              </div>
+          </div>
+          
+          <div style="display:flex; gap:12px;">
+              <button class="btn-secondary" onclick="resetMatch()" style="flex:1; font-size:14px;">Rematch</button>
+              <button class="btn-primary" id="reviewBtn" style="flex:1; font-size:14px;">Game Review</button>
+          </div>
+      </div>
+  </div>
+
+  <script src="../java/arena_brain.js"></script>
+  <script src="../java/renderer.js"></script>
+  <script>
+      const boardEl = document.getElementById('board');
+      const gameOverModal = document.getElementById('gameOverModal');
+      
+      const hostCard = document.getElementById('hostCard');
+      const clientCard = document.getElementById('clientCard');
+      const hostNameEl = document.getElementById('hostName');
+      const opponentName = document.getElementById('opponentName');
+      const connStatus = document.getElementById('connStatus');
+      const statusText = document.getElementById('status-text');
+      const waitingOverlay = document.getElementById('waitingOverlay');
+      const clientAvatarImg = document.getElementById('clientAvatarImg');
+      const hostAvatarImg = document.getElementById('hostAvatarImg');
+      
+      let isFlipped = false;
+      let opponentConnected = false;
+      let myHostAvatar = 'wK.png';
+      let searchInterval = null;
+      let gameActive = true;
+      
+      const game = new ArenaBrain();
+      let selectedSquare = null;
+      let legalMoves = [];
+
+      document.getElementById('flipBtn').onclick = () => {
+          isFlipped = !isFlipped;
+          renderBoard();
+      };
+      
+      function resolveAvatar(path, folder) {
+          if (!path) return '../assets/pieces/wK.png';
+          if (path.includes('/') || path.includes('\\')) return path;
+          return `../assets/${folder || 'pieces'}/${path}`;
+      }
+
+      (async () => {
+          const prefs = await window.electronAPI.getPreferences();
+          if (prefs.boardTheme) document.documentElement.setAttribute('data-theme', prefs.boardTheme);
+          const status = await window.electronAPI.getLanStatus();
+          updateStatusUI(status);
+          const profile = await window.electronAPI.getProfile();
+          if(profile) {
+              hostNameEl.textContent = profile.name || "Host (You)";
+              if(profile.avatar) {
+                  myHostAvatar = profile.avatar;
+                  hostAvatarImg.src = resolveAvatar(profile.avatar, profile.avatarFolder);
+                  window.electronAPI.broadcastLanHostInfo({ name: profile.name, avatar: myHostAvatar });
+              }
+          }
+      })();
+
+      function startSearchingAnimation() {
+          if (searchInterval) return;
+          const avatars = ['bK.png', 'bQ.png', 'bN.png', 'bR.png', 'wK.png', 'wQ.png', 'wN.png', 'wR.png'];
+          searchInterval = setInterval(() => {
+              const randomAv = avatars[Math.floor(Math.random() * avatars.length)];
+              clientAvatarImg.src = `../assets/pieces/${randomAv}`;
+              clientAvatarImg.style.opacity = 0.5;
+              setTimeout(() => clientAvatarImg.style.opacity = 1, 200);
+          }, 1500);
+      }
+
+      function stopSearchingAnimation() {
+          if (searchInterval) {
+              clearInterval(searchInterval);
+              searchInterval = null;
+              clientAvatarImg.style.opacity = 1;
+          }
+      }
+
+      function updateStatusUI(status) {
+          if (!status.isRunning) {
+              statusText.textContent = "Server Stopped";
+              statusText.style.color = "#ef4444";
+              waitingOverlay.querySelector('h2').textContent = "Server Offline";
+              waitingOverlay.classList.remove('hidden');
+              stopSearchingAnimation();
+          } else if (status.players && status.players.length > 0) {
+              statusText.textContent = "Match in Progress";
+              statusText.style.color = "#4ade80";
+              opponentConnected = true;
+              waitingOverlay.classList.add('hidden');
+              stopSearchingAnimation();
+              const p = status.players[0];
+              opponentName.textContent = p.name;
+              connStatus.textContent = "Connected";
+              connStatus.style.background = "rgba(74, 222, 128, 0.2)";
+              connStatus.style.color = "#4ade80";
+              clientCard.style.opacity = "1";
+              if(p.avatar) clientAvatarImg.src = `../assets/pieces/${p.avatar}`;
+          } else {
+              statusText.textContent = "Waiting for Guest";
+              statusText.style.color = "#fbbf24";
+              waitingOverlay.querySelector('h2').textContent = "Waiting for Guest...";
+              waitingOverlay.classList.remove('hidden');
+              opponentConnected = false;
+              clientCard.style.opacity = "0.7";
+              opponentName.textContent = "Searching...";
+              connStatus.textContent = "Scanning";
+              connStatus.style.background = "rgba(251, 191, 36, 0.2)";
+              connStatus.style.color = "#fbbf24";
+              startSearchingAnimation();
+          }
+      }
+
+      window.electronAPI.onLanPlayerJoined(() => window.electronAPI.getLanStatus().then(updateStatusUI));
+      window.electronAPI.onLanPlayerDisconnected(() => window.electronAPI.getLanStatus().then(updateStatusUI));
+      
+      window.electronAPI.onLanMoveReceived((move) => {
+          if(!gameActive) return;
+          game.applyMove(move.promo ? move.from + move.to + move.promo : move.from + move.to);
+          renderBoard();
+          updateTurnUI();
+          checkGameStatus();
+      });
+
+      document.getElementById('resetBtn').onclick = resetMatch;
+      
+      function resetMatch() {
+          game.reset();
+          gameActive = true;
+          gameOverModal.style.display = 'none';
+          renderBoard();
+          updateTurnUI();
+          window.electronAPI.broadcastLanReset(game.boardToFen());
+      }
+      
+      window.resetMatch = resetMatch; 
+
+      document.getElementById('reviewBtn').onclick = () => {
+          const payload = { fen: game.boardToFen(), moves: game.history };
+          window.electronAPI.startReviewMode(payload);
+          gameOverModal.style.display = 'none';
+      };
+
+      function updateTurnUI() {
+          hostCard.classList.toggle('active-turn', game.turn === 'w');
+          clientCard.classList.toggle('active-turn', game.turn === 'b');
+      }
+      
+      function renderBoard() {
+          boardEl.innerHTML = "";
+          for(let r=0; r<8; r++) {
+              for(let c=0; c<8; c++) {
+                  const vr = isFlipped ? 7-r : r;
+                  const vc = isFlipped ? 7-c : c;
+                  
+                  const sq = document.createElement('div');
+                  sq.className = `square ${(vr+vc)%2===0 ? 'light' : 'dark'}`;
+                  sq.dataset.r = vr; sq.dataset.c = vc;
+                  
+                  if(selectedSquare && selectedSquare.r === vr && selectedSquare.c === vc) sq.classList.add('selected-square');
+                  
+                  const move = legalMoves.find(m => {
+                      const t = parseSq(m.substring(2,4));
+                      return t.r===vr && t.c===vc;
+                  });
+                  if(move) {
+                      const hint = document.createElement('div');
+                      hint.className = game.board[vr][vc] ? 'move-dot capture' : 'move-dot';
+                      sq.appendChild(hint);
+                  }
+
+                  const p = game.board[vr][vc];
+                  if(p) {
+                      const piece = document.createElement('div');
+                      piece.className = 'piece';
+                      piece.style.backgroundImage = `url('../assets/pieces/${p}.png')`;
+                      sq.appendChild(piece);
+                  }
+                  
+                  sq.onclick = () => handleSquareClick(vr, vc);
+                  boardEl.appendChild(sq);
+              }
+          }
+      }
+      
+      function handleSquareClick(r, c) {
+          if(!opponentConnected || game.turn !== 'w' || !gameActive) return;
+          
+          const move = legalMoves.find(m => {
+              const t = parseSq(m.substring(2,4));
+              return t.r===r && t.c===c;
+          });
+          
+          if(move) {
+              const promo = move.length > 4 ? move[4] : null;
+              game.applyMove(move);
+              selectedSquare = null;
+              legalMoves = [];
+              renderBoard();
+              updateTurnUI();
+              
+              const fromSq = move.substring(0,2);
+              const toSq = move.substring(2,4);
+              window.electronAPI.broadcastLanMove({ from: fromSq, to: toSq, promo }, game.boardToFen());
+              window.electronAPI.requestAnalysis(game.boardToFen());
+              checkGameStatus();
+              return;
+          }
+          
+          const p = game.board[r][c];
+          if(p && p[0] === 'w') {
+              if(selectedSquare && selectedSquare.r===r && selectedSquare.c===c) {
+                  selectedSquare = null;
+                  legalMoves = [];
+              } else {
+                  selectedSquare = {r,c};
+                  const allLegal = game.getLegalMoves();
+                  const fromSq = String.fromCharCode(97+c) + (8-r);
+                  legalMoves = allLegal.filter(m => m.startsWith(fromSq));
+              }
+              renderBoard();
+          } else {
+              selectedSquare = null;
+              legalMoves = [];
+              renderBoard();
+          }
+      }
+      
+      function checkGameStatus() {
+          const moves = game.getLegalMoves();
+          if(moves.length === 0) {
+              gameActive = false;
+              const kingPos = game.rules.findKing(game.board, game.turn);
+              const isCheck = game.rules.isSquareAttacked(game.board, kingPos.r, kingPos.c, game.turn === 'w' ? 'b' : 'w');
+              const winner = isCheck ? (game.turn === 'w' ? "BLACK" : "WHITE") : "DRAW";
+              const result = isCheck ? "CHECKMATE" : "STALEMATE";
+              
+              window.electronAPI.broadcastLanGameOver({ result: result, winner: winner });
+              
+              document.getElementById('goTitle').textContent = winner === 'DRAW' ? "DRAW" : winner + " WINS";
+              document.getElementById('goReason').textContent = result;
+              
+              gameOverModal.style.display = 'flex';
+              
+              const loader = document.getElementById('lan-loader');
+              const analysis = document.getElementById('lan-analysis');
+              
+              loader.style.display = 'block';
+              analysis.style.display = 'none';
+              
+              // LAN Analysis
+              window.electronAPI.analyzeMatchAndUpdateElo({
+                  gameData: { fen: game.boardToFen(), moves: game.history, result, winner },
+                  playerColor: 'w',
+                  opponentElo: 1500
+              }).then(res => {
+                  loader.style.display = 'none';
+                  analysis.style.display = 'block';
+                  document.getElementById('acc-val').textContent = res.accuracy + '%';
+                  document.getElementById('elo-val').textContent = (res.eloChange >= 0 ? '+' : '') + res.eloChange;
+              });
+          }
+      }
+      
+      function parseSq(s) { return {c: s.charCodeAt(0)-97, r: 8-parseInt(s[1])}; }
+      window.electronAPI?.onThemeChanged((theme) => { document.documentElement.setAttribute('data-theme', theme); });
+      renderBoard();
+  </script>
+</body>
+</html>
