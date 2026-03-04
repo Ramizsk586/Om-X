@@ -1,0 +1,378 @@
+
+{
+  "personas": {
+    "dr_yun": {
+      "name": "Dr. Yun",
+      "style": "Socratic, wise, sarcasm level: high.",
+      "voiceSettings": { "lang": "en-US", "gender": "male", "pitch": 1.0, "rate": 1.0 },
+      "dialogues": {
+        "opening": [
+          "Control the center, and you control the game.",
+          "Develop your pieces. They are not tourists; put them to work.",
+          "Do not move the same piece twice unless you enjoy wasting time.",
+          "King safety is paramount. Castle, before it is too late.",
+          "Ah, a standard approach. Let us see if you understand the *why*.",
+          "The opening is a promise. Do not break it with a silly move.",
+          "Developing the Knights before Bishops is often wise. Knights are slow.",
+          "Do not bring the Queen out too early. She is powerful, not invincible."
+        ],
+        "blunder": [
+          "A moment of carelessness... and the position collapses.",
+          "That piece had a family. Did you forget it?",
+          "Haste makes waste. You moved without thinking.",
+          "You have given them a gift wrapped in gold.",
+          "I assume that was a mouse slip? For your sake?",
+          "That move... it causes me physical pain.",
+          "Oh dear. That piece is now merely a memory.",
+          "Did you perhaps close your eyes before playing that?"
+        ],
+        "mistake": [
+          "There was a better path. Can you find it?",
+          "You are drifting from the essence of the position.",
+          "Precision is slipping. Tighten your mind.",
+          "Do not loosen your grip on the position.",
+          "Optimistic, but incorrect.",
+          "That creates a weakness. A good opponent will find it.",
+          "You are helping your opponent too much."
+        ],
+        "great_move": [
+          "Brilliant. A strike of lightning!",
+          "You see clearly now. Excellent vision.",
+          "A master's touch. I am impressed.",
+          "The position sings with that move.",
+          "Finally, you are playing with your eyes open.",
+          "A move worthy of a textbook.",
+          "I did not think you would find that. Well done."
+        ],
+        "advantage": [
+          "The winds shift in your favor. Do not let up.",
+          "Press the advantage. Squeeze them.",
+          "You have the initiative. Use it wisely.",
+          "They are struggling. Finish the job.",
+          "Do not relax. The game is won by the final mistake."
+        ],
+        "winning": [
+          "Finish it. The end is in sight.",
+          "The end is near. Do not falter.",
+          "No mercy now. Only precision.",
+          "Do not play with your food. Mate them.",
+          "It is mathematically over, provided you stay awake."
+        ],
+        "equal": [
+          "The scales are balanced. Who will dare more?",
+          "A true contest of minds. Tension builds.",
+          "Who will blink first? The position is tense.",
+          "Nothing is decided yet.",
+          "A draw is likely, unless one of you becomes creative."
+        ],
+        "disadvantage": [
+          "Defend with spirit. Do not resign.",
+          "The storm is coming. Batten down the hatches.",
+          "Hold fast. Seek complications.",
+          "It looks grim, but chess is a game of infinite tragedy.",
+          "Find the trick. There is always a trick."
+        ],
+        "losing": [
+          "Fight for every inch. Make them earn it.",
+          "It is dark, but you are still playing.",
+          "Do not go gently into that good night.",
+          "Perhaps it is time to study endgames more closely."
+        ],
+        "check": [
+          "The King is threatened!",
+          "Check. React immediately.",
+          "A direct question to your King."
+        ],
+        "capture": [
+          "Material removed. The board simplifies.",
+          "An exchange of forces.",
+          "Taking is not always the best option, but here, acceptable."
+        ],
+        "endgame": [
+          "Activate your King. He is a fighting piece now.",
+          "Pawn promotion is the goal. Push.",
+          "Do not rush. In the endgame, patience is lethal."
+        ],
+        "jokes": [
+          "Why did the chess piece go to the doctor? It had a bad case of the knights.",
+          "The King is the most important piece, yet he can barely walk.",
+          "I was going to learn the Ruy Lopez, but I don't speak Spanish.",
+          "They say pawns are the soul of chess. Yours seem to be soul-searching."
+        ],
+        "morals": [
+          "In chess, as in life, opportunity often comes disguised as hard work.",
+          "Patience is a weapon. Do not rush into the unknown.",
+          "A bad plan is better than no plan at all."
+        ],
+        "trivia": [
+          "Did you know the longest chess game theoretically possible is 5,949 moves?",
+          "The word 'Checkmate' comes from the Persian phrase 'Shah Mat', meaning 'the King is dead'.",
+          "The Queen used to be the weakest piece on the board, moving only one square diagonally."
+        ]
+      }
+    },
+    "yash": {
+      "name": "Yash",
+      "style": "Aggressive, cocky, impatient, uses slang.",
+      "voiceSettings": { "lang": "en-GB", "gender": "male", "pitch": 1.2, "rate": 1.1 },
+      "dialogues": {
+        "opening": [
+          "Boring opening. Let's get to the attacks!",
+          "Come on, move faster. I'm falling asleep.",
+          "Center control? Whatever, I'm going for the throat.",
+          "Standard book moves. Show me something new!",
+          "Develop pieces? Nah, just push pawns and pray."
+        ],
+        "blunder": [
+          "Bro, are you serious?",
+          "Thanks for the free elo.",
+          "You literally just hung that.",
+          "My little sister plays better than that.",
+          "Yikes. Big oof.",
+          "Delete the app, bro.",
+          "I'm actually embarrassed for you right now."
+        ],
+        "mistake": [
+          "Meh. Weak.",
+          "You missed a spot.",
+          "I wouldn't have done that.",
+          "That's passive. Be aggressive!",
+          "You call that a move?"
+        ],
+        "great_move": [
+          "Okay, okay, I see you.",
+          "Not bad. Did you cheat?",
+          "Whoa, spicy move!",
+          "Respect. That was sharp.",
+          "You finally woke up!",
+          "Sheesh! That piece is active now."
+        ],
+        "advantage": [
+          "I'm crushing this.",
+          "You're in trouble now.",
+          "GG soon?",
+          "Look at that bar! It loves me."
+        ],
+        "winning": [
+          "It's over. Just resign.",
+          "Don't waste my time, mate it.",
+          "Checkmate is calling.",
+          "Stop stalling and finish it."
+        ],
+        "equal": [
+          "Finally, a fight.",
+          "Dead even. Let's see who blinks.",
+          "You're keeping up. Surprising.",
+          "Boring... someone sacrifice something!"
+        ],
+        "disadvantage": [
+          "Wait, what? How did this happen?",
+          "Lucky move.",
+          "I can still swindle this.",
+          "Don't get cocky.",
+          "My engine must be lagging."
+        ],
+        "losing": [
+          "Whatever, this game is boring anyway.",
+          "You got lucky.",
+          "Rematch instantly after this.",
+          "This is definitely a bug."
+        ],
+        "check": [
+          "Check! Watch your back.",
+          "Get that King out of here.",
+          "Run, King, Run!"
+        ],
+        "capture": [
+          "Yoink!",
+          "Mine now.",
+          "Delicious material.",
+          "Nom nom nom."
+        ],
+        "endgame": [
+          "Race you to the promotion square.",
+          "Endgames are for nerds, just mate me.",
+          "Push those pawns!"
+        ],
+        "jokes": [
+          "You play like a potato.",
+          "I bet you play the London System unironically.",
+          "Your rating is lower than my frame rate.",
+          "Nice move... for a beginner."
+        ],
+        "morals": [
+          "Hesitation is defeat.",
+          "Attack first, think later. Wait, don't do that."
+        ],
+        "trivia": [
+          "Did you know I'm the best player in this family? Don't ask Dr. Yun."
+        ]
+      }
+    },
+    "dr_san": {
+      "name": "Dr. San",
+      "style": "Polite, analytical, focuses on structure and harmony.",
+      "voiceSettings": { "lang": "en-US", "gender": "male", "pitch": 0.8, "rate": 0.9 },
+      "dialogues": {
+        "opening": [
+          "A solid foundation is essential for a stable future.",
+          "Observe the harmony of the initial setup.",
+          "We shall build a fortress, brick by brick.",
+          "Do not rush. Structure is everything.",
+          "Symmetry is pleasing, but victory requires breaking it."
+        ],
+        "blunder": [
+          "Oh dear. That disrupts the equilibrium.",
+          "An unfortunate calculation error.",
+          "That move compromises your structural integrity.",
+          "I am afraid that was suboptimal.",
+          "Entropy has increased significantly with that move."
+        ],
+        "mistake": [
+          "A slight inaccuracy.",
+          "That square was not the most efficient.",
+          "You create a permanent weakness.",
+          "This loosens your position unnecessarily.",
+          "Not the most harmonious choice."
+        ],
+        "great_move": [
+          "Exquisite precision.",
+          "A move of high aesthetic value.",
+          "Perfectly balanced, as it should be.",
+          "I admire your calculation.",
+          "A structurally sound decision."
+        ],
+        "advantage": [
+          "The position flows in our favor.",
+          "We have successfully restricted their counterplay.",
+          "The logic of the position dictates a win."
+        ],
+        "winning": [
+          "The conclusion is mathematically inevitable.",
+          "Proceed with clinical precision.",
+          "A clean conversion is expected."
+        ],
+        "equal": [
+          "A fascinating dynamic equilibrium.",
+          "The tension is perfectly maintained.",
+          "Neither side has deviated from the truth."
+        ],
+        "disadvantage": [
+          "We must defend with accuracy.",
+          "The position is difficult, but not impossible.",
+          "Seek solidity in the storm."
+        ],
+        "losing": [
+          "The structure has collapsed.",
+          "I fear the outcome is determined.",
+          "We shall learn from this structural failure."
+        ],
+        "check": [
+          "A direct query to the monarch.",
+          "Check. Precision is required."
+        ],
+        "capture": [
+          "Material exchange initiated.",
+          "Simplification."
+        ],
+        "endgame": [
+          "The endgame is where the truth is revealed.",
+          "King activity is the decisive factor now."
+        ],
+        "jokes": [
+          "I find the Knight's movement quite peculiar, don't you?",
+          "Entropy increases, except on a well-played chessboard."
+        ],
+        "morals": [
+          "Order defeats chaos.",
+          "A calm mind sees further than a frantic one."
+        ],
+        "trivia": [
+          "The concept of 'Zugzwang' is fascinating—when moving is worse than doing nothing."
+        ]
+      }
+    },
+    "isha": {
+      "name": "Isha",
+      "style": "Creative, artistic, unpredictable, friendly.",
+      "voiceSettings": { "lang": "en-US", "gender": "female", "pitch": 1.1, "rate": 1.05 },
+      "dialogues": {
+        "opening": [
+          "Let's paint a masterpiece on the board!",
+          "Why follow the books? Let's try something wild.",
+          "I call this opening 'The Sunrise'.",
+          "Let's make it messy and fun!",
+          "Pawns are like little seeds waiting to grow!"
+        ],
+        "blunder": [
+          "Oopsie! A happy accident?",
+          "Oh no, that piece looks lonely now.",
+          "Yikes! That was a splash of cold water.",
+          "Did you mean to do that? It looks... abstract.",
+          "It's okay! We can call it a gambit!"
+        ],
+        "mistake": [
+          "Hmm, not your best brushstroke.",
+          "That feels a bit off-key.",
+          "Maybe try a different angle?",
+          "A bit risky, don't you think?"
+        ],
+        "great_move": [
+          "Wow! That's art!",
+          "What a beautiful idea!",
+          "I love the creativity there!",
+          "You're a poet with the pawns.",
+          "Sparkling!"
+        ],
+        "advantage": [
+          "We're composing a symphony!",
+          "Look at the colors, they favor us!",
+          "We are dancing around them."
+        ],
+        "winning": [
+          "The final touches on the canvas.",
+          "Almost a masterpiece.",
+          "Finish it with style!"
+        ],
+        "equal": [
+          "A blank canvas. Anything can happen.",
+          "The tension is like a stretched rubber band!",
+          "Who will add the next splash of color?"
+        ],
+        "disadvantage": [
+          "It's getting dark... let's find the light.",
+          "A dramatic twist in the plot!",
+          "We need a creative escape."
+        ],
+        "losing": [
+          "Even a lost game can be beautiful.",
+          "The tragedy is part of the story.",
+          "Well played, I love your style."
+        ],
+        "check": [
+          "Surprise!",
+          "King in the spotlight!"
+        ],
+        "capture": [
+          "Snap!",
+          "Taken off the board."
+        ],
+        "endgame": [
+          "Just the actors left on stage.",
+          "Let's dance to the promotion square."
+        ],
+        "jokes": [
+          "My favorite piece is the Queen because she has the best outfit.",
+          "I tried to castle, but the rook was on a coffee break."
+        ],
+        "morals": [
+          "Creativity takes courage.",
+          "Sometimes you have to break the rules to make art."
+        ],
+        "trivia": [
+          "Did you know chess sets used to be red and white? Much prettier!"
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "name": "lms-plugin-wikipedia",
+  "version": "1.0.0",
+  "private": true,
+  "description": "LM Studio plugin for searching Wikipedia",
+  "main": "index.js",
+  "scripts": {
+    "dev": "lms dev",
+    "push": "lms push"
+  },
+  "author": "Daniel Sig",
+  "license": "MIT",
+  "peerDependencies": {
+    "@lmstudio/sdk": "*",
+    "zod": "*"
+  }
+}

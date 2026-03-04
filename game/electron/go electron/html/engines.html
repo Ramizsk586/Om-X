@@ -1,0 +1,538 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Go Engine Settings</title>
+  <link rel="stylesheet" href="css/styles.css" />
+  <style>
+      body { background: transparent; padding: 40px; overflow-y: auto; font-family: 'Inter', sans-serif; }
+      h1 { font-size: 28px; margin-bottom: 24px; font-weight: 800; color: var(--text-main); text-transform: uppercase; letter-spacing: 2px; }
+      .header-actions {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 32px;
+        padding-bottom: 16px;
+        border-bottom: 1px solid rgba(255,255,255,0.08);
+      }
+      .placeholder {
+        border: 2px dashed rgba(255,255,255,0.1);
+        border-radius: 12px;
+        padding: 60px;
+        text-align: center;
+        color: var(--text-muted);
+      }
+      .placeholder h3 {
+        margin: 0 0 8px 0;
+        color: var(--text-main);
+      }
+      .settings-group { background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.08); border-radius: 16px; overflow: hidden; margin-bottom: 32px; }
+      .s-row { display: flex; justify-content: space-between; align-items: center; padding: 20px 24px; border-bottom: 1px solid rgba(255,255,255,0.05); }
+      .s-row:last-child { border-bottom: none; }
+      .row-label { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+      .row-desc { font-size: 12px; color: var(--text-muted); }
+      .switch { position: relative; display: inline-block; width: 44px; height: 24px; }
+      .switch input { opacity: 0; width: 0; height: 0; }
+      .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(255,255,255,0.1); transition: .4s; border-radius: 34px; }
+      .slider:before { position: absolute; content: ""; height: 18px; width: 18px; left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%; }
+      input:checked + .slider { background-color: var(--accent); }
+      input:checked + .slider:before { transform: translateX(20px); }
+      .path-input-group { display: flex; gap: 8px; width: 50%; }
+      .input-field { background: var(--input-bg); border: 1px solid var(--input-border); border-radius: 8px; padding: 12px 16px; color: var(--text-main); font-size: 14px; width: 100%; font-family: inherit; }
+      .input-field:focus { border-color: var(--accent); outline: none; }
+      .btn-browse { background: rgba(255,255,255,0.1); color: var(--text-main); border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; cursor: pointer; padding: 0 16px; }
+      textarea.input-field { resize: vertical; }
+      
+      .engine-card {
+        background: var(--card-bg);
+        border: 1px solid rgba(255,255,255,0.1);
+        border-radius: 12px;
+        padding: 20px;
+        margin-bottom: 16px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .engine-info { flex: 1; }
+      .engine-info .name { font-size: 16px; font-weight: 700; color: #fff; }
+      .engine-info .meta { font-size: 12px; color: var(--text-muted); font-family: 'JetBrains Mono', monospace; margin-top: 4px; display: flex; align-items: center; gap: 8px; }
+      .engine-tag { background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: 700; }
+      .tag-llm { background: rgba(99, 102, 241, 0.2); color: #a5b4fc; }
+      .tag-gtp { background: rgba(16, 185, 129, 0.2); color: #6ee7b7; }
+      
+      .engine-actions { display: flex; gap: 12px; }
+      .engine-actions .btn { padding: 8px 16px; font-size: 12px; }
+      
+      .modal-content { max-width: 520px; text-align: left; }
+      .modal-content h2 { text-align: center; }
+      #engine-form { display: flex; flex-direction: column; gap: 16px; }
+      
+      /* Type Switcher */
+      .type-switch { display: flex; background: rgba(0,0,0,0.3); border-radius: 8px; padding: 4px; gap: 4px; margin-bottom: 12px; }
+      .type-opt { flex: 1; text-align: center; padding: 8px; cursor: pointer; border-radius: 6px; font-size: 13px; font-weight: 600; color: var(--text-muted); transition: all 0.2s; }
+      .type-opt.active { background: var(--accent); color: #fff; }
+      .hidden { display: none !important; }
+      
+      .verify-group { display: flex; gap: 8px; }
+      #verify-status { font-size: 12px; margin-top: 4px; font-weight: 600; }
+      #form-status { font-size: 12px; margin-top: 4px; font-weight: 600; min-height: 18px; }
+  </style>
+</head>
+<body class="theme-emerald">
+  <div class="header-actions">
+    <h1>Engine Management</h1>
+    <button class="btn" id="add-engine-btn">Add Engine</button>
+  </div>
+  
+  <div class="settings-group">
+      <div class="s-row">
+          <div>
+              <div class="row-label">Enable GTP logging to directory</div>
+              <div class="row-desc">Logs all engine communication to text files. Useful for debugging GTP engines.</div>
+          </div>
+          <label class="switch"><input type="checkbox" id="gtp-logging-toggle"><span class="slider"></span></label>
+      </div>
+      <div class="s-row" id="gtp-path-row" style="display: none;">
+          <input type="text" id="gtp-log-path" class="input-field" placeholder="Select a directory..." readonly>
+          <button class="btn btn-secondary" id="browse-gtp-log-path">Browse</button>
+      </div>
+  </div>
+
+  <div class="engine-list-container" id="engine-list-container">
+      <div class="placeholder" id="placeholder">
+          <h3>No Engines Configured</h3>
+          <p>Click "Add Engine" to set up an AI opponent.</p>
+      </div>
+  </div>
+
+  <div id="engine-modal" class="modal-backdrop">
+    <div class="modal-content">
+        <h2 id="modal-title">Configure Engine</h2>
+        
+        <div class="type-switch">
+            <div class="type-opt active" id="tab-gtp" onclick="switchType('gtp')">GTP Binary</div>
+            <div class="type-opt" id="tab-llm" onclick="switchType('llm')">AI Persona</div>
+        </div>
+
+        <form id="engine-form">
+            <input type="hidden" id="engine-id">
+            
+            <div class="input-wrapper">
+                <label for="engine-name">Name</label>
+                <input type="text" id="engine-name" class="input-field" required placeholder="e.g., GnuGo or Gemini Pro">
+            </div>
+
+            <!-- GTP Fields -->
+            <div id="section-gtp">
+                <div class="input-wrapper">
+                    <label for="engine-path">Executable Path</label>
+                    <div class="path-input-group" style="width:100%;">
+                        <input type="text" id="engine-path" class="input-field" placeholder="Select executable file..." readonly>
+                        <button type="button" class="btn btn-secondary" id="browse-engine-path">Browse</button>
+                    </div>
+                </div>
+                <div class="input-wrapper">
+                    <label for="engine-args">Arguments</label>
+                    <input type="text" id="engine-args" class="input-field" placeholder="e.g., --mode gtp">
+                </div>
+                <div class="input-wrapper">
+                    <label for="engine-init-commands">Initial Commands (;-separated)</label>
+                    <textarea id="engine-init-commands" class="input-field" rows="2" placeholder="e.g., komi 6.5;time_settings 0 5 1"></textarea>
+                </div>
+            </div>
+
+            <!-- LLM Fields -->
+            <div id="section-llm" class="hidden">
+                <div class="input-wrapper">
+                    <label for="llm-provider">Provider</label>
+                    <select id="llm-provider" class="input-field">
+                        <option value="google">Google Gemini</option>
+                        <option value="groq">Groq</option>
+                        <option value="openrouter">OpenRouter</option>
+                    </select>
+                </div>
+                <div class="input-wrapper">
+                    <label for="llm-api-key">API Key</label>
+                    <div class="verify-group">
+                        <input type="password" id="llm-api-key" class="input-field" placeholder="Leave empty to use app defaults">
+                        <button type="button" id="verify-key-btn" class="btn btn-secondary">Test</button>
+                    </div>
+                    <div id="verify-status"></div>
+                </div>
+                <div class="input-wrapper">
+                    <label for="llm-model">Model</label>
+                    <!-- Changed to datalist or editable select to allow custom models -->
+                    <input list="model-list" id="llm-model" class="input-field" placeholder="Select or type model ID">
+                    <datalist id="model-list">
+                        <option value="gemini-2.5-flash">
+                        <option value="gemini-1.5-pro">
+                        <option value="mixtral-8x7b-32768">
+                        <option value="llama3-70b-8192">
+                    </datalist>
+                </div>
+                <div class="input-wrapper">
+                    <label for="llm-temp">Creativity (Temperature): <span id="temp-val">0.5</span></label>
+                    <input type="range" id="llm-temp" style="width:100%;" min="0" max="2" step="0.1" value="0.5">
+                </div>
+                <div class="input-wrapper">
+                    <label for="llm-prompt">System Instruction</label>
+                    <textarea id="llm-prompt" class="input-field" rows="3" placeholder="Define the AI's playstyle..."></textarea>
+                </div>
+            </div>
+
+            <div class="modal-actions">
+                <button type="button" id="cancel-engine-btn" class="btn btn-secondary">Cancel</button>
+                <button type="submit" class="btn">Save Engine</button>
+            </div>
+            <div id="form-status"></div>
+        </form>
+    </div>
+  </div>
+
+  <script>
+    const addEngineBtn = document.getElementById('add-engine-btn');
+    const engineListContainer = document.getElementById('engine-list-container');
+    const placeholder = document.getElementById('placeholder');
+    
+    // Modal elements
+    const modal = document.getElementById('engine-modal');
+    const modalTitle = document.getElementById('modal-title');
+    const form = document.getElementById('engine-form');
+    const engineIdInput = document.getElementById('engine-id');
+    const engineNameInput = document.getElementById('engine-name');
+    
+    // GTP Inputs
+    const sectionGtp = document.getElementById('section-gtp');
+    const enginePathInput = document.getElementById('engine-path');
+    const engineArgsInput = document.getElementById('engine-args');
+    const engineInitCommandsInput = document.getElementById('engine-init-commands');
+    const browseEnginePathBtn = document.getElementById('browse-engine-path');
+    
+    // LLM Inputs
+    const sectionLlm = document.getElementById('section-llm');
+    const llmProvider = document.getElementById('llm-provider');
+    const llmApiKey = document.getElementById('llm-api-key');
+    const verifyKeyBtn = document.getElementById('verify-key-btn');
+    const verifyStatus = document.getElementById('verify-status');
+    const llmModel = document.getElementById('llm-model');
+    const llmModelList = document.getElementById('model-list');
+    const llmPrompt = document.getElementById('llm-prompt');
+    const llmTemp = document.getElementById('llm-temp');
+    const tempVal = document.getElementById('temp-val');
+
+    const cancelBtn = document.getElementById('cancel-engine-btn');
+    const formStatus = document.getElementById('form-status');
+    const saveEngineBtn = form.querySelector('button[type="submit"]');
+    
+    // GTP Logging
+    const gtpLoggingToggle = document.getElementById('gtp-logging-toggle');
+    const gtpPathRow = document.getElementById('gtp-path-row');
+    const gtpLogPathInput = document.getElementById('gtp-log-path');
+    const browseGtpLogPathBtn = document.getElementById('browse-gtp-log-path');
+
+    let engines = [];
+    let currentType = 'gtp';
+
+    function setFormStatus(message = '', ok = false) {
+        formStatus.textContent = message;
+        formStatus.style.color = message ? (ok ? '#10b981' : '#ef4444') : 'var(--text-muted)';
+    }
+
+    function getExecutableBaseName(filePath) {
+        if (!filePath) return '';
+        const fileName = filePath.split(/[\/\\]/).pop() || '';
+        return fileName.replace(/\.[^.]+$/, '').toLowerCase();
+    }
+
+    function toDisplayName(rawName) {
+        if (!rawName) return '';
+        return rawName
+            .replace(/[-_]+/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .replace(/\b\w/g, c => c.toUpperCase());
+    }
+
+    function detectGtpCompatibility(filePath) {
+        const base = getExecutableBaseName(filePath);
+        const normalizedPath = (filePath || '').toLowerCase();
+
+        if (base.includes('gnugo')) {
+            return {
+                name: 'GNU Go',
+                args: '--mode gtp',
+                initCommands: 'komi 6.5;time_settings 0 5 1'
+            };
+        }
+        if (base.includes('katago')) {
+            return {
+                name: 'KataGo',
+                args: 'gtp',
+                initCommands: 'komi 6.5;time_settings 0 5 1'
+            };
+        }
+        if (base.includes('leelaz') || base.includes('leela') || normalizedPath.includes('leela zero')) {
+            return {
+                name: 'Leela Zero',
+                args: '',
+                initCommands: 'komi 6.5;time_settings 0 5 1'
+            };
+        }
+        if (base.includes('pachi')) {
+            return {
+                name: 'Pachi',
+                args: '',
+                initCommands: 'komi 6.5;time_settings 0 5 1'
+            };
+        }
+
+        return {
+            name: toDisplayName(base),
+            args: '',
+            initCommands: 'komi 6.5;time_settings 0 5 1'
+        };
+    }
+
+    function switchType(type) {
+        currentType = type;
+        document.getElementById('tab-gtp').classList.toggle('active', type === 'gtp');
+        document.getElementById('tab-llm').classList.toggle('active', type === 'llm');
+        sectionGtp.classList.toggle('hidden', type !== 'gtp');
+        sectionLlm.classList.toggle('hidden', type !== 'llm');
+    }
+    
+    window.switchType = switchType;
+    
+    llmTemp.oninput = () => tempVal.textContent = llmTemp.value;
+
+    function renderEngineCard(engine) {
+        const card = document.createElement('div');
+        card.className = 'engine-card';
+        const typeLabel = engine.type === 'llm' ? 'AI PERSONA' : 'GTP ENGINE';
+        const typeClass = engine.type === 'llm' ? 'tag-llm' : 'tag-gtp';
+        const detail = engine.type === 'llm' ? engine.model : engine.path;
+        
+        card.innerHTML = `
+            <div class="engine-info">
+                <div class="name">${engine.name}</div>
+                <div class="meta">
+                    <span class="engine-tag ${typeClass}">${typeLabel}</span>
+                    <span>${detail}</span>
+                </div>
+            </div>
+            <div class="engine-actions">
+                <button class="btn btn-secondary" data-action="edit" data-id="${engine.id}">Edit</button>
+                <button class="btn btn-secondary" data-action="delete" data-id="${engine.id}">Delete</button>
+            </div>
+        `;
+        card.querySelector('[data-action="edit"]').addEventListener('click', () => openModal(engine));
+        card.querySelector('[data-action="delete"]').addEventListener('click', async () => {
+            if (confirm(`Are you sure you want to delete ${engine.name}?`)) {
+                await window.electronAPI.goEnginesDelete(engine.id);
+                loadAndRenderEngines();
+            }
+        });
+        return card;
+    }
+
+    async function loadAndRenderEngines() {
+        engines = await window.electronAPI.goEnginesGetAll();
+        engineListContainer.innerHTML = '';
+        if (engines.length === 0) {
+            engineListContainer.appendChild(placeholder);
+            placeholder.style.display = 'block';
+        } else {
+            placeholder.style.display = 'none';
+            engines.forEach(engine => {
+                engineListContainer.appendChild(renderEngineCard(engine));
+            });
+        }
+    }
+
+    function openModal(engine = null) {
+        form.reset();
+        verifyStatus.textContent = '';
+        setFormStatus('');
+        if (engine) {
+            modalTitle.textContent = 'Edit Engine';
+            engineIdInput.value = engine.id;
+            engineNameInput.value = engine.name;
+            
+            switchType(engine.type || 'gtp');
+            
+            if (engine.type === 'llm') {
+                llmProvider.value = engine.provider || 'google';
+                llmApiKey.value = engine.apiKey || '';
+                llmModel.value = engine.model || 'gemini-2.5-flash';
+                llmPrompt.value = engine.systemInstruction || '';
+                llmTemp.value = engine.temperature || 0.5;
+                tempVal.textContent = llmTemp.value;
+            } else {
+                enginePathInput.value = engine.path || '';
+                engineArgsInput.value = engine.args || '';
+                engineInitCommandsInput.value = engine.initCommands || '';
+            }
+        } else {
+            modalTitle.textContent = 'Add New Engine';
+            engineIdInput.value = '';
+            switchType('gtp');
+            llmTemp.value = 0.5;
+            tempVal.textContent = 0.5;
+        }
+        modal.classList.add('visible');
+    }
+
+    function closeModal() {
+        modal.classList.remove('visible');
+        setFormStatus('');
+    }
+
+    async function init() {
+        try {
+            if (window.electronAPI) {
+                const prefs = await window.electronAPI.getPreferences();
+                document.body.className = prefs.goTheme || 'theme-emerald';
+                gtpLoggingToggle.checked = !!prefs.goGtpLoggingEnabled;
+                gtpLogPathInput.value = prefs.goGtpLogPath || '';
+                gtpPathRow.style.display = gtpLoggingToggle.checked ? 'flex' : 'none';
+            }
+        } catch(e) {
+            console.error("Failed to load settings.", e);
+        }
+
+        loadAndRenderEngines();
+
+        addEngineBtn.addEventListener('click', () => openModal());
+        cancelBtn.addEventListener('click', closeModal);
+
+        browseEnginePathBtn.addEventListener('click', async () => {
+            const path = await window.electronAPI.goEnginesBrowseExecutable();
+            if (path) {
+                enginePathInput.value = path;
+                const detected = detectGtpCompatibility(path);
+                engineNameInput.value = detected.name || engineNameInput.value;
+                engineArgsInput.value = detected.args;
+                engineInitCommandsInput.value = detected.initCommands;
+            }
+        });
+        
+        verifyKeyBtn.addEventListener('click', async () => {
+            verifyKeyBtn.textContent = 'Testing...';
+            verifyStatus.textContent = '';
+            try {
+                const res = await window.electronAPI.aiVerifyAndListModels({ apiKey: llmApiKey.value, provider: llmProvider.value });
+                if(res.success) {
+                    verifyStatus.textContent = 'Verified! Loaded models.';
+                    verifyStatus.style.color = '#10b981';
+                    verifyKeyBtn.textContent = 'Verified';
+                    
+                    // Update datalist
+                    if(res.models && res.models.length > 0) {
+                        llmModelList.innerHTML = '';
+                        res.models.forEach(m => {
+                            const opt = document.createElement('option');
+                            opt.value = m;
+                            llmModelList.appendChild(opt);
+                        });
+                    }
+                } else {
+                    verifyStatus.textContent = 'Verification Failed. ' + (res.error || '');
+                    verifyStatus.style.color = '#ef4444';
+                    verifyKeyBtn.textContent = 'Test';
+                }
+            } catch(e) {
+                verifyStatus.textContent = 'Error: ' + e;
+                verifyStatus.style.color = '#ef4444';
+                verifyKeyBtn.textContent = 'Test';
+            }
+        });
+        
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            setFormStatus('');
+            
+            const baseData = {
+                id: engineIdInput.value || null,
+                name: engineNameInput.value.trim(),
+                type: currentType
+            };
+
+            if (!baseData.name) {
+                setFormStatus('Engine name is required.');
+                return;
+            }
+
+            const normalizedName = baseData.name.toLowerCase();
+            const duplicate = engines.find(en =>
+                String(en.name || '').trim().toLowerCase() === normalizedName &&
+                String(en.id) !== String(baseData.id || '')
+            );
+            if (duplicate) {
+                setFormStatus('Another engine already uses this name.');
+                return;
+            }
+            
+            let extraData = {};
+            if (currentType === 'llm') {
+                if (!llmModel.value.trim()) {
+                    setFormStatus('Model is required for AI Persona.');
+                    return;
+                }
+                extraData = {
+                    provider: llmProvider.value,
+                    apiKey: llmApiKey.value,
+                    model: llmModel.value.trim(),
+                    systemInstruction: llmPrompt.value.trim(),
+                    temperature: parseFloat(llmTemp.value)
+                };
+            } else {
+                if (!enginePathInput.value.trim()) {
+                    setFormStatus('Executable path is required for GTP engine.');
+                    return;
+                }
+                extraData = {
+                    path: enginePathInput.value.trim(),
+                    args: engineArgsInput.value.trim(),
+                    initCommands: engineInitCommandsInput.value.trim()
+                };
+            }
+
+            saveEngineBtn.disabled = true;
+            saveEngineBtn.textContent = 'Saving...';
+            try {
+                const result = await window.electronAPI.goEnginesSave({ ...baseData, ...extraData });
+                const success = Array.isArray(result) || !!result?.success;
+                if (!success) {
+                    setFormStatus(result?.error || 'Failed to save engine.');
+                    return;
+                }
+                setFormStatus('Saved.', true);
+                await loadAndRenderEngines();
+                closeModal();
+            } finally {
+                saveEngineBtn.disabled = false;
+                saveEngineBtn.textContent = 'Save Engine';
+            }
+        });
+
+        // GTP Logging Logic
+        gtpLoggingToggle.addEventListener('change', async () => {
+            const enabled = gtpLoggingToggle.checked;
+            gtpPathRow.style.display = enabled ? 'flex' : 'none';
+            await window.electronAPI.savePreferences({ goGtpLoggingEnabled: enabled });
+        });
+
+        browseGtpLogPathBtn.addEventListener('click', async () => {
+            const path = await window.electronAPI.browseDirectory();
+            if (path) {
+                gtpLogPathInput.value = path;
+                await window.electronAPI.savePreferences({ goGtpLogPath: path });
+            }
+        });
+    }
+    
+    init();
+  </script>
+</body>
+</html>

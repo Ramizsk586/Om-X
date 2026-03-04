@@ -1,0 +1,409 @@
+
+
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; object-src 'none';">
+  <title>Visual Scanner</title>
+  <link rel="stylesheet" href="css/styles.css" />
+  <style>
+    /* Arena Specific Overrides for Scanner */
+    body {
+      margin: 0;
+      overflow: hidden;
+      display: flex;
+      background: var(--app-bg);
+    }
+
+    .main-layout {
+        display: flex; width: 100vw; height: 100vh;
+    }
+
+    /* Board Panel */
+    .board-panel {
+        flex: 1;
+        display: flex; justify-content: center; align-items: center;
+        position: relative;
+        background: radial-gradient(circle at center, rgba(255,255,255,0.02), transparent 70%);
+    }
+    
+    .arena-glow {
+        position: absolute; width: 800px; height: 800px;
+        background: radial-gradient(circle, var(--highlight-last) 0%, transparent 70%);
+        opacity: 0.1; pointer-events: none; z-index: 0;
+    }
+
+    /* Sidebar */
+    .sidebar {
+        width: 380px; min-width: 380px;
+        background: var(--sidebar-bg);
+        backdrop-filter: blur(24px);
+        border-left: var(--glass-border);
+        display: flex; flex-direction: column;
+        z-index: 10;
+        box-shadow: -10px 0 40px rgba(0,0,0,0.5);
+    }
+
+    .sidebar-header {
+        padding: 24px;
+        border-bottom: 1px solid rgba(255,255,255,0.05);
+        text-align: center;
+    }
+    .sidebar-header h2 {
+        margin: 0; font-size: 18px; color: var(--primary-accent); 
+        text-transform: uppercase; letter-spacing: 3px; font-weight: 800;
+        text-shadow: 0 0 20px var(--highlight-move);
+    }
+    #status-msg {
+        font-size: 11px; color: var(--text-muted); margin-top: 6px; font-weight: 500;
+    }
+
+    /* Scanner Drop Zone */
+    .scanner-container {
+        flex: 1;
+        display: flex; flex-direction: column;
+        padding: 20px;
+        overflow-y: auto;
+        gap: 20px;
+    }
+
+    .drop-zone {
+        background: rgba(255,255,255,0.03);
+        border: 2px dashed rgba(255,255,255,0.1);
+        border-radius: 16px;
+        height: 200px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        color: var(--text-muted);
+        transition: all 0.2s;
+        cursor: pointer;
+        position: relative;
+        overflow: hidden;
+    }
+    .drop-zone:hover, .drop-zone.dragover {
+        border-color: var(--primary-accent);
+        background: rgba(92, 107, 192, 0.1);
+        color: #fff;
+    }
+    
+    .preview-img {
+        width: 100%; height: 100%; object-fit: contain;
+        display: none;
+        border-radius: 14px;
+        z-index: 5;
+    }
+    
+    .scan-beam {
+        position: absolute; top: 0; left: 0; right: 0; height: 4px;
+        background: var(--primary-accent);
+        box-shadow: 0 0 15px var(--primary-accent);
+        animation: scan 2s infinite alternate;
+        display: none; z-index: 10;
+    }
+    @keyframes scan { from{top:0;} to{top:100%;} }
+
+    /* Analysis Results */
+    .analysis-info {
+        background: rgba(255,255,255,0.03);
+        border-radius: 12px;
+        padding: 16px;
+        border: 1px solid rgba(255,255,255,0.05);
+    }
+    
+    .info-row {
+        display: flex; justify-content: space-between; margin-bottom: 8px;
+        font-size: 13px; align-items: center;
+    }
+    .info-label { color: var(--text-muted); text-transform: uppercase; font-size: 11px; font-weight: 700; }
+    .info-val { font-weight: 700; color: #fff; font-family: 'JetBrains Mono', monospace; }
+    
+    .eval-bar-mini {
+        height: 4px; width: 100%; background: #333; border-radius: 2px; overflow: hidden; margin-top: 8px;
+    }
+    .eval-fill {
+        height: 100%; background: #fff; width: 50%; transition: width 0.5s;
+    }
+
+    /* Controls */
+    .controls { padding: 24px; border-top: 1px solid rgba(255,255,255,0.05); display: flex; flex-direction: column; gap: 12px; }
+    
+    .fen-box {
+        width: 100%; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1);
+        border-radius: 8px; padding: 8px; color: var(--text-muted); font-family: monospace; font-size: 11px;
+        resize: none; height: 60px;
+    }
+    .fen-box:focus { border-color: var(--primary-accent); color: #fff; outline: none; }
+
+    /* Overlay Arrow Layer */
+    #arrow-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 20; }
+  </style>
+</head>
+<body>
+
+  <div class="main-layout">
+    <div class="board-panel">
+       <div class="arena-glow"></div>
+       <div id="board-container">
+          <div id="board"></div>
+          <svg id="arrow-layer"></svg>
+       </div>
+    </div>
+
+    <div class="sidebar">
+       <div class="sidebar-header">
+          <h2>Visual Scanner</h2>
+          <div id="scanStatus">Ready for Image</div>
+       </div>
+
+       <div class="scanner-container">
+           <div class="drop-zone" id="dropZone">
+               <div class="scan-beam" id="scanBeam"></div>
+               <img id="previewImg" class="preview-img">
+               <div id="dropText" style="text-align:center;">
+                   <div style="font-size:32px; margin-bottom:10px; opacity:0.7;">📷</div>
+                   <div style="font-size:12px; font-weight:600;">Drop Image / Paste / Click</div>
+               </div>
+               <input type="file" id="fileInput" accept="image/*" hidden>
+           </div>
+           
+           <button class="btn-primary" id="scanBtn" style="width:100%; margin-top:10px;" disabled>ANALYZE IMAGE</button>
+
+           <div class="analysis-info">
+               <div class="info-row">
+                   <span class="info-label">Evaluation</span>
+                   <span class="info-val" id="evalScore">--</span>
+               </div>
+               <div class="eval-bar-mini"><div class="eval-fill" id="evalFill"></div></div>
+               <div class="info-row" style="margin-top:12px;">
+                   <span class="info-label">Best Move</span>
+                   <span class="info-val" id="bestMove" style="color:var(--primary-accent);">...</span>
+               </div>
+           </div>
+       </div>
+
+       <div class="controls">
+           <textarea id="fenInput" class="fen-box" placeholder="Or paste FEN string here..."></textarea>
+           <div style="display:flex; gap:10px;">
+               <button class="btn-secondary" id="loadFenBtn" style="flex:1;">Load FEN</button>
+               <button class="btn-secondary" id="clearBtn" style="width:50px;">✕</button>
+           </div>
+       </div>
+    </div>
+  </div>
+
+  <script>
+      // State
+      let currentFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+      let imageBase64 = null;
+      
+      // DOM
+      const dropZone = document.getElementById('dropZone');
+      const fileInput = document.getElementById('fileInput');
+      const previewImg = document.getElementById('previewImg');
+      const dropText = document.getElementById('dropText');
+      const scanBtn = document.getElementById('scanBtn');
+      const scanStatus = document.getElementById('scanStatus');
+      const scanBeam = document.getElementById('scanBeam');
+      const fenInput = document.getElementById('fenInput');
+      const loadFenBtn = document.getElementById('loadFenBtn');
+      const clearBtn = document.getElementById('clearBtn');
+      const boardEl = document.getElementById('board');
+      const arrowLayer = document.getElementById('arrow-layer');
+      const bestMoveVal = document.getElementById('bestMove');
+      const evalScore = document.getElementById('evalScore');
+      const evalFill = document.getElementById('evalFill');
+      
+      // --- Board Rendering ---
+      function renderBoard(fen) {
+          boardEl.innerHTML = "";
+          arrowLayer.innerHTML = ""; // Clear arrows
+          
+          const parts = fen.split(' ');
+          const rows = parts[0].split('/');
+          
+          for(let r=0; r<8; r++) {
+              let c = 0;
+              const rowStr = rows[r];
+              for(let i=0; i<rowStr.length; i++) {
+                  const char = rowStr[i];
+                  if(!isNaN(char)) {
+                      const empties = parseInt(char);
+                      for(let k=0; k<empties; k++) { createSquare(r, c, null); c++; }
+                  } else {
+                      const color = char === char.toUpperCase() ? 'w' : 'b';
+                      const type = char.toUpperCase();
+                      createSquare(r, c, color+type);
+                      c++;
+                  }
+              }
+          }
+      }
+      
+      function createSquare(r, c, piece) {
+          const sq = document.createElement('div');
+          sq.className = `square ${(r+c)%2===0 ? 'light' : 'dark'}`;
+          if(piece) {
+              const p = document.createElement('div');
+              p.className = 'piece';
+              p.style.backgroundImage = `url('../assets/pieces/${piece}.png')`;
+              sq.appendChild(p);
+          }
+          boardEl.appendChild(sq);
+      }
+      
+      function drawArrow(uciMove) {
+          if(!uciMove) return;
+          const from = uciMove.substring(0,2);
+          const to = uciMove.substring(2,4);
+          
+          const c1 = from.charCodeAt(0)-97; const r1 = 8-parseInt(from[1]);
+          const c2 = to.charCodeAt(0)-97; const r2 = 8-parseInt(to[1]);
+          
+          const x1 = (c1 * 12.5) + 6.25; const y1 = (r1 * 12.5) + 6.25;
+          const x2 = (c2 * 12.5) + 6.25; const y2 = (r2 * 12.5) + 6.25;
+          
+          arrowLayer.innerHTML = `
+            <defs>
+                <marker id="head" orient="auto" markerWidth="4" markerHeight="4" refX="2" refY="2">
+                    <path d="M0,0 V4 L4,2 Z" fill="#6366f1" />
+                </marker>
+            </defs>
+            <line x1="${x1}%" y1="${y1}%" x2="${x2}%" y2="${y2}%" stroke="#6366f1" stroke-width="1.5%" marker-end="url(#head)" opacity="0.8" />
+          `;
+      }
+
+      // --- Drag & Drop ---
+      dropZone.onclick = () => fileInput.click();
+      
+      fileInput.onchange = (e) => {
+          if(e.target.files[0]) processFile(e.target.files[0]);
+      };
+      
+      dropZone.ondragover = (e) => { e.preventDefault(); dropZone.classList.add('dragover'); };
+      dropZone.ondragleave = () => dropZone.classList.remove('dragover');
+      
+      dropZone.ondrop = (e) => {
+          e.preventDefault();
+          dropZone.classList.remove('dragover');
+          if(e.dataTransfer.files[0]) processFile(e.dataTransfer.files[0]);
+      };
+      
+      // Paste Support
+      document.onpaste = (e) => {
+          const items = e.clipboardData.items;
+          for(let i=0; i<items.length; i++) {
+              if(items[i].type.indexOf("image") !== -1) {
+                  processFile(items[i].getAsFile());
+                  break;
+              }
+          }
+      };
+      
+      function processFile(file) {
+          const reader = new FileReader();
+          reader.onload = (e) => {
+              imageBase64 = e.target.result;
+              previewImg.src = imageBase64;
+              previewImg.style.display = 'block';
+              dropText.style.display = 'none';
+              scanBtn.disabled = false;
+              scanStatus.textContent = "Image Ready";
+          };
+          reader.readAsDataURL(file);
+      }
+      
+      // --- Handlers ---
+      
+      scanBtn.onclick = async () => {
+          if(!imageBase64) return;
+          
+          scanStatus.textContent = "AI Scanning...";
+          scanBtn.disabled = true;
+          scanBtn.textContent = "SCANNING...";
+          scanBeam.style.display = 'block';
+          
+          const result = await window.electronAPI.analyzeImageFen({ imageBase64 });
+          
+          scanBeam.style.display = 'none';
+          scanBtn.disabled = false;
+          scanBtn.textContent = "ANALYZE IMAGE";
+          
+          if(result.success) {
+              currentFen = result.fen;
+              fenInput.value = currentFen;
+              scanStatus.textContent = "Scan Complete";
+              updatePosition();
+          } else {
+              scanStatus.textContent = "Scan Failed";
+              console.error(result.error);
+              if(result.error.includes("No Vision")) {
+                  alert("Requires a Vision Model (e.g. Gemini 1.5 Flash) in Settings > Engines.");
+              }
+          }
+      };
+      
+      loadFenBtn.onclick = () => {
+          const val = fenInput.value.trim();
+          if(val) {
+              currentFen = val;
+              updatePosition();
+          }
+      };
+      
+      clearBtn.onclick = () => {
+          fenInput.value = "";
+          previewImg.style.display = 'none';
+          previewImg.src = "";
+          dropText.style.display = 'block';
+          imageBase64 = null;
+          scanBtn.disabled = true;
+          scanStatus.textContent = "Ready";
+          arrowLayer.innerHTML = "";
+      };
+      
+      function updatePosition() {
+          renderBoard(currentFen);
+          
+          // Trigger Engine
+          scanStatus.textContent = "Calculating...";
+          bestMoveVal.textContent = "...";
+          
+          window.electronAPI.requestAnalysis(currentFen);
+      }
+      
+      window.electronAPI.onAnalysisResult((results) => {
+          const best = results[1]; // PV 1
+          if(best) {
+              bestMoveVal.textContent = best;
+              drawArrow(best.split(' ')[0]); // Draw first move of PV
+              scanStatus.textContent = "Analysis Ready";
+          }
+      });
+      
+      // Evaluation Score Listener
+      window.electronAPI.onEvalScore((score) => {
+          const val = typeof score === 'number' ? score.toFixed(2) : score;
+          evalScore.textContent = (val > 0 ? "+" : "") + val;
+          
+          // Update mini bar
+          const clamped = Math.max(-5, Math.min(5, score || 0));
+          const pct = 50 + (clamped * 10);
+          evalFill.style.width = pct + "%";
+      });
+      
+      // Initial Render
+      renderBoard(currentFen);
+      
+      // Apply Theme
+      (async () => {
+          const prefs = await window.electronAPI.getPreferences();
+          if(prefs?.boardTheme) document.documentElement.setAttribute('data-theme', prefs.boardTheme);
+      })();
+      
+      window.electronAPI.onThemeChanged((theme) => document.documentElement.setAttribute('data-theme', theme));
+  </script>
+</body>
+</html>

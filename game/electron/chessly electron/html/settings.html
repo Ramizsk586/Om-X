@@ -1,0 +1,368 @@
+
+
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Settings</title>
+  <link rel="stylesheet" href="css/styles.css" />
+  <style>
+      body { background: transparent; padding: 40px; overflow-y: auto; font-family: 'Inter', sans-serif; }
+      
+      h1 { 
+          font-size: 28px; margin-bottom: 40px; font-weight: 800;
+          background: linear-gradient(to right, var(--primary-accent), #fff); 
+          -webkit-background-clip: text; -webkit-text-fill-color: transparent; 
+          text-transform: uppercase; letter-spacing: 2px;
+      }
+      
+      .section-title { font-size: 14px; font-weight: 700; color: var(--primary-accent); margin-bottom: 16px; text-transform: uppercase; letter-spacing: 1px; opacity: 0.8; }
+
+      /* Theme Grid */
+      .theme-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+          gap: 16px;
+          margin-bottom: 32px;
+      }
+      
+      .theme-card {
+          background: rgba(255,255,255,0.03);
+          border: 1px solid rgba(255,255,255,0.08);
+          border-radius: 16px;
+          cursor: pointer;
+          overflow: hidden;
+          transition: all 0.2s ease;
+          position: relative;
+          display: flex; flex-direction: column;
+      }
+      
+      .theme-card:hover { transform: translateY(-4px); border-color: var(--primary-accent); box-shadow: 0 10px 20px rgba(0,0,0,0.3); }
+      .theme-card.active { border-color: var(--primary-accent); box-shadow: 0 0 20px var(--primary-glow); background: rgba(255,255,255,0.06); }
+      
+      .theme-preview {
+          height: 80px;
+          width: 100%;
+          position: relative;
+          background: var(--preview-bg);
+          display: flex; align-items: center; justify-content: center;
+      }
+      
+      .theme-dot-primary { width: 30px; height: 30px; border-radius: 50%; background: var(--preview-accent); box-shadow: 0 4px 10px rgba(0,0,0,0.3); z-index: 2; }
+      .theme-dot-secondary { width: 30px; height: 30px; border-radius: 50%; background: var(--preview-sec); margin-left: -10px; z-index: 1; opacity: 0.8; }
+      
+      .theme-name {
+          padding: 12px;
+          text-align: center;
+          font-size: 12px;
+          font-weight: 700;
+          text-transform: uppercase;
+          color: var(--text-main);
+          border-top: 1px solid rgba(255,255,255,0.05);
+      }
+
+      /* Custom Theme Colors for Preview */
+      .t-chessly { --preview-bg: #050507; --preview-accent: #6366f1; --preview-sec: #a855f7; }
+      .t-crimson { --preview-bg: #0f0505; --preview-accent: #ef4444; --preview-sec: #991b1b; }
+      .t-forest { --preview-bg: #020617; --preview-accent: #10b981; --preview-sec: #047857; }
+      .t-ocean { --preview-bg: #082f49; --preview-accent: #06b6d4; --preview-sec: #155e75; }
+      .t-midnight { --preview-bg: #0b0a12; --preview-accent: #d8b4fe; --preview-sec: #581c87; }
+      .t-gold { --preview-bg: #1a1a1a; --preview-accent: #f59e0b; --preview-sec: #78350f; }
+      .t-wood { --preview-bg: #27272a; --preview-accent: #d4d4d8; --preview-sec: #b88b4a; }
+      .t-cyber { --preview-bg: #000000; --preview-accent: #d946ef; --preview-sec: #22d3ee; }
+      .t-sunset { --preview-bg: #2a0a0a; --preview-accent: #f97316; --preview-sec: #e11d48; }
+      .t-coffee { --preview-bg: #1c1917; --preview-accent: #d6d3d1; --preview-sec: #8d6e53; }
+
+      /* Path Input Style */
+      .path-input {
+          background: rgba(0,0,0,0.3);
+          border: 1px solid rgba(255,255,255,0.1);
+          color: var(--text-muted);
+          padding: 8px 12px;
+          border-radius: 8px;
+          font-size: 11px;
+          font-family: monospace;
+          width: 250px;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          overflow: hidden;
+          pointer-events: none; /* Read only via browse */
+      }
+      
+      /* Log Viewer */
+      .log-viewer {
+          background: #000;
+          border: 1px solid rgba(255,255,255,0.1);
+          border-radius: 8px;
+          height: 200px;
+          overflow-y: auto;
+          padding: 10px;
+          font-family: 'JetBrains Mono', monospace;
+          font-size: 11px;
+          color: #ccc;
+          margin-bottom: 12px;
+          white-space: pre-wrap;
+      }
+      
+      .log-entry {
+          padding: 4px 0;
+          border-bottom: 1px solid rgba(255,255,255,0.05);
+      }
+      .log-time { color: #64748b; margin-right: 8px; }
+      .log-ctx { color: var(--primary-accent); font-weight: 700; margin-right: 8px; }
+      .log-err { color: #f87171; }
+
+  </style>
+</head>
+<body>
+
+  <h1>Configuration</h1>
+
+  <!-- VISUAL IDENTITY -->
+  <div class="section" style="animation-delay: 0.1s;">
+      <div class="section-title">Visual Identity</div>
+      
+      <div class="theme-grid">
+          <div class="theme-card t-chessly" onclick="setTheme('chessly')" id="th-chessly">
+              <div class="theme-preview"><div class="theme-dot-primary"></div><div class="theme-dot-secondary"></div></div>
+              <div class="theme-name">Default</div>
+          </div>
+          <div class="theme-card t-cyber" onclick="setTheme('cyber')" id="th-cyber">
+              <div class="theme-preview"><div class="theme-dot-primary"></div><div class="theme-dot-secondary"></div></div>
+              <div class="theme-name">Cyber</div>
+          </div>
+          <div class="theme-card t-midnight" onclick="setTheme('midnight')" id="th-midnight">
+              <div class="theme-preview"><div class="theme-dot-primary"></div><div class="theme-dot-secondary"></div></div>
+              <div class="theme-name">Midnight</div>
+          </div>
+          <div class="theme-card t-ocean" onclick="setTheme('ocean')" id="th-ocean">
+              <div class="theme-preview"><div class="theme-dot-primary"></div><div class="theme-dot-secondary"></div></div>
+              <div class="theme-name">Ocean</div>
+          </div>
+          <div class="theme-card t-sunset" onclick="setTheme('sunset')" id="th-sunset">
+              <div class="theme-preview"><div class="theme-dot-primary"></div><div class="theme-dot-secondary"></div></div>
+              <div class="theme-name">Sunset</div>
+          </div>
+          <div class="theme-card t-crimson" onclick="setTheme('crimson')" id="th-crimson">
+              <div class="theme-preview"><div class="theme-dot-primary"></div><div class="theme-dot-secondary"></div></div>
+              <div class="theme-name">Crimson</div>
+          </div>
+          <div class="theme-card t-forest" onclick="setTheme('forest')" id="th-forest">
+              <div class="theme-preview"><div class="theme-dot-primary"></div><div class="theme-dot-secondary"></div></div>
+              <div class="theme-name">Forest</div>
+          </div>
+          <div class="theme-card t-gold" onclick="setTheme('gold')" id="th-gold">
+              <div class="theme-preview"><div class="theme-dot-primary"></div><div class="theme-dot-secondary"></div></div>
+              <div class="theme-name">Gold</div>
+          </div>
+          <div class="theme-card t-coffee" onclick="setTheme('coffee')" id="th-coffee">
+              <div class="theme-preview"><div class="theme-dot-primary"></div><div class="theme-dot-secondary"></div></div>
+              <div class="theme-name">Coffee</div>
+          </div>
+          <div class="theme-card t-wood" onclick="setTheme('wood')" id="th-wood">
+              <div class="theme-preview"><div class="theme-dot-primary"></div><div class="theme-dot-secondary"></div></div>
+              <div class="theme-name">Wood</div>
+          </div>
+      </div>
+  </div>
+
+  <!-- STORAGE & PATHS -->
+  <div class="section" style="animation-delay: 0.15s;">
+      <div class="section-title">Storage & Paths</div>
+      <div class="settings-group">
+          <div class="s-row">
+              <div>
+                  <div class="row-label">Saved Games Directory</div>
+                  <div class="row-desc">Location for match history and JSON saves.</div>
+              </div>
+              <div style="display:flex; gap:8px; align-items:center;">
+                  <div id="pathSave" class="path-input">Default</div>
+                  <button class="btn-secondary" id="btnBrowseSave" style="padding:8px 12px;">Browse</button>
+              </div>
+          </div>
+          <div class="s-row">
+              <div>
+                  <div class="row-label">Export Directory</div>
+                  <div class="row-desc">Location for PGN exports and screenshots.</div>
+              </div>
+              <div style="display:flex; gap:8px; align-items:center;">
+                  <div id="pathExport" class="path-input">Default</div>
+                  <button class="btn-secondary" id="btnBrowseExport" style="padding:8px 12px;">Browse</button>
+              </div>
+          </div>
+      </div>
+  </div>
+
+  <!-- PERFORMANCE -->
+  <div class="section" style="animation-delay: 0.2s;">
+      <div class="section-title">System Performance</div>
+      <div class="settings-group">
+          <div class="s-row">
+              <div>
+                  <div class="row-label">Reduced Motion</div>
+                  <div class="row-desc">Disable animations and transitions for better performance.</div>
+              </div>
+              <label class="switch"><input type="checkbox" id="animToggle"><span class="slider"></span></label>
+          </div>
+          <div class="s-row">
+              <div>
+                  <div class="row-label">Evaluation Bar</div>
+                  <div class="row-desc">Show integrated engine advantage meter next to the board.</div>
+              </div>
+              <label class="switch"><input type="checkbox" id="evalToggle"><span class="slider"></span></label>
+          </div>
+      </div>
+  </div>
+
+  <!-- CORE SETTINGS -->
+  <div class="section" style="animation-delay: 0.3s;">
+      <div class="section-title">Core Configuration</div>
+      <div class="settings-group">
+          <div class="s-row">
+              <div>
+                  <div class="row-label">Engine Manager</div>
+                  <div class="row-desc">Configure Stockfish, LCZero, and AI Personas.</div>
+              </div>
+              <button class="btn-secondary" id="manageEnginesBtn">Manage Engines</button>
+          </div>
+          <div class="s-row">
+              <div>
+                  <div class="row-label">Opening Database</div>
+                  <div class="row-desc">Load .pgn file for book statistics and opening names.</div>
+              </div>
+              <div style="display:flex; gap:8px; align-items:center;">
+                  <div id="pathDb" class="path-input" style="width:200px;">Default (Internal)</div>
+                  <button class="btn-secondary" id="browseDbBtn" style="padding:8px 12px;">Browse</button>
+              </div>
+          </div>
+      </div>
+  </div>
+  
+  <!-- DEBUG & DIAGNOSTICS -->
+  <div class="section" style="animation-delay: 0.35s;">
+      <div class="section-title">Debug & Diagnostics</div>
+      <div class="settings-group" style="padding:16px;">
+          <div class="log-viewer" id="logViewer">Loading logs...</div>
+          <div style="display:flex; gap:10px;">
+              <button class="btn-primary" id="btnOpenConsole" style="flex:1;">Open Developer Console</button>
+              <button class="btn-secondary" id="btnRefreshLogs" style="flex:1;">Refresh</button>
+              <button class="btn-danger" id="btnClearLogs" style="flex:0 0 100px;">Clear Logs</button>
+          </div>
+      </div>
+  </div>
+
+  <script>
+    const evalToggle = document.getElementById("evalToggle");
+    const animToggle = document.getElementById("animToggle");
+    const pathSave = document.getElementById("pathSave");
+    const pathExport = document.getElementById("pathExport");
+    const pathDb = document.getElementById("pathDb");
+    const logViewer = document.getElementById("logViewer");
+
+    document.getElementById("manageEnginesBtn").onclick = () => window.electronAPI.openEnginesManager();
+    
+    document.getElementById("browseDbBtn").onclick = async () => {
+        const path = await window.electronAPI.databaseBrowse();
+        if(path) {
+            const success = await window.electronAPI.databaseSave({ path });
+            if(success) pathDb.textContent = path;
+        }
+    };
+
+    evalToggle.onchange = () => window.electronAPI.setEvaluationWindowEnabled(evalToggle.checked);
+    
+    animToggle.onchange = () => {
+        const animationsEnabled = !animToggle.checked; 
+        window.electronAPI.savePreferences({ enableAnimations: animationsEnabled });
+    };
+    
+    // Path Browsers
+    document.getElementById('btnBrowseSave').onclick = async () => {
+        const path = await window.electronAPI.browseDirectory();
+        if(path) {
+            pathSave.textContent = path;
+            window.electronAPI.savePreferences({ savePath: path });
+        }
+    };
+
+    document.getElementById('btnBrowseExport').onclick = async () => {
+        const path = await window.electronAPI.browseDirectory();
+        if(path) {
+            pathExport.textContent = path;
+            window.electronAPI.savePreferences({ exportPath: path });
+        }
+    };
+    
+    // Debug Actions
+    document.getElementById('btnOpenConsole').onclick = () => window.electronAPI.openDevTools();
+    document.getElementById('btnClearLogs').onclick = () => {
+        window.electronAPI.clearSystemLogs();
+        loadLogs();
+    };
+    document.getElementById('btnRefreshLogs').onclick = loadLogs;
+    
+    async function loadLogs() {
+        logViewer.innerHTML = "Loading...";
+        try {
+            const logs = await window.electronAPI.getSystemLogs();
+            if (!logs || logs.length === 0) {
+                logViewer.innerHTML = "<span style='opacity:0.5'>System healthy. No errors logged.</span>";
+                return;
+            }
+            
+            let html = "";
+            logs.forEach(l => {
+                const date = new Date(l.timestamp).toLocaleTimeString();
+                html += `<div class="log-entry">
+                    <span class="log-time">[${date}]</span>
+                    <span class="log-ctx">${l.context || 'APP'}</span>
+                    <span class="log-err">${l.message}</span>
+                    ${l.stack ? `<div style="opacity:0.5; font-size:10px; margin-left:20px;">${l.stack.split('\n')[0]}</div>` : ''}
+                </div>`;
+            });
+            logViewer.innerHTML = html;
+        } catch(e) {
+            logViewer.innerHTML = "Failed to load logs.";
+        }
+    }
+    
+    function setTheme(themeName) {
+        window.electronAPI.savePreferences({ boardTheme: themeName });
+        updateActiveTheme(themeName);
+    }
+    
+    function updateActiveTheme(theme) {
+        document.querySelectorAll('.theme-card').forEach(el => el.classList.remove('active'));
+        const active = document.getElementById(`th-${theme}`);
+        if(active) active.classList.add('active');
+        document.documentElement.setAttribute('data-theme', theme);
+    }
+
+    (async () => {
+        const prefs = await window.electronAPI.getPreferences();
+        if(prefs) {
+            updateActiveTheme(prefs.boardTheme || "chessly");
+            evalToggle.checked = prefs.showEvalBar;
+            
+            const animsOn = prefs.enableAnimations !== false; 
+            animToggle.checked = !animsOn;
+            if(!animsOn) document.documentElement.setAttribute('data-animations', 'off');
+            
+            pathSave.textContent = prefs.savePath || "Default (AppData)";
+            pathExport.textContent = prefs.exportPath || "Default (Documents)";
+        }
+        
+        const db = await window.electronAPI.databaseGet();
+        if(db && db.path) pathDb.textContent = db.path;
+        
+        loadLogs();
+    })();
+    
+    window.electronAPI.onThemeChanged((theme) => updateActiveTheme(theme));
+    window.electronAPI.onAnimationToggled((enabled) => {
+        animToggle.checked = !enabled;
+        document.documentElement.setAttribute('data-animations', enabled ? 'on' : 'off');
+    });
+  </script>
+</body>
+</html>

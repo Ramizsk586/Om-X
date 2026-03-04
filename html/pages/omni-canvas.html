@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Omni Canvas</title>
+  <link rel="stylesheet" href="../../css/base/reset.css">
+  <link rel="stylesheet" href="../../css/base/variables.css">
+  <link rel="stylesheet" href="../../css/base/base.css">
+  <link rel="stylesheet" href="../../css/themes/all-themes.css">
+  <link rel="stylesheet" href="../../css/pages/omni-canvas.css">
+</head>
+<body>
+  <div class="canvas-app">
+    <header class="window-titlebar">
+      <div class="titlebar-left drag-region">
+        <img class="titlebar-icon" src="../../assets/icons/canvas.ico" alt="Canvas">
+        <span class="titlebar-name">Canvas</span>
+      </div>
+      <div class="titlebar-controls no-drag">
+        <button id="btn-minimize-window" class="titlebar-btn" type="button" aria-label="Minimize">
+          <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M1 6h10" stroke="currentColor" stroke-width="1.4"/></svg>
+        </button>
+        <button id="btn-maximize-window" class="titlebar-btn" type="button" aria-label="Maximize">
+          <svg viewBox="0 0 12 12" aria-hidden="true">
+            <path d="M2.5 3h5.8v5.8H2.5z" fill="none" stroke="currentColor" stroke-width="1.1"/>
+            <path d="M3.7 2h5.8v5.8" fill="none" stroke="currentColor" stroke-width="1.1"/>
+          </svg>
+        </button>
+        <button id="btn-close-window" class="titlebar-btn danger" type="button" aria-label="Close">
+          <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M1.3 1.3l9.4 9.4M1.3 10.7L10.7 1.3" stroke="currentColor" stroke-width="1.4"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <main id="workspace" class="workspace">
+      <aside class="ai-pane">
+        <div class="pane-head ai-head">
+          <span>AI Assistant</span>
+          <button id="btn-ai-config-toggle" class="ai-config-btn" type="button" aria-label="AI Settings">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M19.14 12.94a7.97 7.97 0 0 0 .06-.94c0-.32-.02-.63-.07-.94l2.03-1.58a.5.5 0 0 0 .12-.63l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.94 7.94 0 0 0-1.62-.94l-.36-2.54a.5.5 0 0 0-.5-.42h-3.84a.5.5 0 0 0-.5.42l-.36 2.54c-.57.23-1.11.55-1.61.94l-2.4-.96a.5.5 0 0 0-.6.22L2.74 8.86a.5.5 0 0 0 .12.63l2.03 1.58c-.05.31-.08.63-.08.95 0 .31.03.63.08.94l-2.03 1.58a.5.5 0 0 0-.12.63l1.92 3.32a.5.5 0 0 0 .6.22l2.39-.96c.5.39 1.04.71 1.62.94l.36 2.54a.5.5 0 0 0 .5.42h3.84a.5.5 0 0 0 .5-.42l.36-2.54c.58-.23 1.12-.55 1.62-.94l2.39.96a.5.5 0 0 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.63l-2.02-1.58zM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2z" fill="currentColor"/>
+            </svg>
+          </button>
+        </div>
+        <div id="ai-config-panel" class="ai-config-panel hidden">
+          <label for="ai-provider-select" class="ai-config-label">Provider</label>
+          <select id="ai-provider-select" class="ai-config-select"></select>
+          <label for="ai-model-select" class="ai-config-label">Model</label>
+          <select id="ai-model-select" class="ai-config-select"></select>
+          <div class="ai-config-actions">
+            <button id="btn-ai-refresh-models" class="ai-config-action" type="button">Refresh</button>
+            <button id="btn-ai-apply-config" class="ai-config-action primary" type="button">Apply</button>
+          </div>
+        </div>
+        <div id="chat-messages" class="chat-messages"></div>
+        <div class="compose">
+          <div class="compose-bar">
+            <input id="chat-input" type="text" placeholder="Tell AI what to do with the canvas text...">
+            <button id="btn-send" class="btn-send" type="button">Send</button>
+          </div>
+        </div>
+      </aside>
+
+      <div id="pane-divider" class="pane-divider" role="separator" aria-orientation="vertical" aria-label="Resize panes"></div>
+
+      <section class="canvas-pane">
+        <div class="pane-head canvas-head">
+          <span>Canvas</span>
+          <div class="canvas-toolbar" aria-label="Text formatting">
+            <button id="canvas-bold" class="canvas-tool-btn" type="button" title="Bold">B</button>
+            <button id="canvas-italic" class="canvas-tool-btn" type="button" title="Italic">I</button>
+            <button id="canvas-underline" class="canvas-tool-btn" type="button" title="Underline">U</button>
+          </div>
+        </div>
+        <div
+          id="canvas-editor"
+          class="canvas-editor"
+          contenteditable="true"
+          spellcheck="false"
+          data-placeholder="Start writing..."
+        ></div>
+      </section>
+    </main>
+
+    <div id="loading-indicator" class="loading hidden">Thinking...</div>
+  </div>
+
+  <script src="../../java/renderer/omniCanvasRenderer.js"></script>
+</body>
+</html>

@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>About Om-X</title>
+  <link rel="stylesheet" href="../../css/base/reset.css">
+  <link rel="stylesheet" href="../../css/base/variables.css">
+  <link rel="stylesheet" href="../../css/base/base.css">
+  <style>
+    body {
+        margin: 0;
+        background: #09090b;
+        color: #f4f4f5;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        -webkit-app-region: drag;
+    }
+    body.embedded {
+        -webkit-app-region: no-drag;
+    }
+    .about-layout {
+        max-width: 920px;
+        margin: 0 auto;
+        padding: 28px 24px 24px;
+        -webkit-app-region: no-drag;
+    }
+    .about-hero {
+        margin-bottom: 18px;
+        border: 1px solid #20202a;
+        border-radius: 14px;
+        background:
+          radial-gradient(1200px 320px at 0% -100%, rgba(88, 117, 255, 0.16), transparent 58%),
+          linear-gradient(180deg, #11131a 0%, #0f1015 100%);
+        padding: 18px;
+    }
+    .about-header {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+    }
+    .about-icon-wrap {
+        width: 54px;
+        height: 54px;
+        border-radius: 14px;
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.02));
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
+    }
+    .about-header img {
+        width: 34px;
+        height: 34px;
+        border-radius: 8px;
+        object-fit: cover;
+    }
+    .about-title {
+        font-size: 30px;
+        font-weight: 750;
+        letter-spacing: -0.025em;
+        margin: 0 0 4px;
+        line-height: 1;
+        color: #fff;
+    }
+    .about-subtitle {
+        margin: 0;
+        font-size: 14px;
+        color: #b0b3be;
+    }
+    .about-meta {
+        margin-top: 12px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+    .meta-pill {
+        display: inline-flex;
+        align-items: center;
+        padding: 5px 10px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.045);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        color: #d7d9e0;
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.01em;
+    }
+    .versions {
+        background: #101014;
+        border: 1px solid #1f1f27;
+        border-radius: 12px;
+        overflow: hidden;
+    }
+    .v-row {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 12px;
+        padding: 12px 14px;
+        font-size: 13px;
+        line-height: 1.4;
+    }
+    .v-row:nth-child(odd) { background: rgba(255, 255, 255, 0.015); }
+    .v-row span:first-child { color: #a1a1aa; }
+    .v-row span:last-child {
+        color: #fafafa;
+        font-weight: 600;
+        font-family: 'JetBrains Mono', Consolas, monospace;
+    }
+    .btn-close {
+        margin-top: 16px;
+        background: #111114;
+        border: 1px solid #2a2a34;
+        padding: 8px 16px;
+        border-radius: 8px;
+        color: #e4e4e7;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        -webkit-app-region: no-drag;
+        transition: border-color 0.2s ease, background-color 0.2s ease;
+    }
+    .btn-close:hover {
+        border-color: #3a3a47;
+        background: #17171d;
+    }
+    body.embedded .btn-close { display: none; }
+  </style>
+</head>
+<body>
+  <div class="about-layout">
+    <div class="about-hero">
+      <div class="about-header">
+        <div class="about-icon-wrap">
+          <img src="../../assets/icons/app.png" alt="Om-X Browser icon">
+        </div>
+        <div>
+          <h1 class="about-title">Om-X Browser</h1>
+          <p class="about-subtitle">AI-first browsing with integrated tools and security modules.</p>
+        </div>
+      </div>
+      <div class="about-meta">
+        <span class="meta-pill">Neural Browser</span>
+        <span class="meta-pill">Security Modules</span>
+        <span class="meta-pill">Integrated Workspace</span>
+      </div>
+    </div>
+
+    <div class="versions">
+      <div class="v-row"><span>App Version</span> <span id="app-ver">-</span></div>
+      <div class="v-row"><span>Electron</span> <span id="electron-ver">-</span></div>
+      <div class="v-row"><span>Node.js</span> <span id="node-ver">-</span></div>
+      <div class="v-row"><span>Chrome</span> <span id="chrome-ver">-</span></div>
+      <div class="v-row"><span>Mineflayer</span> <span>4.20.0</span></div>
+      <div class="v-row"><span>Socket.IO</span> <span>4.7.0</span></div>
+      <div class="v-row"><span>Axios</span> <span>1.6.0</span></div>
+      <div class="v-row"><span>UUID</span> <span>9.0.0</span></div>
+      <div class="v-row"><span>jsPDF</span> <span>2.5.1</span></div>
+      <div class="v-row"><span>electron-builder</span> <span id="electron-builder-ver">-</span></div>
+      <div class="v-row"><span>electron-updater</span> <span id="electron-updater-ver">-</span></div>
+    </div>
+
+    <button class="btn-close" onclick="window.close()">Close</button>
+  </div>
+
+  <script>
+    (async () => {
+      const FALLBACK_DEP_VERSIONS = {
+        electronBuilder: '25.1.8',
+        electronUpdater: '6.8.3'
+      };
+
+      const normalizeVersion = (value) => {
+        const text = String(value || '').trim();
+        if (!text) return '';
+        return text.replace(/^[~^]/, '');
+      };
+
+      const set = (id, value) => {
+        const node = document.getElementById(id);
+        if (node) node.textContent = value || '-';
+      };
+
+      if (window.self !== window.top) {
+        document.body.classList.add('embedded');
+      }
+
+      let info = null;
+      const systemApi =
+        window.browserAPI?.system
+        || (window.parent && window.parent !== window ? window.parent.browserAPI?.system : null);
+
+      try {
+        if (systemApi?.getInfo) {
+          info = await systemApi.getInfo();
+          set('app-ver', info?.version || '-');
+          set('electron-ver', info?.versions?.electron || '-');
+          set('chrome-ver', info?.versions?.chrome || '-');
+          set('node-ver', info?.versions?.node || '-');
+          set('electron-builder-ver', normalizeVersion(info?.dependencies?.electronBuilder) || '-');
+          set('electron-updater-ver', normalizeVersion(info?.dependencies?.electronUpdater) || '-');
+        }
+      } catch (_) {}
+
+      const versions = (typeof process !== 'undefined' && process.versions) ? process.versions : null;
+      if (!document.getElementById('electron-ver')?.textContent || document.getElementById('electron-ver')?.textContent === '-') {
+        set('electron-ver', versions?.electron || 'Unavailable');
+      }
+      if (!document.getElementById('chrome-ver')?.textContent || document.getElementById('chrome-ver')?.textContent === '-') {
+        set('chrome-ver', versions?.chrome || 'Unavailable');
+      }
+      if (!document.getElementById('node-ver')?.textContent || document.getElementById('node-ver')?.textContent === '-') {
+        set('node-ver', versions?.node || 'Unavailable');
+      }
+      if (!document.getElementById('electron-builder-ver')?.textContent || document.getElementById('electron-builder-ver')?.textContent === '-') {
+        set(
+          'electron-builder-ver',
+          normalizeVersion(info?.dependencies?.electronBuilder) || FALLBACK_DEP_VERSIONS.electronBuilder
+        );
+      }
+      if (!document.getElementById('electron-updater-ver')?.textContent || document.getElementById('electron-updater-ver')?.textContent === '-') {
+        set(
+          'electron-updater-ver',
+          normalizeVersion(info?.dependencies?.electronUpdater) || FALLBACK_DEP_VERSIONS.electronUpdater
+        );
+      }
+    })();
+  </script>
+</body>
+</html>

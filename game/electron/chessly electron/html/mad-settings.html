@@ -1,0 +1,288 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Mad Settings</title>
+  <style>
+    :root {
+        --mad-primary: #ff3333;
+        --mad-secondary: #800000;
+        --mad-bg: #050000;
+        --mad-text: #ffcccc;
+        --glass-border: 1px solid rgba(255, 51, 51, 0.3);
+        --glass-bg: rgba(20, 0, 0, 0.8);
+    }
+    body {
+        margin: 0;
+        background: radial-gradient(circle at top, #1a0000, #000000);
+        color: var(--mad-text);
+        padding: 20px;
+        font-family: "Courier New", monospace;
+        overflow: hidden;
+        user-select: none;
+        height: 100vh;
+        box-sizing: border-box;
+        display: flex;
+        flex-direction: column;
+    }
+    
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-thumb { background: var(--mad-primary); }
+    ::-webkit-scrollbar-track { background: #000; }
+
+    h1 {
+        margin: 0;
+        color: var(--mad-primary);
+        text-transform: uppercase;
+        letter-spacing: 4px;
+        font-size: 24px;
+        text-align: center;
+        text-shadow: 0 0 10px var(--mad-primary), 2px 2px 0px #000;
+        border-bottom: 2px solid var(--mad-primary);
+        padding-bottom: 10px;
+        margin-bottom: 20px;
+    }
+
+    .container {
+        flex: 1;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+        padding-right: 5px;
+    }
+
+    .panel {
+        background: var(--glass-bg);
+        border: var(--glass-border);
+        border-radius: 4px;
+        padding: 15px;
+        position: relative;
+        box-shadow: 0 0 15px rgba(255, 0, 0, 0.1);
+    }
+    .panel::before {
+        content: ''; position: absolute; top: 0; left: 0; width: 100%; height: 2px;
+        background: linear-gradient(90deg, transparent, var(--mad-primary), transparent);
+        opacity: 0.5;
+    }
+
+    .control-row {
+        display: flex; align-items: center; justify-content: space-between;
+        margin-bottom: 15px;
+    }
+    .control-row:last-child { margin-bottom: 0; }
+    
+    label { 
+        font-weight: 900; font-size: 14px; color: #fff; 
+        text-transform: uppercase; letter-spacing: 1px;
+    }
+    
+    .desc {
+        font-size: 10px; color: var(--mad-primary); opacity: 0.7; margin-top: 4px;
+    }
+
+    /* Range Slider */
+    input[type="range"] {
+        width: 100%;
+        -webkit-appearance: none;
+        background: transparent;
+        margin-top: 10px;
+    }
+    input[type="range"]::-webkit-slider-runnable-track {
+        width: 100%; height: 4px;
+        background: #300;
+        border: 1px solid var(--mad-primary);
+    }
+    input[type="range"]::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        height: 16px; width: 16px;
+        background: var(--mad-primary);
+        margin-top: -7px;
+        box-shadow: 0 0 10px var(--mad-primary);
+        cursor: pointer;
+        border-radius: 0; /* Square thumb for digital look */
+    }
+
+    .val-display {
+        font-family: monospace; color: #fff; font-weight: 700;
+        background: var(--mad-primary); color: #000;
+        padding: 2px 6px; font-size: 12px;
+    }
+
+    /* Toggle Switch */
+    .switch {
+        position: relative; display: inline-block; width: 40px; height: 20px;
+    }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider {
+        position: absolute; cursor: pointer;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background-color: #300;
+        border: 1px solid #600;
+        transition: .2s;
+    }
+    .slider:before {
+        position: absolute; content: "";
+        height: 14px; width: 14px;
+        left: 2px; bottom: 2px;
+        background-color: #600;
+        transition: .2s;
+    }
+    input:checked + .slider { background-color: #500; border-color: var(--mad-primary); }
+    input:checked + .slider:before { transform: translateX(20px); background-color: var(--mad-primary); box-shadow: 0 0 5px var(--mad-primary); }
+
+    /* Theme Grid */
+    .theme-grid {
+        display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px;
+    }
+    .theme-opt {
+        padding: 15px; 
+        border: 1px solid rgba(255,255,255,0.1);
+        background: rgba(0,0,0,0.5);
+        cursor: pointer;
+        text-align: center; font-size: 12px; font-weight: 700; text-transform: uppercase;
+        transition: all 0.2s;
+        color: #888;
+    }
+    .theme-opt:hover { 
+        border-color: var(--mad-primary); color: #fff;
+        box-shadow: inset 0 0 10px rgba(255,0,0,0.2);
+    }
+    .theme-opt.selected {
+        border: 1px solid var(--mad-primary);
+        background: rgba(255, 0, 0, 0.1);
+        color: var(--mad-primary);
+        box-shadow: 0 0 15px rgba(255, 0, 0, 0.3);
+    }
+
+    .btn-close {
+        width: 100%; padding: 15px;
+        background: #000; color: var(--mad-primary);
+        border: 1px solid var(--mad-primary);
+        font-family: "Courier New", monospace;
+        font-weight: 900; cursor: pointer;
+        margin-top: 20px;
+        text-transform: uppercase;
+        letter-spacing: 2px;
+        transition: all 0.2s;
+    }
+    .btn-close:hover { 
+        background: var(--mad-primary); color: #000;
+        box-shadow: 0 0 20px var(--mad-primary);
+    }
+  </style>
+</head>
+<body>
+
+    <h1>SYSTEM CONFIG</h1>
+
+    <div class="container">
+        <!-- Chaos Level -->
+        <div class="panel">
+            <div class="control-row">
+                <label>Entropy Level</label>
+                <span class="val-display" id="chaosVal">50%</span>
+            </div>
+            <input type="range" id="chaosRange" min="0" max="100" value="50">
+            <div class="desc">Determines visual glitch intensity and flavor text aggression.</div>
+        </div>
+
+        <!-- Rules -->
+        <div class="panel">
+            <div class="control-row">
+                <div>
+                    <label>Quantum Tunneling</label>
+                    <div class="desc">Pieces may randomly teleport (10% decay).</div>
+                </div>
+                <label class="switch"><input type="checkbox" id="teleportCheck"><span class="slider"></span></label>
+            </div>
+            <div style="height:1px; background:rgba(255,0,0,0.2); margin:10px 0;"></div>
+            <div class="control-row">
+                <div>
+                    <label>Friendly Fire</label>
+                    <div class="desc">Capture your own pieces.</div>
+                </div>
+                <label class="switch"><input type="checkbox" id="friendlyCheck"><span class="slider"></span></label>
+            </div>
+            <div style="height:1px; background:rgba(255,0,0,0.2); margin:10px 0;"></div>
+            <div class="control-row">
+                <div>
+                    <label>Psych Report</label>
+                    <div class="desc">Auto-open post-game analysis.</div>
+                </div>
+                <label class="switch"><input type="checkbox" id="reportCheck"><span class="slider"></span></label>
+            </div>
+        </div>
+
+        <!-- Theme -->
+        <div class="panel">
+            <label>Visual Cortex</label>
+            <div class="theme-grid">
+                <div class="theme-opt" data-theme="inferno" onclick="selectTheme('inferno')">Inferno</div>
+                <div class="theme-opt" data-theme="toxic" onclick="selectTheme('toxic')">Toxic</div>
+                <div class="theme-opt" data-theme="void" onclick="selectTheme('void')">Void</div>
+                <div class="theme-opt" data-theme="matrix" onclick="selectTheme('matrix')">Matrix</div>
+            </div>
+        </div>
+    </div>
+
+    <button class="btn-close" onclick="finishSettings()">[ INJECT SETTINGS ]</button>
+
+    <script>
+        const chaosRange = document.getElementById('chaosRange');
+        const chaosVal = document.getElementById('chaosVal');
+        const teleportCheck = document.getElementById('teleportCheck');
+        const friendlyCheck = document.getElementById('friendlyCheck');
+        const reportCheck = document.getElementById('reportCheck');
+        
+        let currentTheme = 'inferno';
+
+        chaosRange.oninput = () => {
+            chaosVal.textContent = chaosRange.value + '%';
+            save();
+        };
+        
+        teleportCheck.onchange = save;
+        friendlyCheck.onchange = save;
+        reportCheck.onchange = save;
+
+        function selectTheme(theme) {
+            currentTheme = theme;
+            document.querySelectorAll('.theme-opt').forEach(el => {
+                el.classList.toggle('selected', el.dataset.theme === theme);
+            });
+            save();
+        }
+
+        async function init() {
+            const config = await window.electronAPI.getMadSettings();
+            chaosRange.value = config.chaos || 50;
+            chaosVal.textContent = chaosRange.value + '%';
+            teleportCheck.checked = config.teleport !== false; 
+            friendlyCheck.checked = config.friendlyFire !== false;
+            reportCheck.checked = config.showReport !== false; 
+            selectTheme(config.theme || 'inferno');
+        }
+
+        function save() {
+            const config = {
+                chaos: parseInt(chaosRange.value),
+                teleport: teleportCheck.checked,
+                friendlyFire: friendlyCheck.checked,
+                showReport: reportCheck.checked,
+                theme: currentTheme
+            };
+            window.electronAPI.saveMadSettings(config);
+        }
+        
+        function finishSettings() {
+            save();
+            window.electronAPI.openMadArena(); // Navigate back
+        }
+
+        init();
+    </script>
+</body>
+</html>

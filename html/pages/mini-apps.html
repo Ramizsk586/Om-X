@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Mini Apps</title>
+  <link rel="stylesheet" href="../../css/base/reset.css">
+  <link rel="stylesheet" href="../../css/base/variables.css">
+  <link rel="stylesheet" href="../../css/base/base.css">
+  <link rel="stylesheet" href="../../css/themes/all-themes.css">
+  <style>
+    :root {
+      --mini-gap: 16px;
+      --mini-card-radius: 18px;
+      --mini-surface: linear-gradient(160deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
+      --mini-border: rgba(255,255,255,0.14);
+      --mini-shadow: 0 18px 40px rgba(0,0,0,0.35);
+      --mini-accent: #56d4ff;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--text-main);
+      font-family: "Space Grotesk", "Manrope", "Segoe UI", sans-serif;
+      background:
+        radial-gradient(1200px 500px at 20% -10%, rgba(86, 212, 255, 0.10), transparent 60%),
+        radial-gradient(1000px 480px at 90% 10%, rgba(255, 140, 92, 0.08), transparent 60%),
+        var(--bg-app);
+    }
+
+    .wrap {
+      max-width: 1240px;
+      margin: 0 auto;
+      padding: 22px 20px 28px;
+    }
+
+    .head {
+      font-size: clamp(24px, 2.2vw, 32px);
+      font-weight: 700;
+      letter-spacing: 0.01em;
+      margin-bottom: 4px;
+    }
+
+    .subhead {
+      color: var(--text-secondary);
+      font-size: 14px;
+      margin-bottom: 18px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+      gap: var(--mini-gap);
+    }
+
+    .app {
+      border: 1px solid var(--mini-border);
+      border-radius: var(--mini-card-radius);
+      background: var(--mini-surface);
+      box-shadow: var(--mini-shadow);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      padding: 14px;
+      min-height: 172px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      transform: translateY(12px);
+      opacity: 0;
+      animation: card-in 260ms ease forwards;
+    }
+
+    .app:hover {
+      transform: translateY(-4px);
+      border-color: rgba(86, 212, 255, 0.36);
+      box-shadow: 0 24px 44px rgba(0,0,0,0.42);
+    }
+
+    .top {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .icon {
+      width: 42px;
+      height: 42px;
+      border-radius: 12px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(140deg, rgba(255,255,255,0.18), rgba(255,255,255,0.06));
+      color: #f6fbff;
+      border: 1px solid rgba(255,255,255,0.16);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.2);
+      flex-shrink: 0;
+    }
+
+    .icon svg {
+      width: 19px;
+      height: 19px;
+    }
+
+    .name {
+      font-size: clamp(20px, 0.95vw, 22px);
+      font-weight: 700;
+      letter-spacing: 0.01em;
+      line-height: 1.2;
+    }
+
+    .desc {
+      font-size: 14px;
+      color: color-mix(in srgb, var(--text-secondary) 86%, #ffffff 14%);
+      min-height: 54px;
+      line-height: 1.45;
+    }
+
+    .open {
+      margin-top: auto;
+      height: 42px;
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 12px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.14), rgba(255,255,255,0.08));
+      color: var(--text-main);
+      font: 600 16px/1 "Space Grotesk", "Manrope", "Segoe UI", sans-serif;
+      letter-spacing: 0.01em;
+      cursor: pointer;
+      transition: transform 120ms ease, border-color 120ms ease, background 120ms ease;
+    }
+
+    .open:hover {
+      transform: translateY(-1px);
+      border-color: rgba(86, 212, 255, 0.55);
+      background: linear-gradient(180deg, rgba(86, 212, 255, 0.24), rgba(86, 212, 255, 0.12));
+    }
+
+    .open:active {
+      transform: translateY(0);
+    }
+
+    .app:nth-child(1) { animation-delay: 20ms; }
+    .app:nth-child(2) { animation-delay: 50ms; }
+    .app:nth-child(3) { animation-delay: 80ms; }
+    .app:nth-child(4) { animation-delay: 110ms; }
+    .app:nth-child(5) { animation-delay: 140ms; }
+    .app:nth-child(6) { animation-delay: 170ms; }
+
+    @keyframes card-in {
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @media (max-width: 720px) {
+      .wrap { padding: 16px 14px 22px; }
+      .grid { grid-template-columns: 1fr; gap: 12px; }
+      .app { min-height: 156px; }
+      .name { font-size: 20px; }
+      .desc { min-height: 46px; font-size: 13px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="head">Mini Apps</div>
+    <div class="subhead">Quick tools and utility panels for focused tasks.</div>
+    <div id="apps-grid" class="grid"></div>
+  </div>
+  <script type="module" src="../../java/renderer/miniAppsRenderer.js"></script>
+</body>
+</html>

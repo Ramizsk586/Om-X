@@ -1,0 +1,112 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="theme-color" content="#0f0f11">
+    <title>Chessly Mobile</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="manifest" href="manifest.json">
+</head>
+<body>
+    <div class="bg-ambient"></div>
+    
+    <audio id="snd-move" src="/assets/sounds/move-self.mp3"></audio>
+    <audio id="snd-capture" src="/assets/sounds/capture.mp3"></audio>
+    <audio id="snd-notify" src="/assets/sounds/move-check.mp3"></audio>
+
+    <!-- CONNECT SCREEN -->
+    <section id="screen-connect" class="screen active">
+        <div class="brand">
+            <div class="logo-icon">♟</div>
+            <h1>CHESSLY</h1>
+            <p>LAN LINK</p>
+        </div>
+
+        <div class="card glass-panel">
+            <div class="input-group">
+                <label>Host Address</label>
+                <input type="text" id="hostIp" placeholder="192.168.1.x:3000" autocomplete="off">
+                <!-- Recent Servers -->
+                <div id="recentServers" class="server-list"></div>
+            </div>
+
+            <div class="input-group">
+                <label>Agent Name</label>
+                <input type="text" id="playerName" placeholder="Guest" maxlength="12">
+            </div>
+
+            <label class="label-sm">Select Avatar</label>
+            <div class="avatar-scroller" id="avatarList"></div>
+
+            <button id="btnJoin" class="btn-primary">INITIALIZE LINK</button>
+            <button id="btnInstall" class="btn-secondary hidden">INSTALL APP</button>
+        </div>
+    </section>
+
+    <!-- GAME SCREEN -->
+    <section id="screen-game" class="screen hidden">
+        <div class="game-layout">
+            
+            <!-- OPPONENT (Top) -->
+            <div class="player-card opponent">
+                <div class="avatar-ring">
+                    <img src="/assets/pieces/wK.png" id="oppAvatar">
+                </div>
+                <div class="player-info">
+                    <div class="player-name" id="oppName">HOST</div>
+                    <div class="player-badge">OPPONENT</div>
+                </div>
+            </div>
+
+            <!-- BOARD -->
+            <div class="board-container">
+                <div id="board" class="chess-board"></div>
+                <div id="anim-layer"></div>
+                
+                <div id="overlay-gameover" class="hidden">
+                    <div class="glass-modal">
+                        <h2 id="go-result">GAME OVER</h2>
+                        <p id="go-reason">Checkmate</p>
+                        <button onclick="window.location.reload()" class="btn-small">DISCONNECT</button>
+                    </div>
+                </div>
+
+                <!-- Promotion Modal -->
+                <div id="overlay-promotion" class="hidden">
+                    <div class="glass-modal">
+                        <h3>Promote Pawn</h3>
+                        <div class="promo-options">
+                            <div class="promo-piece" onclick="app.promote('q')">♕</div>
+                            <div class="promo-piece" onclick="app.promote('r')">♖</div>
+                            <div class="promo-piece" onclick="app.promote('b')">♗</div>
+                            <div class="promo-piece" onclick="app.promote('n')">♘</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SELF (Bottom) -->
+            <div class="player-card self">
+                <div class="avatar-ring">
+                    <img src="/assets/pieces/bK.png" id="myAvatar">
+                </div>
+                <div class="player-info">
+                    <div class="player-name" id="myName">GUEST</div>
+                    <div class="player-badge status-badge" id="gameStatus">WAITING</div>
+                </div>
+            </div>
+            
+        </div>
+    </section>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="app.js"></script>
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => navigator.serviceWorker.register('sw.js'));
+      }
+    </script>
+</body>
+</html>

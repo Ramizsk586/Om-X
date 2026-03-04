@@ -1,0 +1,58 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>Moves</title>
+  <link rel="stylesheet" href="css/styles.css" />
+  <style>body { padding: 0; display: flex; flex-direction: column; height: 100vh; overflow: hidden; background: var(--app-bg); }</style>
+</head>
+<body>
+  <h1 style="margin:0; padding:12px; font-size:12px; text-transform:uppercase; background:rgba(0,0,0,0.2); border-bottom:var(--glass-border); color:var(--text-muted);">Move History</h1>
+  <div id="movesContainer" style="flex:1; overflow-y:auto; padding:4px 0;"></div>
+
+  <script>
+    const movesContainer = document.getElementById("movesContainer");
+
+    function getAnnotationSymbol(tag) {
+        if (!tag) return null;
+        switch(tag) {
+            case "blunder": return { sym: "??", cls: "tag-blunder" };
+            case "mistake": return { sym: "?", cls: "tag-mistake" };
+            case "excellent": return { sym: "!!", cls: "tag-excellent" };
+            case "good": return { sym: "!", cls: "tag-good" };
+            default: return null;
+        }
+    }
+
+    function renderMoves(moves) {
+      movesContainer.innerHTML = "";
+      if (!moves || !moves.length) { movesContainer.innerHTML = '<div style="padding:20px; text-align:center; opacity:0.4; font-style:italic; font-size:12px;">No moves played yet.</div>'; return; }
+
+      let html = ''; let moveNum = 1;
+      for (let i = 0; i < moves.length; i += 2) {
+        const wMove = moves[i]; const bMove = moves[i+1]; 
+        html += `<div style="display:flex; font-size:13px; border-bottom:1px solid rgba(255,255,255,0.02); ${i%4===0?'background:rgba(255,255,255,0.02);':''}">`;
+        html += `<div style="width:32px; color:var(--text-muted); padding:6px 8px; font-family:monospace; font-size:11px;">${moveNum}.</div>`;
+        
+        const wSan = wMove.san || `${wMove.from}-${wMove.to}`;
+        const wAnno = getAnnotationSymbol(wMove.tag);
+        html += `<div style="flex:1; padding:6px 8px; display:flex; align-items:center;"><span style="font-weight:500; color:#fff;">${wSan}</span>${wAnno ? `<span style="font-weight:800; font-size:11px; margin-left:4px;" class="${wAnno.cls}">${wAnno.sym}</span>` : ""}</div>`;
+        
+        if (bMove) {
+            const bSan = bMove.san || `${bMove.from}-${bMove.to}`;
+            const bAnno = getAnnotationSymbol(bMove.tag);
+            html += `<div style="flex:1; padding:6px 8px; display:flex; align-items:center;"><span style="font-weight:500; color:#ccc;">${bSan}</span>${bAnno ? `<span style="font-weight:800; font-size:11px; margin-left:4px;" class="${bAnno.cls}">${bAnno.sym}</span>` : ""}</div>`;
+        } else { html += `<div style="flex:1;"></div>`; }
+        html += `</div>`;
+        moveNum++;
+      }
+      movesContainer.innerHTML = html;
+      movesContainer.scrollTop = movesContainer.scrollHeight;
+    }
+
+    if (window.electronAPI?.onMovesUpdate) { window.electronAPI.onMovesUpdate((moves) => renderMoves(moves)); } 
+    else { movesContainer.innerHTML = '<div style="padding:20px;">IPC Disconnected</div>'; }
+  </script>
+</body>
+</html>

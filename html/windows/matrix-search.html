@@ -1,0 +1,54 @@
+
+<div class="panel-header">
+    <h2>Search Matrix</h2>
+    <p>Manage search providers and their activation keywords (e.g. type @g in search box).</p>
+</div>
+
+<div class="settings-section-card">
+    <span class="card-title">Active Engines</span>
+    <span class="card-subtitle">Click an engine card to edit its identity or update its unique @keyword.</span>
+    <div id="search-engines-hotkeys-list" class="matrix-grid">
+        <!-- Populated by matrix-search.js -->
+    </div>
+</div>
+
+<!-- Search Profile Card Modal -->
+<div id="engine-profile-modal" class="matrix-modal hidden">
+    <div class="matrix-modal-content">
+        <div class="profile-header">
+            <div class="profile-avatar-container">
+                <img id="profile-card-img" src="" onerror="this.src='../../assets/icons/app.ico'">
+                <div class="avatar-edit-overlay">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
+                </div>
+            </div>
+            <div class="profile-meta">
+                <h3 id="profile-card-title">Engine Profile</h3>
+                <p id="profile-card-id">ID: unknown</p>
+            </div>
+            <button id="btn-close-profile" class="btn-close-minimal">✕</button>
+        </div>
+
+        <div class="profile-body">
+            <div class="v-field">
+                <label class="v-label">Display Name</label>
+                <input type="text" id="edit-engine-name" class="v-input" placeholder="e.g. Google">
+            </div>
+            <div class="v-field">
+                <label class="v-label">Icon URL</label>
+                <input type="text" id="edit-engine-icon" class="v-input" placeholder="https://...">
+            </div>
+            <div class="v-field">
+                <label class="v-label">Search URL</label>
+                <input type="text" id="edit-engine-url" class="v-input" placeholder="https://domain.com/search?q=%s">
+                <span class="v-hint">Use <b>%s</b> where the query should be inserted.</span>
+            </div>
+        </div>
+
+        <div class="profile-footer">
+            <button id="btn-delete-profile" class="btn-danger-minimal">Delete Engine</button>
+            <div style="flex:1"></div>
+            <button id="btn-save-profile" class="btn-primary-compact">Save Profile</button>
+        </div>
+    </div>
+</div>

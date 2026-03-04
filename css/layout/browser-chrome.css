@@ -1,0 +1,219 @@
+﻿/* Dedicated styling layer for the Chrome-style startup window. */
+html[data-browser-ui="chrome"] .browser {
+  display: flex;
+  flex-direction: column;
+  background: #171822;
+}
+
+html[data-browser-ui="chrome"] .left-panel {
+  width: 100%;
+  height: auto;
+  min-height: 112px;
+  border-right: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: none;
+  background: linear-gradient(180deg, #202238 0%, #1b1d32 100%);
+  padding-bottom: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+html[data-browser-ui="chrome"] .left-panel-header,
+html[data-browser-ui="chrome"] .left-panel-nav,
+html[data-browser-ui="chrome"] .left-panel-footer,
+html[data-browser-ui="chrome"] .left-panel-divider,
+html[data-browser-ui="chrome"] .header-spacer,
+html[data-browser-ui="chrome"] #btn-sidebar-toggle,
+html[data-browser-ui="chrome"] .mini-player {
+  display: none !important;
+}
+
+html[data-browser-ui="chrome"] .tab-section-header {
+  order: 1;
+  min-height: 36px;
+  height: 36px;
+  padding: 0 166px 0 8px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  background: #1f2035;
+}
+
+html[data-browser-ui="chrome"] .tab-section-header .nav-text {
+  display: none;
+}
+
+html[data-browser-ui="chrome"] .tab-section-header .icon-btn {
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  color: #c8cbdd;
+}
+
+html[data-browser-ui="chrome"] .left-panel-content {
+  order: 2;
+  min-height: 38px;
+  height: 38px;
+  padding: 2px 166px 0 6px;
+  overflow: hidden;
+}
+
+html[data-browser-ui="chrome"] #tab-list-container {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-end;
+  gap: 6px;
+  height: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+html[data-browser-ui="chrome"] .tab-item {
+  min-width: 190px;
+  max-width: 270px;
+  width: auto;
+  height: 32px;
+  border-radius: 10px 10px 0 0;
+  margin: 0;
+  padding: 0 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: none;
+  background: rgba(78, 82, 116, 0.7);
+}
+
+html[data-browser-ui="chrome"] .tab-item.active {
+  background: #5f6387;
+  border-color: rgba(192, 198, 247, 0.6);
+}
+
+html[data-browser-ui="chrome"] .tab-favicon {
+  width: 14px;
+  height: 14px;
+}
+
+html[data-browser-ui="chrome"] .tab-title {
+  font-size: 12px;
+  color: #f3f5ff;
+}
+
+html[data-browser-ui="chrome"] .tab-close-btn {
+  opacity: 0.8;
+}
+
+html[data-browser-ui="chrome"] .chrome-toolbar {
+  order: 3;
+  height: 48px;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: #232540;
+}
+
+html[data-browser-ui="chrome"] .chrome-nav-buttons {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+html[data-browser-ui="chrome"] .chrome-nav-btn,
+html[data-browser-ui="chrome"] .chrome-action-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(95, 99, 135, 0.32);
+  color: #d6daef;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+html[data-browser-ui="chrome"] .chrome-nav-btn:hover,
+html[data-browser-ui="chrome"] .chrome-action-btn:hover {
+  background: rgba(125, 130, 172, 0.44);
+}
+
+html[data-browser-ui="chrome"] .chrome-nav-btn svg,
+html[data-browser-ui="chrome"] .chrome-action-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+html[data-browser-ui="chrome"] .chrome-address-input {
+  width: 100%;
+  height: 34px;
+  border-radius: 11px;
+  border: 1px solid rgba(181, 189, 237, 0.5);
+  background: #464a68;
+  color: #eef1ff;
+  padding: 0 14px;
+  outline: none;
+  font-size: 14px;
+}
+
+html[data-browser-ui="chrome"] .chrome-address-input::placeholder {
+  color: rgba(218, 223, 247, 0.72);
+}
+
+html[data-browser-ui="chrome"] .chrome-address-input:focus {
+  border-color: #c5ccff;
+  box-shadow: 0 0 0 2px rgba(166, 174, 231, 0.25);
+}
+
+html[data-browser-ui="chrome"] .chrome-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+html[data-browser-ui="chrome"] #webview-container {
+  flex: 1;
+  min-height: 0;
+  background: #0f1118;
+}
+
+html[data-browser-ui="chrome"] .window-controls {
+  position: absolute;
+  top: 2px;
+  right: 8px;
+  z-index: 1200;
+  opacity: 1;
+  background: transparent;
+  border: none;
+  padding: 0;
+}
+
+html[data-browser-ui="chrome"] .window-controls:hover {
+  opacity: 1;
+}
+
+html[data-browser-ui="chrome"] .control-btn {
+  width: 40px;
+  height: 28px;
+  border-radius: 6px;
+}
+
+/* Keep stable even if persisted collapse class is present. */
+html[data-browser-ui="chrome"] .left-panel.collapsed {
+  width: 100%;
+  min-height: 112px;
+}
+
+html[data-browser-ui="chrome"] .left-panel.collapsed .tab-section-header,
+html[data-browser-ui="chrome"] .left-panel.collapsed .left-panel-content,
+html[data-browser-ui="chrome"] .left-panel.collapsed .chrome-toolbar {
+  display: flex;
+}
+
+html[data-browser-ui="chrome"] .left-panel.collapsed .left-panel-content {
+  display: block;
+}
+
+

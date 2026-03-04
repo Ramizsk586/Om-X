@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:;">
+  <title>New Tab</title>
+  <link rel="icon" href="../../assets/icons/app.ico" type="image/x-icon">
+  <link rel="stylesheet" href="../../css/base/reset.css">
+  <link rel="stylesheet" href="../../css/base/variables.css">
+  <link rel="stylesheet" href="../../css/base/base.css">
+  <link rel="stylesheet" href="../../css/themes/all-themes.css">
+  <link rel="stylesheet" href="../../css/pages/home.css">
+</head>
+<body class="theme-dark">
+  <div class="home-container">
+    <div class="brand">Om-X</div>
+    <div class="hint" id="home-search-hint">Press <kbd>Ctrl</kbd> + <kbd>T</kbd> to search</div>
+  </div>
+  <script>
+    (async function() {
+        const hintEl = document.getElementById('home-search-hint');
+        const applyTheme = (theme) => {
+            document.body.className = 'theme-' + (theme || 'dark');
+        };
+        const normalizeShortcutParts = (shortcutText) => {
+            const raw = String(shortcutText || '').trim();
+            if (!raw) return ['Ctrl', 'T'];
+            return raw.split('+').map(part => part.trim()).filter(Boolean);
+        };
+        const applySearchHint = (settings) => {
+            if (!hintEl) return;
+            const shortcut = settings?.shortcuts?.['new-tab'] || 'Ctrl+T';
+            const parts = normalizeShortcutParts(shortcut);
+            hintEl.innerHTML = `Press ${parts.map(p => `<kbd>${p}</kbd>`).join(' + ')} to search`;
+        };
+        try {
+            const s = await window.browserAPI.settings.get();
+            if (s && s.theme) applyTheme(s.theme);
+            applySearchHint(s);
+        } catch(e) {}
+        if (window.browserAPI.onSettingsUpdated) {
+            window.browserAPI.onSettingsUpdated(s => {
+                applyTheme(s?.theme);
+                applySearchHint(s);
+            });
+        }
+    })();
+  </script>
+</body>
+</html>
