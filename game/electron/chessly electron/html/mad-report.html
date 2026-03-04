@@ -1,0 +1,216 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>MADNESS REPORT</title>
+  <link rel="stylesheet" href="css/styles.css" />
+  <style>
+    :root {
+        --mad-primary: #ef4444;
+        --mad-bg: #0a0000;
+        --mad-card: #1a0505;
+    }
+    body {
+        background: var(--mad-bg);
+        color: #fff;
+        padding: 24px;
+        font-family: 'Courier New', monospace;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+    }
+    
+    /* Glitch Header */
+    h1 {
+        text-align: center;
+        font-size: 32px;
+        text-transform: uppercase;
+        color: var(--mad-primary);
+        text-shadow: 2px 0 #fff, -2px 0 #000;
+        margin: 0;
+        letter-spacing: 4px;
+        animation: glitch 1s infinite alternate-reverse;
+    }
+    @keyframes glitch {
+        0% { text-shadow: 2px 0 #fff, -2px 0 #000; transform: skew(0deg); }
+        20% { text-shadow: 2px 0 #fff, -2px 0 #000; transform: skew(10deg); }
+        40% { text-shadow: 2px 0 #fff, -2px 0 #000; transform: skew(-5deg); }
+        100% { text-shadow: 2px 0 #fff, -2px 0 #000; transform: skew(0deg); }
+    }
+
+    /* Score Cards */
+    .score-container {
+        display: flex;
+        gap: 16px;
+    }
+    .score-card {
+        flex: 1;
+        background: var(--mad-card);
+        border: 1px solid var(--mad-primary);
+        padding: 20px;
+        text-align: center;
+        position: relative;
+        overflow: hidden;
+    }
+    .score-card h2 { margin: 0; font-size: 14px; opacity: 0.8; color: #aaa; }
+    .score-val { font-size: 48px; font-weight: 900; color: var(--mad-primary); margin: 10px 0; }
+    .score-label { font-size: 10px; text-transform: uppercase; letter-spacing: 2px; }
+    
+    .winner-stamp {
+        position: absolute; top: 10px; right: 10px;
+        border: 2px solid #10b981; color: #10b981;
+        padding: 4px 8px; font-weight: 900; font-size: 12px;
+        transform: rotate(15deg);
+        display: none;
+    }
+    .loser-stamp {
+        position: absolute; top: 10px; right: 10px;
+        border: 2px solid #ef4444; color: #ef4444;
+        padding: 4px 8px; font-weight: 900; font-size: 12px;
+        transform: rotate(-15deg);
+        display: none;
+    }
+
+    /* The Roast */
+    .roast-box {
+        background: rgba(255,255,255,0.05);
+        border-left: 4px solid var(--mad-primary);
+        padding: 16px;
+        font-size: 13px;
+        line-height: 1.6;
+        font-style: italic;
+        color: #ddd;
+    }
+
+    /* Crime List */
+    .crimes-list {
+        display: flex; flex-direction: column; gap: 8px;
+    }
+    .crime-item {
+        display: flex; justify-content: space-between; align-items: center;
+        background: rgba(239, 68, 68, 0.1);
+        padding: 10px;
+        border: 1px solid rgba(239, 68, 68, 0.2);
+    }
+    .crime-move { font-weight: 900; color: var(--mad-primary); width: 60px; }
+    .crime-desc { flex: 1; font-size: 12px; opacity: 0.8; }
+    .crime-tag { 
+        background: var(--mad-primary); color: #000; 
+        font-size: 9px; font-weight: 900; padding: 2px 6px; 
+        text-transform: uppercase; 
+    }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: #000; }
+    ::-webkit-scrollbar-thumb { background: var(--mad-primary); }
+  </style>
+</head>
+<body>
+
+  <h1>PSYCH REPORT</h1>
+
+  <div class="score-container">
+      <div class="score-card" id="card-w">
+          <div class="winner-stamp" id="win-w">SURVIVOR</div>
+          <div class="loser-stamp" id="lose-w">WASTED</div>
+          <h2>WHITE</h2>
+          <div class="score-val" id="score-w">0%</div>
+          <div class="score-label">Madness Rating</div>
+      </div>
+      <div class="score-card" id="card-b">
+          <div class="winner-stamp" id="win-b">SURVIVOR</div>
+          <div class="loser-stamp" id="lose-b">WASTED</div>
+          <h2>BLACK</h2>
+          <div class="score-val" id="score-b">0%</div>
+          <div class="score-label">Madness Rating</div>
+      </div>
+  </div>
+
+  <div class="roast-box" id="roast-text">
+      Generating psychological evaluation...
+  </div>
+
+  <h3 style="margin: 10px 0 5px 0; font-size: 14px; color: #888; text-transform: uppercase;">Crimes Against Chess</h3>
+  <div class="crimes-list" id="crimes-list">
+      <!-- Crimes injected here -->
+  </div>
+
+  <script>
+      window.electronAPI.onMadReportData((data) => {
+          renderReport(data);
+      });
+
+      function renderReport(data) {
+          const { stats, winner, history } = data;
+          
+          // 1. Calculate Scores
+          // Teleports worth 15pts, Betrayals 25pts
+          const wScore = Math.min(100, (stats.white.teleports * 15) + (stats.white.betrayals * 25));
+          const bScore = Math.min(100, (stats.black.teleports * 15) + (stats.black.betrayals * 25));
+          
+          document.getElementById('score-w').textContent = wScore + '%';
+          document.getElementById('score-b').textContent = bScore + '%';
+          
+          // 2. Winner Stamps
+          if (winner === 'White') {
+              document.getElementById('win-w').style.display = 'block';
+              document.getElementById('lose-b').style.display = 'block';
+          } else if (winner === 'Black') {
+              document.getElementById('win-b').style.display = 'block';
+              document.getElementById('lose-w').style.display = 'block';
+          }
+
+          // 3. Generate Roast
+          const totalChaos = wScore + bScore;
+          let roast = "";
+          
+          if (totalChaos < 20) {
+              roast = "Boring. Were you two actually trying to play Chess? This is the Mad Arena, not a library. Disgraceful adherence to the laws of physics.";
+          } else if (totalChaos < 100) {
+              roast = `A moderate display of insanity. White teleported ${stats.white.teleports} times and Black ${stats.black.teleports} times. It felt less like a battle of minds and more like a drunken brawl in a physics lab.`;
+          } else {
+              roast = "ABSOLUTE BEDLAM. The laws of causality have been filed in the trash. Friendly fire was rampant. Pieces moving through hyperspace. This wasn't a game, it was a crime scene.";
+          }
+          
+          if (stats.white.betrayals > 0 || stats.black.betrayals > 0) {
+              roast += " Also, stop killing your own troops. It's unbecoming of a general.";
+          }
+          
+          document.getElementById('roast-text').textContent = roast;
+
+          // 4. List Crimes (Highlights)
+          const list = document.getElementById('crimes-list');
+          list.innerHTML = "";
+          
+          history.forEach((entry, i) => {
+              if (!entry.tag) return; // Only tagged mad moves
+              
+              const div = document.createElement('div');
+              div.className = 'crime-item';
+              
+              const moveNum = Math.floor(i/2) + 1;
+              const color = i%2===0 ? "W" : "B";
+              
+              let tagText = "MADNESS";
+              if (entry.tag === 'teleport') tagText = "TELEPORT";
+              if (entry.tag === 'betrayal') tagText = "BETRAYAL";
+              if (entry.tag === 'capture_king') tagText = "REGICIDE";
+              
+              div.innerHTML = `
+                <div class="crime-move">${moveNum}.${color}</div>
+                <div class="crime-desc">${entry.san || entry.uci}</div>
+                <div class="crime-tag">${tagText}</div>
+              `;
+              list.appendChild(div);
+          });
+          
+          if (list.children.length === 0) {
+              list.innerHTML = "<div style='text-align:center; opacity:0.5; padding:10px;'>No crimes committed. Shame.</div>";
+          }
+      }
+  </script>
+</body>
+</html>

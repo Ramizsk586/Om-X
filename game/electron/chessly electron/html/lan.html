@@ -1,0 +1,210 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>LAN Configuration</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <style>
+      body { padding: 40px; overflow-y: auto; background: var(--app-bg); color: var(--text-main); }
+      h1 { font-size: 28px; margin-bottom: 32px; color: var(--primary-accent); text-transform: uppercase; letter-spacing: 2px; }
+      
+      .config-card {
+          background: rgba(255,255,255,0.03);
+          border: 1px solid rgba(255,255,255,0.1);
+          border-radius: 16px;
+          padding: 24px;
+          margin-bottom: 24px;
+      }
+      
+      .status-row {
+          display: flex; justify-content: space-between; align-items: center;
+          margin-bottom: 20px;
+      }
+      
+      .ip-display {
+          font-family: 'JetBrains Mono', monospace;
+          font-size: 24px; font-weight: 700;
+          color: #fff;
+          margin: 20px 0;
+          padding: 20px;
+          background: rgba(0,0,0,0.3);
+          border-radius: 12px;
+          text-align: center;
+          border: 1px solid var(--primary-accent);
+          box-shadow: 0 0 30px rgba(99, 102, 241, 0.1);
+      }
+      
+      .player-list {
+          display: flex; flex-direction: column; gap: 8px;
+          margin-top: 16px;
+      }
+      
+      .player-item {
+          display: flex; justify-content: space-between; align-items: center;
+          background: rgba(255,255,255,0.05);
+          padding: 12px 16px;
+          border-radius: 8px;
+          border: 1px solid rgba(255,255,255,0.05);
+      }
+      
+      .p-info { display: flex; align-items: center; gap: 12px; }
+      .p-avatar { width: 32px; height: 32px; border-radius: 6px; background: rgba(255,255,255,0.1); object-fit: contain; }
+      .p-name { font-weight: 700; font-size: 14px; }
+      .p-ip { font-size: 11px; color: var(--text-muted); font-family: monospace; }
+      
+      .btn-kick {
+          background: rgba(239,68,68,0.2); color: #fca5a5;
+          border: 1px solid rgba(239,68,68,0.3);
+          padding: 6px 12px; border-radius: 6px;
+          font-size: 11px; font-weight: 700; cursor: pointer;
+          transition: all 0.2s;
+      }
+      .btn-kick:hover { background: rgba(239,68,68,0.4); }
+      
+      .back-btn {
+          position: fixed; top: 20px; right: 20px;
+          background: rgba(255,255,255,0.1); border: none;
+          color: #fff; width: 32px; height: 32px; border-radius: 50%;
+          font-size: 18px; cursor: pointer; display: flex; align-items: center; justify-content: center;
+      }
+      .back-btn:hover { background: rgba(255,255,255,0.2); }
+  </style>
+</head>
+<body>
+
+  <button class="back-btn" onclick="window.electronAPI.openLanWindow()">✕</button>
+
+  <h1>Server Control</h1>
+
+  <div class="config-card">
+      <div class="status-row">
+          <div>
+              <div class="row-label" style="font-size:16px; font-weight:700;">LAN Server Status</div>
+              <div class="row-desc" id="serverStatusText">Server is offline</div>
+          </div>
+          <label class="switch">
+              <input type="checkbox" id="serverToggle">
+              <span class="slider"></span>
+          </label>
+      </div>
+      
+      <div id="serverDetails" class="hidden">
+          <div class="ip-display" id="ipDisplay">---</div>
+          <div style="text-align:center; color:var(--text-muted); font-size:12px;">
+              Enter this address in the mobile app to connect.
+          </div>
+      </div>
+  </div>
+
+  <div class="config-card">
+      <div class="section-title">Rules & Limits</div>
+      <div class="s-row">
+          <div>
+              <div class="row-label">Max Players</div>
+              <div class="row-desc">Limit concurrent connections.</div>
+          </div>
+          <input type="number" id="maxPlayers" value="4" min="1" max="20" style="width:80px; text-align:center;">
+      </div>
+  </div>
+
+  <div class="config-card">
+      <div class="section-title">Connected Players</div>
+      <div id="playersList" class="player-list">
+          <div style="text-align:center; opacity:0.5; font-size:13px; padding:20px;">No players connected</div>
+      </div>
+  </div>
+
+  <script>
+      const serverToggle = document.getElementById('serverToggle');
+      const serverDetails = document.getElementById('serverDetails');
+      const serverStatusText = document.getElementById('serverStatusText');
+      const ipDisplay = document.getElementById('ipDisplay');
+      const playersList = document.getElementById('playersList');
+      const maxPlayersInput = document.getElementById('maxPlayers');
+
+      async function updateUI() {
+          const status = await window.electronAPI.getLanStatus();
+          serverToggle.checked = status.isRunning;
+          
+          if (status.isRunning) {
+              serverDetails.classList.remove('hidden');
+              serverStatusText.textContent = "Server is Online";
+              serverStatusText.style.color = "#4ade80";
+              
+              const info = await window.electronAPI.toggleLanServer(true); // Get info
+              ipDisplay.textContent = info.ip + ":3000";
+          } else {
+              serverDetails.classList.add('hidden');
+              serverStatusText.textContent = "Server is Offline";
+              serverStatusText.style.color = "var(--text-muted)";
+          }
+          
+          renderPlayers(status.players || []);
+      }
+
+      function renderPlayers(players) {
+          playersList.innerHTML = "";
+          if (players.length === 0) {
+              playersList.innerHTML = '<div style="text-align:center; opacity:0.5; font-size:13px; padding:20px;">No players connected</div>';
+              return;
+          }
+          
+          players.forEach(p => {
+              const div = document.createElement('div');
+              div.className = 'player-item';
+              div.innerHTML = `
+                  <div class="p-info">
+                      <img src="../assets/pieces/${p.avatar || 'bK.png'}" class="p-avatar">
+                      <div>
+                          <div class="p-name">${p.name}</div>
+                          <div class="p-ip">${p.id}</div>
+                      </div>
+                  </div>
+                  <div style="display:flex; gap:8px;">
+                      <button class="btn-kick" onclick="kickPlayer('${p.id}')">Block</button>
+                  </div>
+              `;
+              playersList.appendChild(div);
+          });
+      }
+      
+      window.kickPlayer = (id) => {
+          window.electronAPI.lanBlockPlayer(id);
+          setTimeout(updateUI, 500);
+      };
+
+      serverToggle.onchange = async () => {
+          const enabled = serverToggle.checked;
+          if (enabled) {
+              try {
+                  await window.electronAPI.toggleLanServer(true);
+              } catch (e) {
+                  alert("Failed to start: " + e.message);
+                  serverToggle.checked = false;
+              }
+          } else {
+              await window.electronAPI.toggleLanServer(false);
+          }
+          updateUI();
+      };
+      
+      maxPlayersInput.onchange = () => {
+          window.electronAPI.lanSetConfig({ maxPlayers: parseInt(maxPlayersInput.value) });
+      };
+
+      // Init
+      updateUI();
+      setInterval(updateUI, 5000); // Poll status
+      
+      window.electronAPI.onLanPlayerJoined(() => updateUI());
+      window.electronAPI.onLanPlayerDisconnected(() => updateUI());
+      
+      // Theme
+      (async () => {
+          const prefs = await window.electronAPI.getPreferences();
+          if(prefs?.boardTheme) document.documentElement.setAttribute('data-theme', prefs.boardTheme);
+      })();
+  </script>
+</body>
+</html>

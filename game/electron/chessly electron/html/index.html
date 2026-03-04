@@ -1,0 +1,953 @@
+
+
+
+
+
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; object-src 'none';">
+  <title>Chessly</title>
+  <link rel="stylesheet" href="css/styles.css" />
+  <style>
+    /* OVERRIDE: Mad Arena Sidebar Style Port + Animations */
+    /* Note: :root overrides removed to use styles.css variables for theming */
+
+    .sidebar {
+        width: 400px; min-width: 400px;
+        background: var(--sidebar-bg);
+        backdrop-filter: blur(20px);
+        border-left: 1px solid rgba(255, 255, 255, 0.08);
+        display: flex; flex-direction: column;
+        z-index: 20;
+        box-shadow: -10px 0 40px rgba(0,0,0,0.6);
+    }
+
+    .sidebar-header {
+        padding: 20px 24px;
+        border-bottom: 1px solid rgba(255,255,255,0.05);
+        display: flex; justify-content: space-between; align-items: center;
+        background: rgba(0,0,0,0.2);
+        height: 80px;
+    }
+    
+    .sidebar-header h2 {
+        margin: 0; font-size: 22px; color: #4ade80; /* Bright Green */
+        text-transform: uppercase; letter-spacing: 3px; font-weight: 900;
+        text-shadow: 0 0 20px rgba(74, 222, 128, 0.4);
+        display: flex; align-items: center; gap: 10px;
+        animation: glowPulse 3s infinite alternate;
+    }
+
+    .agents-container {
+        padding: 24px; 
+        display: flex; flex-direction: column; gap: 20px;
+        flex-shrink: 0;
+        background: linear-gradient(180deg, rgba(0,0,0,0.1), transparent);
+    }
+
+    /* --- Card Animations --- */
+    @keyframes cardSlideIn {
+        0% { opacity: 0; transform: translateX(40px) scale(0.95); }
+        100% { opacity: 1; transform: translateX(0) scale(1); }
+    }
+
+    @keyframes shinePass {
+        0% { left: -100%; opacity: 0; }
+        50% { opacity: 0.5; }
+        100% { left: 200%; opacity: 0; }
+    }
+
+    @keyframes activePulse {
+        0% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.2); border-color: var(--primary-accent); }
+        50% { box-shadow: 0 0 20px 5px rgba(99, 102, 241, 0.3); border-color: #818cf8; }
+        100% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.2); border-color: var(--primary-accent); }
+    }
+
+    .agent-card {
+        background: var(--card-bg);
+        border: var(--card-border);
+        border-radius: 16px;
+        padding: 16px 20px;
+        display: flex; align-items: center; gap: 16px;
+        position: relative; overflow: hidden;
+        transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+        min-height: 100px;
+        /* Entry Animation */
+        animation: cardSlideIn 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) backwards;
+    }
+    
+    #card-opponent { animation-delay: 0.1s; }
+    #card-player { animation-delay: 0.2s; }
+    
+    .agent-card:hover {
+        background: rgba(255,255,255,0.06);
+        border-color: rgba(255,255,255,0.2);
+        transform: translateY(-3px);
+        box-shadow: 0 10px 30px -10px rgba(0,0,0,0.5);
+    }
+
+    /* Shine Effect on Hover */
+    .agent-card::after {
+        content: "";
+        position: absolute; top: 0; left: -100%; width: 50%; height: 100%;
+        background: linear-gradient(90deg, transparent, rgba(255,255,255,0.05), transparent);
+        transform: skewX(-20deg);
+        pointer-events: none;
+    }
+    .agent-card:hover::after {
+        animation: shinePass 0.7s ease-in-out;
+    }
+    
+    .agent-card.active-turn {
+        background: linear-gradient(90deg, rgba(99, 102, 241, 0.15), rgba(99, 102, 241, 0.02));
+        animation: activePulse 2s infinite;
+    }
+    
+    .agent-card.active-turn::before {
+        content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
+        background: var(--primary-accent);
+        box-shadow: 0 0 15px var(--primary-accent);
+    }
+    
+    .agent-avatar {
+        width: 64px; height: 64px; border-radius: 14px;
+        background: rgba(0,0,0,0.4); 
+        border: 2px solid rgba(255,255,255,0.1);
+        display: flex; justify-content: center; align-items: center;
+        cursor: pointer; overflow: hidden;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+        flex-shrink: 0;
+        transition: transform 0.3s ease, border-color 0.3s;
+    }
+    .agent-avatar img { width: 85%; height: 85%; object-fit: contain; transition: transform 0.3s; }
+    
+    .agent-card:hover .agent-avatar {
+        transform: scale(1.05);
+        border-color: rgba(255,255,255,0.4);
+    }
+    .active-turn .agent-avatar {
+        border-color: var(--primary-accent);
+        box-shadow: 0 0 20px rgba(99, 102, 241, 0.4);
+    }
+
+    .agent-info { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 6px; min-width: 0; }
+    .agent-name { font-weight: 800; font-size: 16px; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    
+    .agent-meta { 
+        display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+    }
+    
+    .agent-badge {
+        font-size: 10px; color: #ccc; font-family: 'JetBrains Mono', monospace; 
+        background: rgba(255,255,255,0.08); padding: 3px 8px; border-radius: 6px;
+        text-transform: uppercase; font-weight: 700; border: 1px solid rgba(255,255,255,0.05);
+    }
+    
+    .agent-timer {
+        font-family: 'JetBrains Mono', monospace; font-size: 24px; font-weight: 700;
+        color: rgba(255,255,255,0.5); transition: all 0.3s;
+        min-width: 75px; text-align: right;
+        letter-spacing: -1px;
+    }
+    .active-turn .agent-timer { color: #fff; text-shadow: 0 0 15px var(--primary-accent); transform: scale(1.05); }
+    
+    /* VS Divider */
+    .vs-divider {
+        display: flex; align-items: center; justify-content: center;
+        height: 20px; opacity: 0.3;
+    }
+    .vs-line { width: 100px; height: 1px; background: linear-gradient(90deg, transparent, #fff, transparent); }
+
+    /* Controls Area */
+    .controls { 
+        padding: 24px; 
+        border-top: 1px solid rgba(255,255,255,0.08); 
+        display: flex; flex-direction: column; gap: 16px; 
+        background: rgba(0,0,0,0.2); 
+        margin-top: auto;
+    }
+    
+    .icon-btn {
+        width: 40px; height: 40px;
+        background: rgba(255,255,255,0.05);
+        border: 1px solid rgba(255,255,255,0.1);
+        border-radius: 10px;
+        color: var(--text-muted);
+        cursor: pointer; display: flex; align-items: center; justify-content: center;
+        transition: all 0.2s; font-size: 18px;
+    }
+    .icon-btn:hover { background: rgba(255,255,255,0.1); color: #fff; border-color: rgba(255,255,255,0.3); transform: rotate(90deg); }
+    .icon-btn.active { background: rgba(99, 102, 241, 0.2); color: var(--primary-accent); border-color: var(--primary-accent); }
+
+    /* --- Board Background Animations --- */
+    .board-panel {
+        flex: 1;
+        display: flex; align-items: center; justify-content: center;
+        position: relative;
+        overflow: hidden;
+    }
+
+    .board-panel::before {
+        content: "";
+        position: absolute; inset: -50%;
+        width: 200%; height: 200%;
+        background-image: 
+            linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
+        background-size: 60px 60px;
+        animation: gridPan 60s linear infinite;
+        pointer-events: none;
+        transform: perspective(500px) rotateX(20deg);
+        opacity: 0.5;
+        z-index: 1;
+    }
+
+    @keyframes gridPan {
+        from { transform: perspective(500px) rotateX(20deg) translateY(0); }
+        to { transform: perspective(500px) rotateX(20deg) translateY(60px); }
+    }
+
+    .arena-glow {
+        position: absolute; width: 120%; height: 120%;
+        background: radial-gradient(circle, var(--primary-glow) 0%, transparent 60%);
+        opacity: 0.6;
+        pointer-events: none; z-index: 0;
+        animation: pulseAtmosphere 8s infinite alternate;
+    }
+
+    @keyframes pulseAtmosphere {
+        0% { opacity: 0.3; transform: scale(0.9); }
+        100% { opacity: 0.6; transform: scale(1.1); }
+    }
+
+    /* Game Layout Wrapper to hold Eval Bar + Board */
+    .game-layout-wrapper {
+        display: flex; 
+        align-items: center; 
+        gap: 20px;
+        position: relative; 
+        z-index: 10;
+    }
+
+    /* Board Float */
+    #board-container {
+        width: min(85vh, 60vw);
+        aspect-ratio: 1/1;
+        position: relative;
+        border-radius: 12px;
+        box-shadow: 0 30px 80px -20px rgba(0,0,0,0.8);
+        border: 8px solid rgba(255,255,255,0.03);
+        z-index: 10;
+        animation: boardFloat 6s ease-in-out infinite;
+    }
+
+    @keyframes boardFloat {
+        0%, 100% { transform: translateY(0); }
+        50% { transform: translateY(-10px); }
+    }
+
+    /* Game Over Modal */
+    .modal-backdrop {
+        position: fixed; inset: 0; background: rgba(0,0,0,0.85); backdrop-filter: blur(16px);
+        z-index: 200; display: none; align-items: center; justify-content: center;
+    }
+    .modal-panel {
+        background: var(--app-bg); border: 1px solid var(--primary-accent);
+        padding: 40px; border-radius: 24px; width: 450px; text-align: center;
+        box-shadow: 0 0 60px rgba(0,0,0,0.8);
+        animation: modalUp 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+        position: relative;
+    }
+    .modal-panel::before {
+        content: ''; position: absolute; top: -1px; left: -1px; right: -1px; height: 4px;
+        background: var(--primary-accent); border-radius: 24px 24px 0 0;
+        box-shadow: 0 0 20px var(--primary-accent);
+    }
+    @keyframes modalUp { from { opacity: 0; transform: translateY(20px) scale(0.9); } to { opacity: 1; transform: translateY(0) scale(1); } }
+    
+    .go-title { font-size: 36px; font-weight: 900; text-transform: uppercase; letter-spacing: 2px; margin: 0 0 10px 0; color: #fff; text-shadow: 0 0 30px rgba(255,255,255,0.2); }
+    .go-subtitle { font-size: 16px; color: var(--primary-accent); font-weight: 700; margin-bottom: 30px; text-transform: uppercase; letter-spacing: 1px; }
+    
+    /* New Stats Section */
+    .analysis-stat-row {
+        display: flex; justify-content: space-around; margin: 20px 0;
+        background: rgba(255,255,255,0.03); padding: 15px; border-radius: 12px;
+        border: 1px solid rgba(255,255,255,0.05);
+    }
+    .stat-item { display: flex; flex-direction: column; gap: 4px; }
+    .stat-val { font-size: 20px; font-weight: 800; color: #fff; }
+    .stat-label { font-size: 10px; text-transform: uppercase; color: var(--text-muted); font-weight: 700; }
+    
+    .elo-change { font-size: 14px; font-weight: 700; padding: 4px 10px; border-radius: 20px; background: rgba(255,255,255,0.1); margin-top: 5px; display: inline-block; }
+    .elo-up { color: #4ade80; background: rgba(74, 222, 128, 0.1); }
+    .elo-down { color: #f87171; background: rgba(248, 113, 113, 0.1); }
+    
+    .brain-loader { 
+        font-size: 12px; color: var(--primary-accent); font-weight: 700; text-transform: uppercase; letter-spacing: 1px;
+        display: flex; align-items: center; justify-content: center; gap: 10px;
+    }
+    .pulse-dot { width: 8px; height: 8px; background: var(--primary-accent); border-radius: 50%; animation: pulse 1s infinite; }
+    
+    .go-actions { display: flex; gap: 16px; margin-top: 24px; }
+    .go-btn { flex: 1; padding: 16px; border-radius: 12px; border: none; font-weight: 800; cursor: pointer; text-transform: uppercase; transition: all 0.2s; }
+    .btn-restart { background: rgba(255,255,255,0.1); color: #fff; border: 1px solid rgba(255,255,255,0.1); }
+    .btn-restart:hover { background: rgba(255,255,255,0.2); }
+    .btn-review { background: var(--primary-accent); color: #fff; box-shadow: 0 0 20px var(--primary-glow); }
+    .btn-review:hover { transform: translateY(-2px) scale(1.02); filter: brightness(1.1); }
+
+  </style>
+</head>
+<body data-animations="on">
+  
+  <div class="app-shell">
+      
+      <!-- Navigation Rail (Compact) -->
+      <aside class="activity-bar">
+          <!-- Menu Trigger -->
+          <div class="nav-icon" id="nav-menu-btn" title="All Apps">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+          </div>
+          
+          <div class="nav-sep"></div>
+
+          <div class="nav-icon active" id="nav-home" title="Play Arena">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
+          </div>
+          
+          <div class="nav-icon" id="nav-ai-arena" title="Neural Arena">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/><line x1="8" y1="16" x2="8" y2="16"/><line x1="16" y1="16" x2="16" y2="16"/></svg>
+          </div>
+
+          <div class="nav-icon" id="nav-mad-arena" title="Mad Arena">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.1.2-2.2.5-3 .5.5.8 1.2 2 2.5z"/></svg>
+          </div>
+
+          <div class="nav-icon" id="nav-lan" title="LAN Server">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 16.1A5 5 0 0 1 5.9 20M2 12.05A9 9 0 0 1 9.95 20M2 8V6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-6"></path><line x1="2" y1="20" x2="2.01" y2="20"></line></svg>
+          </div>
+
+          <div class="nav-icon" id="nav-review" title="Analysis">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
+          </div>
+          
+          <div style="flex:1;"></div>
+
+          <!-- Profile Icon -->
+          <div class="nav-icon" id="nav-profile" title="User Profile" style="margin-bottom: 24px;">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+          </div>
+      </aside>
+
+      <!-- Workspace -->
+      <main class="workspace">
+          
+          <!-- HOME VIEW -->
+          <div id="view-home" class="view active">
+              <div class="board-panel">
+                  <div class="arena-glow"></div>
+                  
+                  <div class="game-layout-wrapper">
+                      <!-- Integrated Eval Bar -->
+                      <div id="eval-bar-container" class="eval-bar-container hidden">
+                          <div class="eval-fill" id="eval-fill"></div>
+                          <span id="eval-score-label" class="eval-score-label" style="bottom: 5px;">0.0</span>
+                      </div>
+
+                      <div id="board-container">
+                          <div id="board"></div>
+                          <!-- Paused Overlay -->
+                          <div id="paused-overlay" class="hidden" style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,0.7); backdrop-filter:blur(10px); z-index:20; border-radius:12px; flex-direction:column; gap:16px;">
+                              <div style="font-size:24px; font-weight:900; letter-spacing:4px; color:#fff; text-shadow:0 0 30px var(--primary-accent);">GAME PAUSED</div>
+                              <div style="font-size:12px; color:var(--text-muted);">Press Resume to continue</div>
+                          </div>
+                      </div>
+                  </div>
+              </div>
+
+              <div class="sidebar">
+                  <div class="sidebar-header">
+                      <h2>CHESSLY</h2>
+                  </div>
+
+                  <div class="agents-container">
+                      <!-- Top Player (Opponent) -->
+                      <div class="agent-card" id="card-opponent">
+                          <div class="agent-avatar">
+                              <img id="avatar-opponent" src="../assets/pieces/bK.png">
+                          </div>
+                          <div class="agent-info">
+                              <div class="agent-name" id="name-opponent">New Player</div>
+                              <div class="agent-meta">
+                                  <span class="agent-badge" id="model-opponent">Waiting...</span>
+                                  <span class="agent-badge" id="elo-opponent">1500</span>
+                              </div>
+                          </div>
+                          <div class="agent-timer" id="timer-opponent">10:00</div>
+                      </div>
+
+                      <!-- Divider -->
+                      <div class="vs-divider">
+                          <div class="vs-line"></div>
+                      </div>
+
+                      <!-- Bottom Player (White/User) -->
+                      <div class="agent-card" id="card-player">
+                          <div class="agent-avatar">
+                              <img id="avatar-player" src="../assets/pieces/wK.png">
+                          </div>
+                          <div class="agent-info">
+                              <div class="agent-name" id="name-player">Guest</div>
+                              <div class="agent-meta">
+                                  <span class="agent-badge" id="model-player">Human</span>
+                                  <span class="agent-badge" id="elo-player">1200</span>
+                              </div>
+                          </div>
+                          <div class="agent-timer" id="timer-player">10:00</div>
+                      </div>
+                  </div>
+
+                  <div class="controls">
+                      <button id="pauseBtn" class="btn-secondary" style="width:100%;">❚❚ Pause Game</button>
+                      <div style="display:flex; gap:12px;">
+                          <button id="startNewGame" class="btn-primary" style="flex:2;">New Match</button>
+                          <button id="flipBoard" class="btn-secondary icon-btn" style="width:48px;" title="Flip Board">🔄</button>
+                      </div>
+                  </div>
+              </div>
+          </div>
+
+          <!-- OTHER PANELS (Loaded dynamically) -->
+          <div id="view-container" style="flex:1; display:none; position:relative;"></div>
+
+      </main>
+  </div>
+
+  <!-- Game Over Modal -->
+  <div id="game-over-modal" class="modal-backdrop">
+      <div class="modal-panel">
+          <div class="go-title" id="go-winner">WHITE WINS</div>
+          <div class="go-subtitle" id="go-reason">By Checkmate</div>
+          
+          <!-- Analysis Section (Visible after calculation) -->
+          <div id="go-analysis" style="display:none; animation: fadeIn 0.5s;">
+              <div class="analysis-stat-row">
+                  <div class="stat-item">
+                      <div class="stat-val" id="res-accuracy">0%</div>
+                      <div class="stat-label">Accuracy</div>
+                  </div>
+                  <div class="stat-item">
+                      <div class="stat-val" id="res-blunders" style="color:#f87171">0</div>
+                      <div class="stat-label">Blunders</div>
+                  </div>
+                  <div class="stat-item">
+                      <div class="stat-val" id="res-elo">1200</div>
+                      <div class="stat-label">Rating</div>
+                      <div class="elo-change" id="res-elo-change">+0</div>
+                  </div>
+              </div>
+          </div>
+          
+          <!-- Loading State -->
+          <div id="go-loader" class="brain-loader">
+              <div class="pulse-dot"></div> Analyzing Match...
+          </div>
+
+          <div class="go-actions">
+              <button class="go-btn btn-restart" onclick="window.electronAPI.openNewGame(); document.getElementById('game-over-modal').style.display='none'">New Game</button>
+              <button class="go-btn btn-review" id="btn-review-analysis">Game Review</button>
+          </div>
+      </div>
+  </div>
+
+  <!-- App Launcher Overlay -->
+  <div id="app-launcher" class="launcher-overlay">
+      <div class="launcher-panel">
+          <div class="launcher-header">
+              <span>Applications</span>
+              <div style="cursor:pointer;" onclick="toggleLauncher()">✕</div>
+          </div>
+          <div class="launcher-grid">
+              <div class="launcher-item" onclick="launchApp('home')">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg>
+                  <span>Play Arena</span>
+              </div>
+              <div class="launcher-item" onclick="launchApp('ai-match')">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/></svg>
+                  <span>Neural Arena</span>
+              </div>
+              <div class="launcher-item" onclick="launchApp('mad-arena')">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.1.2-2.2.5-3 .5.5.8 1.2 2 2.5z"/></svg>
+                  <span>Mad Arena</span>
+              </div>
+              <div class="launcher-item" onclick="launchApp('lan-chess')">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 16.1A5 5 0 0 1 5.9 20M2 12.05A9 9 0 0 1 9.95 20M2 8V6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-6"></path></svg>
+                  <span>LAN Server</span>
+              </div>
+              <div class="launcher-item" onclick="launchApp('review')">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon></svg>
+                  <span>Analysis</span>
+              </div>
+              <div class="launcher-item" onclick="launchApp('threats')">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                  <span>Threat Scan</span>
+              </div>
+              <div class="launcher-item" onclick="launchApp('scan')">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                  <span>Visual Scan</span>
+              </div>
+              <div class="launcher-item" onclick="launchApp('engines')">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/></svg>
+                  <span>Engines</span>
+              </div>
+              <div class="launcher-item" onclick="launchApp('profile')">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                  <span>Profile</span>
+              </div>
+              <div class="launcher-item" onclick="launchApp('settings')">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+                  <span>Settings</span>
+              </div>
+          </div>
+      </div>
+  </div>
+
+  <script src="../java/arena_brain.js"></script>
+  <script src="../java/renderer.js"></script>
+  <script>
+      const launcher = document.getElementById('app-launcher');
+      const menuBtn = document.getElementById('nav-menu-btn');
+      const boardEl = document.getElementById('board');
+      const evalBarContainer = document.getElementById('eval-bar-container');
+      const evalFill = document.getElementById('eval-fill');
+      const evalScoreLabel = document.getElementById('eval-score-label');
+      
+      // --- Game State ---
+      const game = new ArenaBrain();
+      let isFlipped = false;
+      let selectedSquare = null;
+      let legalMoves = [];
+      
+      // Timer & Engine Vars
+      let gameActive = false;
+      let activeEngineId = null;
+      let userColor = 'w'; // Default user plays White
+      let timerInterval = null;
+      let timeLeft = { w: 600, b: 600 }; // seconds (10 mins default)
+      let isEngineThinking = false;
+
+      function toggleLauncher() { launcher.classList.toggle('open'); }
+      function launchApp(appName) { navigateTo(appName); launcher.classList.remove('open'); }
+      menuBtn.onclick = toggleLauncher;
+      launcher.addEventListener('click', (e) => { if(e.target === launcher) toggleLauncher(); });
+
+      // --- TIMER LOGIC ---
+      function formatTime(sec) {
+          const m = Math.floor(sec / 60).toString().padStart(2, '0');
+          const s = (sec % 60).toString().padStart(2, '0');
+          return `${m}:${s}`;
+      }
+
+      function startTimer() {
+          if(timerInterval) clearInterval(timerInterval);
+          timerInterval = setInterval(() => {
+              if (!gameActive || isEngineThinking && game.turn !== userColor) {
+                  // Don't decrement time while engine is thinking if we want to be fair
+                  // Or decrement normally. Let's decrement normally.
+              }
+              
+              // Whose turn?
+              const turn = game.turn; // 'w' or 'b'
+              if (timeLeft[turn] > 0) {
+                  timeLeft[turn]--;
+                  updateClocks();
+                  if (timeLeft[turn] === 0) {
+                      handleGameOver(turn === 'w' ? 'Black' : 'White', "Timeout");
+                  }
+              }
+          }, 1000);
+      }
+      
+      function updateClocks() {
+          document.getElementById('timer-player').textContent = formatTime(timeLeft[userColor]);
+          const oppColor = userColor === 'w' ? 'b' : 'w';
+          document.getElementById('timer-opponent').textContent = formatTime(timeLeft[oppColor]);
+          
+          // Active Turn Highlight
+          document.getElementById('card-player').classList.toggle('active-turn', game.turn === userColor);
+          document.getElementById('card-opponent').classList.toggle('active-turn', game.turn === oppColor);
+      }
+
+      // --- BOARD RENDER ---
+      function renderBoard() {
+          boardEl.innerHTML = "";
+          for(let r=0; r<8; r++) {
+              for(let c=0; c<8; c++) {
+                  const vr = isFlipped ? 7-r : r;
+                  const vc = isFlipped ? 7-c : c;
+                  
+                  const sq = document.createElement('div');
+                  sq.className = `square ${(vr+vc)%2===0 ? 'light' : 'dark'}`;
+                  
+                  // Last Move Highlight
+                  const lastMv = game.history.length > 0 ? game.history[game.history.length-1] : null;
+                  if (lastMv) {
+                      const f = parseSq(lastMv.uci.substring(0,2));
+                      const t = parseSq(lastMv.uci.substring(2,4));
+                      if ((f.r===vr && f.c===vc) || (t.r===vr && t.c===vc)) sq.classList.add('last-move-square');
+                  }
+
+                  if(selectedSquare && selectedSquare.r === vr && selectedSquare.c === vc) sq.classList.add('selected-square');
+                  
+                  const move = legalMoves.find(m => {
+                      const t = parseSq(m.substring(2,4));
+                      return t.r===vr && t.c===vc;
+                  });
+                  if(move) {
+                      const hint = document.createElement('div');
+                      hint.className = game.board[vr][vc] ? 'move-dot capture' : 'move-dot';
+                      sq.appendChild(hint);
+                  }
+
+                  const p = game.board[vr][vc];
+                  if(p) {
+                      const piece = document.createElement('div');
+                      piece.className = 'piece';
+                      piece.style.backgroundImage = `url('../assets/pieces/${p}.png')`;
+                      sq.appendChild(piece);
+                  }
+                  
+                  sq.onclick = () => handleSquareClick(vr, vc);
+                  boardEl.appendChild(sq);
+              }
+          }
+      }
+      
+      // --- MOVE LOGIC ---
+      async function handleSquareClick(r, c) {
+          if (!gameActive) return;
+          if (isEngineThinking) return;
+          
+          // In Engine Mode, restrict turn. In Human Mode, allow both (Pass & Play)
+          if (activeEngineId && game.turn !== userColor) return; 
+
+          const move = legalMoves.find(m => {
+              const t = parseSq(m.substring(2,4));
+              return t.r===r && t.c===c;
+          });
+          
+          if(move) {
+              // HUMAN MOVE
+              game.applyMove(move);
+              selectedSquare = null;
+              legalMoves = [];
+              renderBoard();
+              updateClocks();
+              
+              window.electronAPI.gamePositionUpdated({fen: game.boardToFen(), moves: game.history});
+              window.electronAPI.requestAnalysis(game.boardToFen());
+              
+              checkGameStatus();
+              
+              // TRIGGER ENGINE MOVE (Only if engine mode active)
+              if (gameActive && activeEngineId) {
+                  triggerEngineMove();
+              }
+              return;
+          }
+          
+          const p = game.board[r][c];
+          // Allow selection if piece belongs to current turn
+          if(p && p[0] === game.turn) {
+              // If human vs engine, only allow user color selection (already handled by early return above)
+              // If human vs human, game.turn handles switches
+              if(selectedSquare && selectedSquare.r===r && selectedSquare.c===c) {
+                  selectedSquare = null;
+                  legalMoves = [];
+              } else {
+                  selectedSquare = {r,c};
+                  const allLegal = game.getLegalMoves();
+                  const fromSq = String.fromCharCode(97+c) + (8-r);
+                  legalMoves = allLegal.filter(m => m.startsWith(fromSq));
+              }
+              renderBoard();
+          } else {
+              selectedSquare = null;
+              legalMoves = [];
+              renderBoard();
+          }
+      }
+      
+      async function triggerEngineMove() {
+          isEngineThinking = true;
+          updateClocks(); // Updates active turn visual
+          
+          const engineTurn = game.turn;
+          const fen = game.boardToFen();
+          
+          // Get Engine Info
+          try {
+              // Get legal moves to help LLMs (optional but good)
+              const possibleMoves = game.getLegalMoves();
+              
+              const result = await window.electronAPI.requestEngineMovePromise({
+                  engineId: activeEngineId,
+                  fen: fen,
+                  moveTime: 1000, // 1 second generic think time or use time control logic
+                  legalMoves: possibleMoves
+              });
+              
+              if (result && result.move) {
+                  game.applyMove(result.move);
+                  window.electronAPI.gamePositionUpdated({fen: game.boardToFen(), moves: game.history});
+                  window.electronAPI.requestAnalysis(game.boardToFen());
+              }
+          } catch(e) {
+              console.error("Engine Move Failed", e);
+          }
+          
+          isEngineThinking = false;
+          renderBoard();
+          updateClocks();
+          checkGameStatus();
+      }
+      
+      function checkGameStatus() {
+          const moves = game.getLegalMoves();
+          if (moves.length === 0) {
+              gameActive = false;
+              clearInterval(timerInterval);
+              // Checkmate or Stalemate?
+              // Simple check: is king attacked?
+              const kingPos = game.rules.findKing(game.board, game.turn);
+              if (game.rules.isSquareAttacked(game.board, kingPos.r, kingPos.c, game.turn === 'w' ? 'b' : 'w')) {
+                  handleGameOver(game.turn === 'w' ? 'Black' : 'White', "Checkmate");
+              } else {
+                  handleGameOver("Draw", "Stalemate");
+              }
+          }
+      }
+      
+      function handleGameOver(winner, reason) {
+          // Setup Modal content
+          const title = winner === "Draw" ? "DRAW" : `${winner.toUpperCase()} WINS`;
+          document.getElementById('go-winner').textContent = title;
+          document.getElementById('go-reason').textContent = `By ${reason}`;
+          
+          // Show Modal
+          const modal = document.getElementById('game-over-modal');
+          modal.style.display = 'flex';
+          
+          // Trigger Brain Analysis
+          const analysisUI = document.getElementById('go-analysis');
+          const loaderUI = document.getElementById('go-loader');
+          
+          analysisUI.style.display = 'none';
+          loaderUI.style.display = 'flex';
+          
+          // Attach game data payload to button click for Review
+          const gamePayload = { 
+              fen: game.boardToFen(), 
+              moves: game.history 
+          };
+          
+          // Call Advanced Brain Analysis
+          const playerColor = userColor; // 'w' or 'b'
+          const opponentElo = 1500; // Mock or fetch from state
+          
+          window.electronAPI.analyzeMatchAndUpdateElo({
+              gameData: {
+                  fen: game.boardToFen(),
+                  moves: game.history,
+                  result: reason, // e.g. Checkmate
+                  winner: winner
+              },
+              playerColor: playerColor,
+              opponentElo: opponentElo
+          }).then(results => {
+              loaderUI.style.display = 'none';
+              analysisUI.style.display = 'block';
+              
+              // Render Stats
+              document.getElementById('res-accuracy').textContent = results.accuracy + '%';
+              document.getElementById('res-blunders').textContent = results.blunders;
+              document.getElementById('res-elo').textContent = results.newElo;
+              
+              const change = results.eloChange;
+              const changeEl = document.getElementById('res-elo-change');
+              changeEl.textContent = (change >= 0 ? '+' : '') + change;
+              changeEl.className = `elo-change ${change >= 0 ? 'elo-up' : 'elo-down'}`;
+              
+              // Update Profile ELO in UI if needed
+              document.getElementById('elo-player').textContent = results.newElo;
+          }).catch(e => {
+              console.error(e);
+              loaderUI.innerHTML = "Analysis Failed";
+          });
+          
+          const reviewBtn = document.getElementById('btn-review-analysis');
+          reviewBtn.onclick = () => {
+              document.getElementById('game-over-modal').style.display = 'none';
+              window.electronAPI.startReviewMode(gamePayload);
+          };
+      }
+      
+      function parseSq(s) { return {c: s.charCodeAt(0)-97, r: 8-parseInt(s[1])}; }
+
+      document.getElementById('flipBoard').onclick = () => { isFlipped = !isFlipped; renderBoard(); };
+      document.getElementById('startNewGame').onclick = () => window.electronAPI.openNewGame();
+      document.getElementById('pauseBtn').onclick = () => {
+          // Simple pause visual, doesn't actually stop timer interval in this simplified version logic
+          document.getElementById('paused-overlay').classList.toggle('hidden');
+      };
+
+      // Init
+      (async () => {
+          const profile = await window.electronAPI.getProfile();
+          
+          // Set Player Info
+          if(profile) {
+              document.getElementById('name-player').textContent = profile.name || "Guest";
+              document.getElementById('elo-player').textContent = (profile.elo || 1200);
+              
+              const folder = profile.avatarFolder || 'pieces';
+              const filename = profile.avatar || 'wK.png';
+              // Ensure path logic matches main process assets
+              document.getElementById('avatar-player').src = `../assets/${folder}/${filename}`;
+          } else {
+              document.getElementById('avatar-player').src = '../assets/pieces/wK.png';
+          }
+          
+          // Default Opponent
+          const oppAv = document.getElementById('avatar-opponent');
+          if (!oppAv.getAttribute('src') || oppAv.getAttribute('src') === '') {
+              oppAv.src = '../assets/pieces/bK.png';
+          }
+          
+          const oppName = document.getElementById('name-opponent');
+          if(oppName.textContent === 'Opponent' || oppName.textContent === '') {
+              oppName.textContent = 'New Player';
+              document.getElementById('model-opponent').textContent = "Waiting...";
+          }
+
+          const prefs = await window.electronAPI.getPreferences();
+          if (prefs?.boardTheme) document.documentElement.setAttribute('data-theme', prefs.boardTheme);
+          
+          // Apply Animation Settings
+          if (prefs?.enableAnimations === false) {
+              document.documentElement.setAttribute('data-animations', 'off');
+          } else {
+              document.documentElement.setAttribute('data-animations', 'on');
+          }
+          
+          // Show/Hide Eval Bar on Load
+          if(prefs?.showEvalBar) {
+              evalBarContainer.classList.remove('hidden');
+          } else {
+              evalBarContainer.classList.add('hidden');
+          }
+          
+          renderBoard();
+      })();
+      
+      // Listen for profile updates
+      window.electronAPI?.onProfileUpdated((data) => {
+          document.getElementById('name-player').textContent = data.name || "Guest";
+          document.getElementById('elo-player').textContent = (data.elo || 1200);
+          const folder = data.avatarFolder || 'pieces';
+          const filename = data.avatar || 'wK.png';
+          document.getElementById('avatar-player').src = `../assets/${folder}/${filename}`;
+      });
+      
+      // Listen for animation preference update
+      window.electronAPI?.onAnimationToggled((enabled) => {
+          document.documentElement.setAttribute('data-animations', enabled ? 'on' : 'off');
+      });
+      
+      // Listen for theme changes
+      window.electronAPI?.onThemeChanged((theme) => {
+          document.documentElement.setAttribute('data-theme', theme);
+      });
+      
+      // Listen for Eval Bar Toggle
+      window.electronAPI?.onToggleEvalBar((isVisible) => {
+          if(isVisible) evalBarContainer.classList.remove('hidden');
+          else evalBarContainer.classList.add('hidden');
+      });
+      
+      // Listen for Eval Score Updates
+      window.electronAPI?.onEvalScore((score) => {
+          let val = parseFloat(score);
+          if(isNaN(val)) val = 0;
+          
+          // Clamp score visual between -5 and +5
+          const clamped = Math.max(-5, Math.min(5, val));
+          const pct = 50 + (clamped * 10);
+          
+          evalFill.style.height = pct + "%";
+          
+          // Text update
+          const displayVal = (val > 0 ? '+' : '') + val.toFixed(1);
+          evalScoreLabel.textContent = displayVal;
+          
+          // Position label
+          if (val >= 0) {
+              evalScoreLabel.style.bottom = "5px";
+              evalScoreLabel.style.top = "auto";
+              evalScoreLabel.style.color = "#333";
+          } else {
+              evalScoreLabel.style.top = "5px";
+              evalScoreLabel.style.bottom = "auto";
+              evalScoreLabel.style.color = "#ccc";
+          }
+      });
+      
+      // New Game Handler
+      window.electronAPI.onNewGameStart((data) => {
+          game.reset();
+          gameActive = true;
+          document.getElementById('game-over-modal').style.display = 'none';
+          
+          // Only set engine ID if mode explicitly requests it
+          if (data.mode === 'engine') {
+              activeEngineId = data.engineId || null;
+          } else {
+              activeEngineId = null;
+          }
+          
+          userColor = data.humanColor || 'w';
+          isFlipped = userColor === 'b';
+          
+          // Reset Time
+          const startMins = data.timeControl > 0 ? data.timeControl : 60; // Default to 60m if infinite/0
+          timeLeft = { w: startMins * 60, b: startMins * 60 };
+          
+          // Setup opponent card
+          document.getElementById('name-opponent').textContent = data.engineName || "Opponent";
+          document.getElementById('elo-opponent').textContent = data.engineElo || "1500";
+          document.getElementById('model-opponent').textContent = data.mode === 'engine' ? "Engine" : "Human";
+          
+          // Avatar Logic
+          let avatarSrc = data.engineAvatar || 'bK.png';
+          // If path is absolute (from file picker), use it. If simple filename, use assets.
+          if (!avatarSrc.includes('/') && !avatarSrc.includes('\\')) {
+              avatarSrc = `../assets/pieces/${avatarSrc}`;
+          }
+          const imgEl = document.getElementById('avatar-opponent');
+          imgEl.src = avatarSrc;
+          imgEl.onerror = () => { imgEl.src = '../assets/pieces/bK.png'; };
+          
+          renderBoard();
+          updateClocks();
+          startTimer();
+          
+          // If computer starts
+          if (game.turn !== userColor && activeEngineId) {
+              triggerEngineMove();
+          }
+      });
+
+  </script>
+</body>
+</html>

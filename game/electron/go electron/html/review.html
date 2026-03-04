@@ -1,0 +1,260 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>Go Game Review</title>
+  <link rel="stylesheet" href="css/styles.css" />
+  <style>
+    /* Specific overrides for analysis sections to blend with new theme */
+    .gemini-analysis-container {
+        padding: 16px 24px;
+        background: rgba(0,0,0,0.15);
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        border-bottom: 1px solid rgba(255,255,255,0.05);
+    }
+    .gemini-analysis-container h3 {
+        font-size: 11px;
+        text-transform: uppercase;
+        color: var(--accent);
+        font-weight: 700;
+        margin: 0;
+        letter-spacing: 0.5px;
+    }
+    #gemini-analysis-content {
+        font-size: 13px;
+        line-height: 1.6;
+        color: var(--text-muted);
+        max-height: 150px;
+        overflow-y: auto;
+        white-space: pre-wrap;
+    }
+    #gemini-analysis-content.loading {
+        text-align: center;
+        padding: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+    }
+     .spinner {
+        width: 16px;
+        height: 16px;
+        border: 2px solid var(--accent);
+        border-top-color: transparent;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    
+    .grounding-citations {
+        margin-top: 12px;
+        padding-top: 12px;
+        border-top: 1px solid rgba(255,255,255,0.1);
+    }
+    .grounding-citations h4 {
+        font-size: 10px;
+        text-transform: uppercase;
+        color: var(--text-muted);
+        margin: 0 0 8px 0;
+    }
+    .grounding-citations ul {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+    }
+    .grounding-citations a {
+        color: var(--accent);
+        text-decoration: none;
+        font-size: 12px;
+        opacity: 0.8;
+        transition: opacity 0.2s;
+    }
+     .grounding-citations a:hover {
+        opacity: 1;
+        text-decoration: underline;
+     }
+     
+     .engine-analysis-panel {
+         padding: 16px 24px;
+         background: rgba(0,0,0,0.2);
+         border-bottom: 1px solid rgba(255,255,255,0.05);
+     }
+     
+     .analysis-controls {
+         display: flex;
+         gap: 10px;
+         align-items: center;
+         margin-bottom: 10px;
+     }
+     
+     .analysis-select {
+         flex: 1;
+         background: rgba(255,255,255,0.05);
+         border: 1px solid rgba(255,255,255,0.1);
+         color: var(--text-main);
+         padding: 6px;
+         border-radius: 6px;
+         font-size: 12px;
+     }
+     
+     .analysis-toggle-btn {
+         background: rgba(255,255,255,0.05);
+         border: 1px solid rgba(255,255,255,0.1);
+         color: var(--text-muted);
+         padding: 6px 12px;
+         border-radius: 6px;
+         font-size: 12px;
+         cursor: pointer;
+         transition: all 0.2s;
+     }
+     
+     .analysis-toggle-btn.active {
+         background: var(--accent);
+         color: white;
+         border-color: var(--accent);
+     }
+     
+     #engine-output {
+         font-family: var(--font-mono);
+         font-size: 12px;
+         color: var(--text-main);
+         min-height: 20px;
+         display: flex;
+         align-items: center;
+         justify-content: center;
+         text-align: center;
+     }
+
+     .stone.review-marker {
+        z-index: 30;
+        border: 2px solid rgba(255,255,255,0.85);
+        box-shadow: 0 0 12px rgba(0,0,0,0.4);
+        transform: translate(-50%, -50%) scale(0.82);
+     }
+     .stone.review-marker.marker-best {
+        background: radial-gradient(circle at 30% 30%, #86efac, #16a34a);
+     }
+     .stone.review-marker.marker-wrong {
+        background: radial-gradient(circle at 30% 30%, #fca5a5, #dc2626);
+     }
+     
+     /* Scrollbar for grids */
+     ::-webkit-scrollbar { width: 6px; }
+     ::-webkit-scrollbar-track { background: transparent; }
+     ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
+     ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+  </style>
+</head>
+<body class="theme-emerald">
+  <div class="main-layout">
+    <div class="board-panel">
+      <div class="board-wrapper">
+        <div class="board-coords coords-top"></div>
+        <div class="board-coords coords-left"></div>
+        <div id="board-container">
+            <!-- Go board here -->
+        </div>
+      </div>
+    </div>
+    
+    <div class="sidebar review-sidebar">
+      <div class="sidebar-header">
+        <h2>Game Review</h2>
+        <p class="subtitle">Match Analysis</p>
+      </div>
+      
+      <div class="review-game-info">
+        <div class="info-player" id="review-player-black">
+            <div class="stone black"></div>
+            <span>Black</span>
+        </div>
+        <div class="info-vs">vs</div>
+        <div class="info-player" id="review-player-white">
+            <div class="stone white"></div>
+            <span>White</span>
+        </div>
+        <div class="info-result" id="review-result">--</div>
+      </div>
+      
+      <!-- Moves List using Grid Layout -->
+      <div class="moves-container">
+        <div class="moves-grid" id="moves-list">
+             <div class="grid-header">#</div>
+             <div class="grid-header">Black</div>
+             <div class="grid-header">White</div>
+             <!-- Content injected by JS -->
+             <div style="grid-column: 1/-1; text-align:center; padding:20px; color:#aaa; font-size:13px;">Loading data...</div>
+        </div>
+      </div>
+      
+      <!-- Analysis Tools Section -->
+      <div style="overflow-y: auto; flex-shrink: 0; max-height: 40%;">
+          <!-- Engine Analysis Section -->
+          <div class="engine-analysis-panel">
+              <div class="analysis-controls">
+                  <select id="review-engine-select" class="analysis-select">
+                      <option value="" disabled selected>Select Engine...</option>
+                  </select>
+                  <button id="toggle-analysis-btn" class="analysis-toggle-btn">Enable</button>
+              </div>
+              <div id="engine-output">
+                  <span style="opacity: 0.5;">Select an engine to analyze.</span>
+              </div>
+          </div>
+
+          <!-- Gemini Analysis -->
+          <div class="gemini-analysis-container" id="gemini-container" style="display: none;">
+              <h3>Gemini Insights</h3>
+              <div id="gemini-analysis-content">
+                  Select a move and click "Analyze Move" for insights.
+              </div>
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px;">
+                  <button class="btn btn-secondary" id="analyze-move-btn" style="font-size:11px; padding:8px;">Analyze Move</button>
+                  <button class="btn btn-secondary" id="summarize-game-btn" style="font-size:11px; padding:8px;">Full Summary</button>
+              </div>
+          </div>
+      </div>
+      
+      <!-- Bottom Nav Controls -->
+      <div class="review-controls">
+        <div class="nav-bar">
+            <button class="nav-btn" id="startBtn" title="First Move">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 18l-6-6 6-6"></path><path d="M5 6v12"></path></svg>
+            </button>
+            <button class="nav-btn" id="prevBtn" title="Previous Move">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+            </button>
+            <button class="nav-btn primary" id="nextBtn" title="Next Move">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+            </button>
+            <button class="nav-btn" id="endBtn" title="Last Move">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 18l6-6-6-6"></path><path d="M19 6v12"></path></svg>
+            </button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script src="../java/go_brain.js"></script>
+  <script src="../java/review_renderer.js"></script>
+  <script>
+    // Apply theme from settings
+    (async function() {
+        try {
+            if (window.electronAPI) {
+                const prefs = await window.electronAPI.getPreferences();
+                document.body.className = prefs.goTheme || 'theme-emerald';
+                document.body.classList.toggle('show-coords', prefs.goShowCoordinates !== false);
+            }
+        } catch(e) {
+            console.error("Failed to load theme settings.", e);
+        }
+    })();
+  </script>
+</body>
+</html>

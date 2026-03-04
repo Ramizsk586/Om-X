@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Downloads</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0a0b10;
+      --panel: #111217;
+      --line: #232530;
+      --text: #f3f4f6;
+      --muted: #9ca3af;
+      --accent: #7aa2ff;
+      --ok: #22c55e;
+      --warn: #f59e0b;
+      --danger: #ef4444;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Inter", sans-serif;
+      background:
+        radial-gradient(900px 480px at 100% -20%, rgba(59, 130, 246, 0.12), transparent 60%),
+        radial-gradient(700px 420px at -20% 0%, rgba(107, 114, 128, 0.08), transparent 62%),
+        var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+    .downloads-page {
+      width: 100%;
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 24px 20px 30px;
+      display: grid;
+      gap: 14px;
+    }
+    .head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      gap: 12px;
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 12px;
+    }
+    .head h1 {
+      margin: 0;
+      font-size: 30px;
+      letter-spacing: -0.02em;
+    }
+    .head p {
+      margin: 6px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .head-actions {
+      display: flex;
+      gap: 8px;
+    }
+    .btn {
+      border: 1px solid #2a2e3b;
+      background: #161922;
+      color: #dbe1ee;
+      border-radius: 10px;
+      padding: 8px 12px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn:hover,
+    .btn:focus-visible {
+      border-color: #3f475c;
+      background: #1a1f2b;
+      outline: none;
+    }
+    .btn-danger {
+      border-color: rgba(239, 68, 68, 0.35);
+      color: #fecaca;
+    }
+    .summary {
+      display: flex;
+      gap: 14px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .downloads-list {
+      display: grid;
+      gap: 10px;
+    }
+    .downloads-empty {
+      border: 1px dashed #2a2e3b;
+      border-radius: 12px;
+      padding: 18px;
+      color: var(--muted);
+      font-size: 13px;
+      text-align: center;
+      background: rgba(17, 18, 23, 0.65);
+    }
+    .row {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--panel);
+      padding: 11px;
+      display: grid;
+      gap: 8px;
+    }
+    .row-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+    }
+    .name {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 600;
+      color: #f8fafc;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .status {
+      font-size: 12px;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+    .status.ok { color: #86efac; }
+    .status.warn { color: #fcd34d; }
+    .status.err { color: #fca5a5; }
+    .path {
+      font-size: 12px;
+      color: var(--muted);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .bar {
+      height: 7px;
+      border-radius: 999px;
+      background: #1b1f2a;
+      overflow: hidden;
+    }
+    .bar-fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #3b82f6, #60a5fa);
+      transition: width .2s ease;
+    }
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .actions .btn {
+      padding: 6px 10px;
+      font-size: 11px;
+      border-radius: 9px;
+    }
+  </style>
+</head>
+<body>
+  <main class="downloads-page">
+    <section class="head">
+      <div>
+        <h1>Downloads</h1>
+        <p>Active transfers and recent files in one clean tab.</p>
+      </div>
+      <div class="head-actions">
+        <button id="btn-refresh" class="btn" type="button">Refresh</button>
+        <button id="btn-clear" class="btn btn-danger" type="button">Clear History</button>
+      </div>
+    </section>
+    <section id="downloads-summary" class="summary"></section>
+    <section id="downloads-list" class="downloads-list"></section>
+  </main>
+
+  <script type="module" src="../../java/renderer/downloadsRenderer.js"></script>
+</body>
+</html>

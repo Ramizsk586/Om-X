@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Om-X Help Center</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #090a0d;
+      --panel: #0f1013;
+      --panel-2: #121319;
+      --line: #20222a;
+      --muted: #a1a1aa;
+      --text: #f4f4f5;
+      --accent: #60a5fa;
+      --accent-soft: rgba(96, 165, 250, 0.16);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Inter", sans-serif;
+      background:
+        radial-gradient(1000px 480px at 100% -20%, rgba(37, 99, 235, 0.12), transparent 60%),
+        radial-gradient(900px 520px at -15% 0%, rgba(82, 82, 91, 0.08), transparent 62%),
+        var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+    .help-shell {
+      width: 100%;
+      margin: 0;
+      padding: 20px 22px;
+      display: grid;
+      gap: 14px;
+    }
+    .help-shell.detail-mode .help-search,
+    .help-shell.detail-mode .help-note,
+    .help-shell.detail-mode .help-list {
+      display: none;
+    }
+    .help-shell.detail-mode .help-layout {
+      grid-template-columns: 1fr;
+      min-height: 100vh;
+      height: 100vh;
+      gap: 0;
+    }
+    .help-head h1 {
+      margin: 0;
+      font-size: 32px;
+      line-height: 1.1;
+      letter-spacing: -0.02em;
+    }
+    .help-head p {
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+    .help-search {
+      width: 100%;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: #111114;
+      color: var(--text);
+      font-size: 14px;
+      padding: 12px 14px;
+      outline: none;
+    }
+    .help-search:focus {
+      border-color: #3f3f46;
+      box-shadow: 0 0 0 3px rgba(63, 63, 70, 0.22);
+    }
+    .help-note {
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .help-layout {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 14px;
+      min-height: calc(100vh - 200px);
+    }
+    .help-list,
+    .help-detail {
+      overflow: hidden;
+    }
+    .help-shell:not(.detail-mode) .help-detail {
+      display: none;
+    }
+    .help-list {
+      display: grid;
+      align-content: start;
+      max-height: calc(100vh - 210px);
+      overflow: auto;
+      scrollbar-width: none;
+      -ms-overflow-style: none;
+      gap: 10px;
+    }
+    .help-list::-webkit-scrollbar { width: 0; height: 0; display: none; }
+    .help-list section {
+      display: grid;
+      gap: 6px;
+    }
+    .help-cat-head {
+      position: static;
+      background: transparent;
+      border: 0;
+      padding: 2px 2px 0;
+      font-size: 10px;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      font-weight: 700;
+      color: #94a3b8;
+    }
+    .help-card {
+      width: 100%;
+      border: 1px solid #22252e;
+      border-radius: 10px;
+      padding: 11px 12px;
+      text-align: left;
+      background: #0f1013;
+      color: inherit;
+      cursor: pointer;
+      display: grid;
+      gap: 5px;
+      transition: border-color .14s ease, background-color .14s ease;
+    }
+    .help-card:hover,
+    .help-card:focus-visible {
+      background: #121319;
+      border-color: #31353f;
+      outline: none;
+    }
+    .help-card.active {
+      background: #121521;
+      border-color: #3b455d;
+    }
+    .help-card-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+    }
+    .help-card-title {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 600;
+      color: #f4f4f5;
+    }
+    .help-key {
+      border: 0;
+      background: transparent;
+      color: #94a3b8;
+      padding: 0;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: .01em;
+      white-space: nowrap;
+    }
+    .help-card-desc {
+      margin: 0;
+      font-size: 12px;
+      color: #9ca3af;
+      line-height: 1.45;
+    }
+    .help-empty {
+      padding: 16px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .help-detail {
+      display: grid;
+      align-content: start;
+      max-height: calc(100vh - 210px);
+      overflow: auto;
+      scrollbar-width: none;
+      -ms-overflow-style: none;
+      background: transparent;
+      border: 0;
+      border-radius: 0;
+    }
+    .help-detail::-webkit-scrollbar { width: 0; height: 0; display: none; }
+    .help-detail-head {
+      padding: 4px 0 10px;
+      border-bottom: 1px solid #1a1c22;
+      background: transparent;
+    }
+    .help-detail-top {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .help-back-btn {
+      border: 1px solid #2d323f;
+      background: #111114;
+      color: #cbd5e1;
+      border-radius: 8px;
+      width: 30px;
+      height: 30px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+    .help-back-btn:hover,
+    .help-back-btn:focus-visible {
+      border-color: #4b5563;
+      color: #e2e8f0;
+      outline: none;
+    }
+    .help-shell:not(.detail-mode) .help-back-btn {
+      display: none;
+    }
+    .help-detail-title {
+      margin: 0;
+      font-size: 17px;
+      font-weight: 750;
+    }
+    .help-detail-meta {
+      margin-top: 6px;
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .help-badge {
+      border-radius: 999px;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 4px 8px;
+      border: 1px solid var(--line);
+      background: #111114;
+      color: #cbd5e1;
+    }
+    .help-detail-body {
+      padding: 14px 0 6px;
+      display: grid;
+      gap: 12px;
+    }
+    .help-label {
+      margin: 0;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      color: #94a3b8;
+    }
+    .help-value {
+      margin: 0;
+      font-size: 13px;
+      line-height: 1.55;
+      color: #e4e4e7;
+      white-space: pre-wrap;
+    }
+    .help-points {
+      margin: 0;
+      padding-left: 18px;
+      display: grid;
+      gap: 6px;
+      color: #e4e4e7;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .help-sections {
+      display: grid;
+      gap: 12px;
+    }
+    .help-section h4 {
+      margin: 0 0 6px;
+      font-size: 12px;
+      color: #cbd5e1;
+      text-transform: uppercase;
+      letter-spacing: .03em;
+    }
+    .help-section ul {
+      margin: 0;
+      padding-left: 16px;
+      display: grid;
+      gap: 5px;
+      font-size: 12px;
+      line-height: 1.45;
+      color: #d4d4d8;
+    }
+    .help-shell.detail-mode {
+      width: 100vw;
+      min-height: 100vh;
+      height: 100vh;
+      padding: 0;
+      gap: 0;
+    }
+    .help-shell.detail-mode .help-head {
+      display: none;
+    }
+    .help-shell.detail-mode .help-detail {
+      max-height: 100vh;
+      height: 100vh;
+      padding: 12px 14px;
+    }
+    .help-shell.detail-mode .help-detail-head {
+      padding-top: 0;
+    }
+    .help-table-wrap {
+      overflow: auto;
+      scrollbar-width: none;
+      -ms-overflow-style: none;
+    }
+    .help-table-wrap::-webkit-scrollbar { width: 0; height: 0; display: none; }
+    .help-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+      color: #e4e4e7;
+    }
+    .help-table th,
+    .help-table td {
+      border: 1px solid #20222a;
+      padding: 6px 8px;
+      text-align: left;
+      vertical-align: top;
+    }
+    .help-table th {
+      color: #f4f4f5;
+      background: #121319;
+      font-weight: 700;
+    }
+    @media (max-width: 980px) {
+      .help-layout { grid-template-columns: 1fr; }
+      .help-list,
+      .help-detail { max-height: none; }
+    }
+  </style>
+</head>
+<body>
+  <main class="help-shell">
+    <header class="help-head">
+      <h1>Help Center</h1>
+      <p>Search cards for shortcuts, API verification, translator, security, workflows, and full app references.</p>
+    </header>
+
+    <input id="help-search" class="help-search" type="text" placeholder="Search: shortcuts, api, translator, virustotal, panels, workflow..." />
+    <div id="help-note" class="help-note"></div>
+
+    <section class="help-layout">
+      <section id="help-list" class="help-list"></section>
+      <aside id="help-detail" class="help-detail">
+        <div class="help-detail-head">
+          <div class="help-detail-top">
+            <button id="help-back-btn" class="help-back-btn" type="button" title="Back to categories" aria-label="Back to categories">
+              <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+                <path fill="currentColor" d="M14.41 6L13 4.59 5.59 12 13 19.41 14.41 18 8.41 12z"></path>
+              </svg>
+            </button>
+            <h2 id="help-detail-title" class="help-detail-title">Select a help card</h2>
+          </div>
+          <div class="help-detail-meta">
+            <span id="help-detail-category" class="help-badge">Category</span>
+            <span id="help-detail-key" class="help-badge">Source Key</span>
+          </div>
+        </div>
+        <div class="help-detail-body">
+          <h3 class="help-label">Summary</h3>
+          <p id="help-detail-summary" class="help-value">Pick any card from the left side to view complete details.</p>
+          <h3 class="help-label">Key Points</h3>
+          <ul id="help-detail-points" class="help-points">
+            <li>Choose a card from the category list.</li>
+          </ul>
+          <h3 class="help-label">Full Details</h3>
+          <div id="help-detail-content" class="help-sections">
+            Detailed app references from response database appear here.
+          </div>
+          <h3 class="help-label">Search Aliases</h3>
+          <p id="help-detail-aliases" class="help-value">Aliases for this topic will appear here.</p>
+        </div>
+      </aside>
+    </section>
+  </main>
+
+  <script type="module" src="../../java/renderer/helpRenderer.js"></script>
+</body>
+</html>

@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>Evaluation</title>
+  <link rel="stylesheet" href="css/styles.css" />
+  <style>
+    body {
+      margin: 0;
+      font-family: system-ui, sans-serif;
+      background: var(--app-bg); /* Use theme background */
+      color: var(--text-main);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      box-sizing: border-box;
+      padding: 8px;
+      -webkit-app-region: drag; /* Make window draggable */
+      border-radius: 12px; /* Smooth corners for floating window */
+      overflow: hidden;
+    }
+
+    #title {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      opacity: 0.6;
+      margin-bottom: 6px;
+      font-weight: 700;
+    }
+
+    .bar-shell {
+      width: 40px;
+      flex: 1;
+      max-height: 90%;
+      border-radius: 8px;
+      overflow: hidden;
+      border: var(--glass-border);
+      background: var(--glass-bg);
+      display: flex;
+      flex-direction: column-reverse;
+      box-shadow: 0 0 8px rgba(0,0,0,0.3);
+      position: relative;
+    }
+
+    .seg-white {
+      background: linear-gradient(to top, #ffffff, #e2e8f0);
+      transition: height 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+      width: 100%;
+    }
+
+    .seg-black {
+      background: linear-gradient(to bottom, #1e293b, #0f172a);
+      transition: height 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+      width: 100%;
+      flex: 1;
+    }
+
+    #scoreLabel {
+      margin-top: 6px;
+      font-size: 11px;
+      opacity: 0.9;
+      font-weight: 700;
+      font-family: 'JetBrains Mono', monospace;
+    }
+  </style>
+</head>
+<body>
+  <div id="title">EVAL</div>
+  <div class="bar-shell">
+    <div class="seg-white" id="whiteSeg" style="height:50%;"></div>
+  </div>
+  <div id="scoreLabel">0.00</div>
+
+  <script>
+    const whiteSeg = document.getElementById("whiteSeg");
+    const scoreLabel = document.getElementById("scoreLabel");
+
+    function updateEvalBar(score) {
+      let val = typeof score === 'number' ? score : parseFloat(score);
+      if(isNaN(val)) val = 0;
+
+      // Clamp score to [-10, +10] pawns for display scaling, but retain exact value for text
+      const clamped = Math.max(-10, Math.min(10, val));
+      
+      // Convert to percentage: 0% = Black winning (-10), 100% = White winning (+10)
+      // 0.0 eval = 50%
+      let whitePct = 50 + (clamped * 5); 
+      
+      // Clamp percentage visually so the bar never fully disappears (5% to 95%)
+      whitePct = Math.max(5, Math.min(95, whitePct));
+
+      whiteSeg.style.height = whitePct + "%";
+
+      const text = (val > 0 ? "+" : "") + val.toFixed(2);
+      scoreLabel.textContent = text;
+      
+      // Colorize label based on advantage
+      if (val > 0.5) scoreLabel.style.color = "#4ade80";
+      else if (val < -0.5) scoreLabel.style.color = "#f87171";
+      else scoreLabel.style.color = "var(--text-main)";
+    }
+
+    // listen to eval-score from main process
+    if (window.electronAPI?.onEvalScore) {
+      window.electronAPI.onEvalScore((score) => {
+        updateEvalBar(score);
+      });
+    }
+    
+    // Theme Listening
+    window.electronAPI?.onThemeChanged((theme) => {
+        document.documentElement.setAttribute('data-theme', theme);
+    });
+    
+    // Initial Theme Load
+    (async () => {
+        const prefs = await window.electronAPI?.getPreferences();
+        if(prefs?.boardTheme) document.documentElement.setAttribute('data-theme', prefs.boardTheme);
+    })();
+
+    // start neutral
+    updateEvalBar(0);
+  </script>
+</body>
+</html>

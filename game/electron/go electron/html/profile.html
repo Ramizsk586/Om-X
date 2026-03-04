@@ -1,0 +1,207 @@
+
+
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Edit Profile</title>
+  <style>
+      :root {
+          /* These are just fallbacks; main theme colors are in styles.css */
+          --primary: #4ade80; 
+          --bg-deep: #1a1a1a;
+          --text-main: #f1f5f9;
+          --text-muted: #94a3b8;
+          --glass-bg: rgba(20, 20, 20, 0.7);
+          --glass-border: 1px solid rgba(255, 255, 255, 0.08);
+          --input-bg: rgba(255, 255, 255, 0.03);
+          --input-border: rgba(255, 255, 255, 0.1);
+      }
+      body { 
+          margin: 0; padding: 0; height: 100vh; width: 100vw; overflow: hidden; 
+          background: var(--app-bg, var(--bg-deep)); 
+          font-family: 'Inter', system-ui, sans-serif; 
+          display: flex; 
+          color: var(--text-main); 
+          transition: background 0.3s, color 0.3s;
+      }
+      .layout { position: relative; z-index: 10; display: flex; width: 100%; height: 100%; }
+      .identity-panel { 
+          width: 420px; 
+          background: var(--sidebar-bg, var(--glass-bg)); 
+          backdrop-filter: blur(40px); 
+          border-right: var(--glass-border); 
+          display: flex; 
+          flex-direction: column; 
+          align-items: center; 
+          justify-content: center; 
+          padding: 40px; 
+          gap: 40px; 
+          position: relative;
+          overflow: hidden;
+          transition: background 0.3s;
+      }
+      .identity-panel::before {
+          content: '';
+          position: absolute;
+          inset: 0;
+          background-image: 
+            repeating-linear-gradient(to right, transparent, transparent 40px, color-mix(in srgb, var(--board-bg, #dcb35c) 5%, transparent) 40px, color-mix(in srgb, var(--board-bg, #dcb35c) 5%, transparent) 41px),
+            repeating-linear-gradient(to bottom, transparent, transparent 40px, color-mix(in srgb, var(--board-bg, #dcb35c) 5%, transparent) 40px, color-mix(in srgb, var(--board-bg, #dcb35c) 5%, transparent) 41px);
+          opacity: 0.5;
+          z-index: 0;
+      }
+      .avatar-stage { position: relative; width: 240px; height: 240px; display: flex; justify-content: center; align-items: center; z-index: 1; }
+      .avatar-mask { width: 140px; height: 140px; border-radius: 20px; background: #050507; border: 1px solid rgba(255,255,255,0.15); overflow: hidden; position: relative; z-index: 5; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+      .hero-avatar { width: 100%; height: 100%; object-fit: cover; }
+      .identity-info { text-align: center; z-index: 5; }
+      .identity-name { font-size: 36px; font-weight: 900; margin: 0; }
+      .identity-elo { font-family: 'JetBrains Mono', monospace; font-size: 14px; color: var(--accent, var(--primary)); margin-top: 8px; text-shadow: 0 0 10px var(--accent, var(--primary)); transition: color 0.3s, text-shadow 0.3s; }
+      .form-panel { flex: 1; padding: 60px 80px; overflow-y: auto; display: flex; flex-direction: column; gap: 32px; }
+      .section-header h2 { font-size: 22px; margin: 0 0 6px 0; }
+      .section-header p { margin: 0; color: var(--text-muted); }
+      .input-group { display: grid; grid-template-columns: 1fr 1fr; gap: 24px;}
+      .input-wrapper { display: flex; flex-direction: column; gap: 8px; }
+      .input-wrapper label { font-size: 11px; font-weight: 800; color: var(--accent, var(--primary)); text-transform: uppercase; letter-spacing: 0.5px; transition: color 0.3s;}
+      .input-field { background: var(--input-bg); border: 1px solid var(--input-border); border-radius: 8px; padding: 16px; color: #fff; font-size: 15px; }
+      .avatar-picker { display: grid; grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); gap: 16px; padding: 16px; background: rgba(0,0,0,0.2); border-radius: 12px; max-height: 300px; overflow-y: auto; }
+      .avatar-opt { aspect-ratio: 1; background: var(--input-bg); border-radius: 12px; padding: 8px; cursor: pointer; border: 2px solid transparent; transition: border-color 0.2s, transform 0.2s; }
+      .avatar-opt:hover { transform: scale(1.05); }
+      .avatar-opt.selected { border-color: var(--accent, var(--primary)); box-shadow: 0 0 15px color-mix(in srgb, var(--accent, var(--primary)) 40%, transparent); }
+      .avatar-opt img { width: 100%; height: 100%; object-fit: contain; }
+      .action-bar { margin-top: auto; display: flex; justify-content: flex-end; gap: 16px; padding-top: 24px; border-top: 1px solid rgba(255,255,255,0.05); }
+      .btn { padding: 14px 32px; border-radius: 8px; font-size: 13px; font-weight: 800; cursor: pointer; text-transform: uppercase; letter-spacing: 0.5px; transition: filter 0.2s, background 0.3s, color 0.3s; }
+      .btn:hover { filter: brightness(1.1); }
+      .btn-primary { background: var(--accent, var(--primary)); color: var(--app-bg, #000); border: none; }
+      .btn-secondary { background: transparent; color: var(--text-muted); border: 1px solid rgba(255,255,255,0.1); }
+  </style>
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body class="theme-emerald">
+  <div class="layout">
+      <div class="identity-panel">
+          <div class="avatar-stage">
+              <div class="avatar-mask">
+                  <img id="currentAvatar" class="hero-avatar" src="../assets/images/avatar1.svg">
+              </div>
+          </div>
+          <div class="identity-info">
+              <h1 class="identity-name" id="previewName">Guest</h1>
+              <div class="identity-elo" id="previewElo">1200 ELO</div>
+          </div>
+      </div>
+      <div class="form-panel">
+          <div class="section-header">
+              <h2>Identity Configuration</h2>
+              <p>Define your persona for the network.</p>
+          </div>
+          <div class="input-group">
+            <div class="input-wrapper">
+                <label>Codename</label>
+                <input type="text" id="nameInput" class="input-field" placeholder="Username">
+            </div>
+            <div class="input-wrapper">
+                <label>Rating Override</label>
+                <input type="number" id="eloInput" class="input-field" placeholder="1200">
+            </div>
+          </div>
+          <div class="input-wrapper">
+              <label>Visual Avatar</label>
+              <div class="avatar-picker" id="avatarGrid">
+                  <div style="text-align:center; padding: 20px; opacity: 0.5; grid-column: 1 / -1;">Loading Avatars...</div>
+              </div>
+          </div>
+          <div class="action-bar">
+              <button id="cancelBtn" class="btn btn-secondary">Discard</button>
+              <button id="saveBtn" class="btn btn-primary">Save Profile</button>
+          </div>
+      </div>
+  </div>
+
+  <script>
+      const nameInput = document.getElementById('nameInput');
+      const eloInput = document.getElementById('eloInput');
+      const previewName = document.getElementById('previewName');
+      const previewElo = document.getElementById('previewElo');
+      const currentAvatar = document.getElementById('currentAvatar');
+      const avatarGrid = document.getElementById('avatarGrid');
+      const saveBtn = document.getElementById('saveBtn');
+      const cancelBtn = document.getElementById('cancelBtn');
+      
+      let selectedAvatarFile = 'avatar1.svg';
+      let selectedFolder = 'images';
+
+      nameInput.addEventListener('input', () => previewName.textContent = nameInput.value || 'Guest');
+      eloInput.addEventListener('input', () => previewElo.textContent = (eloInput.value || '1200') + ' ELO');
+
+      async function init() {
+          // Apply theme from settings
+          try {
+              if (window.electronAPI) {
+                  const prefs = await window.electronAPI.getPreferences();
+                  document.body.className = prefs.goTheme || 'theme-emerald';
+              }
+          } catch(e) { console.error("Failed to load theme settings.", e); }
+
+          const profile = await window.electronAPI.getProfile();
+          nameInput.value = profile.name || "Guest";
+          eloInput.value = profile.elo || 1200;
+          
+          previewName.textContent = nameInput.value;
+          previewElo.textContent = eloInput.value + ' ELO';
+          
+          const defaultAvatar = { filename: 'avatar1.svg', folder: 'images' };
+          
+          if (profile.avatar && profile.avatarFolder && profile.avatarFolder === 'images') {
+              updatePreview(profile.avatar, profile.avatarFolder);
+          } else {
+              updatePreview(defaultAvatar.filename, defaultAvatar.folder);
+          }
+
+          const avatars = await window.electronAPI.getAvailableAvatars('go');
+          
+          if (!avatars || avatars.length === 0) {
+              avatarGrid.innerHTML = `<div style="text-align:center; padding: 20px; opacity: 0.5; grid-column: 1 / -1;">No avatars found.</div>`;
+              return;
+          }
+
+          avatarGrid.innerHTML = '';
+          avatars.forEach(item => {
+              const div = document.createElement('div');
+              div.className = 'avatar-opt';
+              if (item.filename === selectedAvatarFile && item.folder === selectedFolder) {
+                  div.classList.add('selected');
+              }
+              div.innerHTML = `<img src="../assets/${item.folder}/${item.filename}" alt="${item.filename}">`;
+              div.onclick = () => {
+                  document.querySelectorAll('.avatar-opt').forEach(el => el.classList.remove('selected'));
+                  div.classList.add('selected');
+                  updatePreview(item.filename, item.folder);
+              };
+              avatarGrid.appendChild(div);
+          });
+      }
+      
+      function updatePreview(filename, folder) {
+          selectedAvatarFile = filename; 
+          selectedFolder = folder;
+          currentAvatar.src = `../assets/${folder}/${filename}`;
+      }
+      
+      saveBtn.onclick = async () => {
+          const data = { 
+              name: nameInput.value.trim() || "Guest", 
+              elo: parseInt(eloInput.value) || 1200, 
+              avatar: selectedAvatarFile, 
+              avatarFolder: selectedFolder 
+          };
+          await window.electronAPI.saveProfile(data);
+          window.electronAPI.navigateGoHome();
+      };
+      
+      cancelBtn.onclick = () => window.electronAPI.navigateGoHome();
+      
+      init();
+  </script>
+</body>
+</html>

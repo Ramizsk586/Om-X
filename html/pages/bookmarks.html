@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Bookmarks</title>
+  <link rel="stylesheet" href="../../css/base/reset.css">
+  <link rel="stylesheet" href="../../css/base/variables.css">
+  <link rel="stylesheet" href="../../css/base/base.css">
+  <link rel="stylesheet" href="../../css/themes/all-themes.css">
+  <style>
+    body { margin: 0; background: var(--bg-app); color: var(--text-main); font-family: 'Segoe UI', sans-serif; }
+    .wrap { padding: 14px; }
+    .head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+    .title { font-size: 18px; font-weight: 600; }
+    .search { flex: 1; min-width: 180px; height: 34px; border-radius: 10px; border: var(--input-border); background: var(--input-bg); color: var(--input-text); padding: 0 12px; outline: none; }
+    .list { display: flex; flex-direction: column; gap: 6px; }
+    .item { display: grid; grid-template-columns: 18px 1fr auto; align-items: center; gap: 10px; min-height: 38px; border-radius: 10px; padding: 8px 10px; border: 1px solid rgba(255,255,255,0.06); background: rgba(255,255,255,0.03); cursor: pointer; }
+    .item:hover { background: rgba(255,255,255,0.08); }
+    .fav { width: 16px; height: 16px; border-radius: 4px; }
+    .meta { min-width: 0; }
+    .name { font-size: 13px; color: var(--text-main); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .url { font-size: 11px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .del { border: 0; width: 24px; height: 24px; border-radius: 8px; background: rgba(255,255,255,0.08); color: #ffd7dc; cursor: pointer; }
+    .del:hover { background: rgba(232,17,35,0.3); color: #fff; }
+    .empty { padding: 28px 8px; color: var(--text-secondary); text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="head">
+      <div class="title">Bookmarks</div>
+      <input id="bm-search" class="search" type="text" placeholder="Search bookmarks">
+    </div>
+    <div id="bm-list" class="list"></div>
+  </div>
+  <script type="module" src="../../java/renderer/bookmarksRenderer.js"></script>
+</body>
+</html>

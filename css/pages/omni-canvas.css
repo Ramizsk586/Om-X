@@ -1,0 +1,444 @@
+:root {
+  --canvas-line: color-mix(in srgb, var(--text-secondary) 38%, transparent);
+  --canvas-line-strong: color-mix(in srgb, var(--text-secondary) 56%, transparent);
+  --canvas-surface: color-mix(in srgb, var(--glass-bg) 84%, transparent);
+  --canvas-surface-soft: color-mix(in srgb, var(--glass-bg) 68%, transparent);
+  --canvas-hover: color-mix(in srgb, var(--text-main) 12%, transparent);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg-app);
+  color: var(--text-main);
+  font-family: "Segoe UI", "Noto Sans", "Noto Sans Arabic", "Noto Sans CJK SC", "Noto Sans Devanagari", "Noto Sans Bengali", system-ui, sans-serif;
+}
+
+.canvas-app {
+  height: 100vh;
+  overflow: hidden;
+}
+
+.window-titlebar {
+  height: 40px;
+  border-bottom: 1px solid var(--canvas-line);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--canvas-surface) 72%, #000 28%), color-mix(in srgb, var(--canvas-surface) 78%, #000 22%));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.titlebar-left {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  min-width: 0;
+  flex: 1;
+  -webkit-app-region: drag;
+  user-select: none;
+}
+
+.titlebar-icon {
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+  flex: 0 0 auto;
+  border-radius: 50%;
+}
+
+.titlebar-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-main);
+  line-height: 1;
+}
+
+.titlebar-controls {
+  height: 100%;
+  display: flex;
+  align-items: stretch;
+  -webkit-app-region: no-drag;
+  gap: 0;
+  padding-right: 0;
+}
+
+.titlebar-btn {
+  width: 38px;
+  height: 34px;
+  margin-top: 3px;
+  border: 0;
+  background: transparent;
+  color: #d9e1ff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border-radius: 0;
+}
+
+.titlebar-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.titlebar-btn.danger:hover {
+  background: #e81123;
+  color: #ffffff;
+}
+
+.titlebar-btn svg {
+  width: 11px;
+  height: 11px;
+}
+
+.workspace {
+  height: calc(100% - 40px);
+  display: grid;
+  grid-template-columns: 34% 8px 58%;
+  min-width: 0;
+  min-height: 0;
+}
+
+.canvas-pane,
+.ai-pane {
+  min-width: 0;
+  min-height: 0;
+  background: var(--canvas-surface);
+  display: flex;
+  flex-direction: column;
+}
+
+.canvas-pane { border-right: 1px solid var(--canvas-line); }
+.ai-pane { grid-column: 1; }
+.pane-divider { grid-column: 2; }
+.canvas-pane { grid-column: 3; }
+
+.pane-head {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+  font-size: 14px;
+  font-weight: 700;
+  border-bottom: 1px solid var(--canvas-line);
+  color: var(--text-main);
+}
+
+.ai-head {
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.canvas-head {
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ai-config-btn {
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--canvas-line);
+  background: color-mix(in srgb, var(--canvas-surface-soft) 88%, transparent);
+  color: var(--text-secondary);
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+
+.ai-config-btn svg {
+  width: 15px;
+  height: 15px;
+}
+
+.ai-config-btn:hover {
+  color: var(--text-main);
+  border-color: var(--canvas-line-strong);
+  background: color-mix(in srgb, var(--canvas-hover) 78%, transparent);
+}
+
+.ai-config-panel {
+  border-bottom: 1px solid var(--canvas-line);
+  padding: 10px 14px 12px;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 7px;
+  background: color-mix(in srgb, var(--canvas-surface-soft) 90%, transparent);
+}
+
+.ai-config-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.ai-config-select,
+.ai-config-action {
+  min-height: 34px;
+  border: 1px solid var(--canvas-line);
+  background: color-mix(in srgb, var(--canvas-surface) 84%, transparent);
+  color: var(--text-main);
+  border-radius: 10px;
+  font-size: 13px;
+  padding: 0 10px;
+  outline: none;
+}
+
+.ai-config-select:focus {
+  border-color: color-mix(in srgb, var(--accent-color) 58%, var(--canvas-line));
+}
+
+.ai-config-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.ai-config-action {
+  flex: 1;
+  cursor: pointer;
+}
+
+.ai-config-action.primary {
+  border-color: color-mix(in srgb, var(--accent-color) 78%, transparent);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent-color) 86%, #8e63ff), color-mix(in srgb, var(--accent-color) 86%, #6842de));
+  color: #ffffff;
+  font-weight: 700;
+}
+
+.ai-config-action:hover {
+  filter: brightness(1.07);
+}
+
+.canvas-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.canvas-tool-select,
+.canvas-tool-btn {
+  height: 30px;
+  border: 1px solid var(--canvas-line);
+  background: color-mix(in srgb, var(--canvas-surface) 88%, transparent);
+  color: var(--text-main);
+  border-radius: 9px;
+  font-size: 12px;
+  padding: 0 10px;
+}
+
+.canvas-tool-select {
+  min-width: 74px;
+}
+
+.canvas-tool-btn {
+  min-width: 30px;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0 8px;
+}
+
+.canvas-tool-btn:hover,
+.canvas-tool-select:hover {
+  border-color: var(--canvas-line-strong);
+  background: color-mix(in srgb, var(--canvas-hover) 70%, transparent);
+}
+
+.canvas-editor {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  outline: none;
+  padding: 14px;
+  background: transparent;
+  color: var(--text-main);
+  font-size: 15px;
+  line-height: 1.6;
+  font-family: "JetBrains Mono", "Noto Sans Mono", "Noto Sans Arabic", "Noto Sans CJK SC", "Noto Sans Devanagari", "Noto Sans Bengali", monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-y: auto;
+}
+
+.canvas-editor:empty::before {
+  content: attr(data-placeholder);
+  color: var(--text-secondary);
+  pointer-events: none;
+}
+
+#chat-input::placeholder {
+  color: var(--text-secondary);
+}
+
+.pane-divider {
+  background: color-mix(in srgb, var(--glass-bg) 92%, transparent);
+  border-left: 1px solid var(--canvas-line);
+  border-right: 1px solid var(--canvas-line);
+  cursor: col-resize;
+}
+
+.pane-divider:hover {
+  background: var(--canvas-hover);
+}
+
+.pane-divider.dragging {
+  background: color-mix(in srgb, var(--accent-color) 40%, transparent);
+}
+
+.chat-messages {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--glass-bg) 72%, transparent), transparent 42%);
+}
+
+.msg {
+  max-width: 92%;
+  padding: 10px 12px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  font-size: 14px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+.msg.user {
+  align-self: flex-end;
+  color: #ffffff;
+  background: color-mix(in srgb, var(--accent-color) 72%, transparent);
+  border-color: color-mix(in srgb, var(--accent-color) 86%, transparent);
+  font-weight: 600;
+}
+
+.msg.ai {
+  align-self: flex-start;
+  color: var(--text-secondary);
+  background: color-mix(in srgb, var(--text-main) 8%, transparent);
+  border-color: color-mix(in srgb, var(--text-main) 14%, transparent);
+}
+
+.compose {
+  border-top: 1px solid var(--canvas-line);
+  padding: 10px 14px 12px;
+}
+
+.compose-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--canvas-line);
+  background: var(--canvas-surface-soft);
+  min-height: 44px;
+  padding: 4px;
+  border-radius: 12px;
+}
+
+#chat-input {
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-main);
+  outline: none;
+  padding: 0 10px;
+  font-size: 14px;
+  line-height: 1;
+  height: 34px;
+  border-radius: 8px;
+}
+
+#chat-input:focus {
+  border-color: transparent;
+}
+
+.btn-send {
+  min-width: 88px;
+  height: 34px;
+  padding: 0 14px;
+  border: 1px solid color-mix(in srgb, var(--accent-color) 85%, transparent);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent-color) 88%, #9d6bff), color-mix(in srgb, var(--accent-color) 88%, #6f47df));
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 700;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.btn-send:hover {
+  filter: brightness(1.08);
+}
+
+.btn-send:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.loading {
+  position: fixed;
+  right: 14px;
+  top: 10px;
+  z-index: 999;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.hidden {
+  display: none !important;
+}
+
+@media (max-width: 920px) {
+  .workspace {
+    grid-template-columns: 1fr;
+    grid-template-rows: 48% 52%;
+  }
+
+  .pane-divider {
+    display: none;
+  }
+
+  .ai-pane {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .canvas-pane {
+    grid-column: 1;
+    grid-row: 2;
+    border-right: 0;
+    border-bottom: 1px solid var(--canvas-line);
+  }
+
+  .titlebar-name {
+    font-size: 14px;
+  }
+
+  .titlebar-btn {
+    width: 36px;
+  }
+
+  .canvas-toolbar {
+    justify-content: flex-end;
+  }
+}

@@ -1,0 +1,158 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Game Clock</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <style>body { margin: 0; background: var(--app-bg); color: var(--text-main); display: flex; flex-direction: column; height: 100vh; overflow: hidden; padding: 16px; font-family: 'Inter', system-ui, sans-serif; }</style>
+</head>
+<body>
+
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; padding:0 4px;">
+      <div style="font-size:13px; text-transform:uppercase; letter-spacing:0.15em; color:var(--text-muted); font-weight:700;">Game Clock</div>
+      <div id="settingsIcon" style="background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); width:32px; height:32px; border-radius:8px; display:flex; align-items:center; justify-content:center; cursor:pointer;">⚙</div>
+  </div>
+
+  <div class="timer-container">
+      <!-- WHITE CLOCK -->
+      <div class="clock-card" id="whiteSide">
+          <div class="watermark">♔</div>
+          <div class="player-info">
+              <div class="player-name">White</div>
+              <div class="agent-model" id="whiteType">Human</div>
+          </div>
+          <div class="time-display" id="whiteTime">05:00</div>
+      </div>
+
+      <!-- BLACK CLOCK -->
+      <div class="clock-card" id="blackSide">
+          <div class="watermark">♚</div>
+          <div class="player-info">
+              <div class="player-name">Black</div>
+              <div class="agent-model" id="blackType">Human</div>
+          </div>
+          <div class="time-display" id="blackTime">05:00</div>
+      </div>
+  </div>
+
+  <div style="margin-top:16px; display:flex; justify-content:center;">
+      <button id="btnPause" class="btn-secondary" style="width:100%; height:48px; border-radius:12px; display:flex; align-items:center; justify-content:center; gap:10px; font-size:14px; font-weight:700;">
+          <span>❚❚ Pause Game</span>
+      </button>
+  </div>
+
+  <!-- Config Modal -->
+  <div id="configOverlay" class="modal-backdrop" style="position:fixed; inset:0; background:rgba(0,0,0,0.75); backdrop-filter:blur(8px); z-index:100; display:none; align-items:center; justify-content:center;">
+      <div class="card" style="width:280px; margin:0;">
+          <h3 style="margin:0 0 16px 0;">Time Control</h3>
+          <div style="margin-bottom:16px;">
+              <div class="row-label">Base Minutes</div>
+              <input type="number" id="baseMinutes" value="5" min="1" max="180">
+          </div>
+          <div style="margin-bottom:16px;">
+              <div class="row-label">Increment (Seconds)</div>
+              <input type="number" id="incrementSeconds" value="0" min="0" max="60">
+          </div>
+          <div style="display:flex; gap:10px; margin-top:20px;">
+              <button id="btnApply" class="btn-primary" style="flex:1;">Apply</button>
+              <button id="btnCancel" class="btn-secondary" style="flex:1;">Cancel</button>
+          </div>
+      </div>
+  </div>
+
+  <script>
+    const whiteSide = document.getElementById("whiteSide");
+    const blackSide = document.getElementById("blackSide");
+    const whiteTypeSpan = document.getElementById("whiteType");
+    const blackTypeSpan = document.getElementById("blackType");
+    const whiteTimeSpan = document.getElementById("whiteTime");
+    const blackTimeSpan = document.getElementById("blackTime");
+    const settingsIcon = document.getElementById("settingsIcon");
+    const configOverlay = document.getElementById("configOverlay");
+    const btnPause = document.getElementById("btnPause");
+    const btnApply = document.getElementById("btnApply");
+    const btnCancel = document.getElementById("btnCancel");
+    const baseMinutesInput = document.getElementById("baseMinutes");
+    const incrementSecondsInput = document.getElementById("incrementSeconds");
+
+    let baseMs = 5 * 60 * 1000;
+    let incrementMs = 0;
+    let whiteMs = baseMs;
+    let blackMs = baseMs;
+    let activeColor = null;
+    let timerId = null;
+    let gameRunning = false;
+    let timeOver = false;
+    let isPaused = false;
+    let initialSide = null;
+    let firstMoveStarted = false;
+
+    function formatTime(ms) {
+      const totalSec = Math.max(0, Math.floor(ms / 1000));
+      const m = Math.floor(totalSec / 60);
+      const s = totalSec % 60;
+      return `${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;
+    }
+
+    function updateDisplay() {
+      whiteTimeSpan.textContent = formatTime(whiteMs);
+      blackTimeSpan.textContent = formatTime(blackMs);
+      whiteSide.classList.toggle("low-time", whiteMs <= 20000 && !timeOver);
+      blackSide.classList.toggle("low-time", blackMs <= 20000 && !timeOver);
+    }
+
+    function setActive(color) {
+      whiteSide.classList.remove("active"); blackSide.classList.remove("active");
+      if (color === "w") whiteSide.classList.add("active");
+      if (color === "b") blackSide.classList.add("active");
+    }
+
+    function startTicking() {
+      if (!activeColor || timeOver || isPaused) return;
+      if (timerId) clearInterval(timerId);
+      gameRunning = true;
+      setActive(activeColor);
+      timerId = setInterval(() => {
+          if (!gameRunning || timeOver || isPaused) return;
+          if (activeColor === "w") { whiteMs -= 1000; if (whiteMs <= 0) { whiteMs = 0; handleFlag("w"); } } 
+          else { blackMs -= 1000; if (blackMs <= 0) { blackMs = 0; handleFlag("b"); } }
+          updateDisplay();
+      }, 1000);
+    }
+
+    function stopTimer() { if (timerId) clearInterval(timerId); timerId = null; gameRunning = false; whiteSide.classList.remove("active"); blackSide.classList.remove("active"); }
+    function handleFlag(loser) { timeOver = true; stopTimer(); updateDisplay(); alert((loser === 'w' ? "White" : "Black") + " lost on time!"); window.electronAPI?.stopMatch(); }
+    
+    function updatePauseUI() {
+        if (isPaused) {
+            btnPause.innerHTML = "<span>▶ Resume Game</span>";
+            btnPause.className = "btn-primary"; document.body.style.opacity = "0.5";
+        } else {
+            btnPause.innerHTML = "<span>❚❚ Pause Game</span>";
+            btnPause.className = "btn-secondary"; document.body.style.opacity = "1";
+        }
+        btnPause.style.width="100%"; btnPause.style.height="48px"; btnPause.style.borderRadius="12px";
+    }
+
+    btnPause.onclick = () => { if (timeOver) return; isPaused = !isPaused; if (isPaused) stopTimer(); else if (activeColor && firstMoveStarted) startTicking(); updatePauseUI(); };
+    settingsIcon.onclick = () => { baseMinutesInput.value = Math.floor(baseMs / 60000); incrementSecondsInput.value = Math.floor(incrementMs / 1000); configOverlay.style.display = "flex"; };
+    btnCancel.onclick = () => configOverlay.style.display = "none";
+    btnApply.onclick = () => {
+        const m = parseInt(baseMinutesInput.value) || 5;
+        const inc = parseInt(incrementSecondsInput.value) || 0;
+        baseMs = m * 60000; incrementMs = inc * 1000;
+        whiteMs = baseMs; blackMs = baseMs;
+        activeColor = null; initialSide = null; firstMoveStarted = false; timeOver = false; isPaused = false;
+        stopTimer(); updateDisplay(); updatePauseUI(); configOverlay.style.display = "none";
+    };
+
+    if (window.electronAPI?.onTimerGameStart) { window.electronAPI.onTimerGameStart((info) => { whiteTypeSpan.textContent = info?.white?.type || "Human"; blackTypeSpan.textContent = info?.black?.type || "Human"; whiteMs = baseMs; blackMs = baseMs; activeColor = null; initialSide = null; firstMoveStarted = false; timeOver = false; isPaused = false; stopTimer(); updateDisplay(); updatePauseUI(); }); }
+    if (window.electronAPI?.onTurnChanged) { window.electronAPI.onTurnChanged((color) => { if (timeOver) return; if (!initialSide) { initialSide = color; return; } const prevColor = color === 'w' ? 'b' : 'w'; if (prevColor === 'w') whiteMs += incrementMs; else blackMs += incrementMs; if (!firstMoveStarted) firstMoveStarted = true; activeColor = color; if (!isPaused) startTicking(); updateDisplay(); }); }
+    if (window.electronAPI?.onTimerStop) { window.electronAPI.onTimerStop(() => { timeOver = true; stopTimer(); }); }
+    (async () => { const prefs = await window.electronAPI?.getPreferences(); if (prefs?.boardTheme) document.documentElement.setAttribute('data-theme', prefs.boardTheme); })();
+    window.electronAPI?.onThemeChanged((t) => document.documentElement.setAttribute('data-theme', t));
+    updateDisplay();
+  </script>
+</body>
+</html>

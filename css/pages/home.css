@@ -1,0 +1,75 @@
+
+body {
+  /* Use variable defined in variables.css */
+  background: var(--bg-app);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  color: var(--text-main);
+  overflow: hidden;
+  margin: 0;
+  transition: background 0.3s ease;
+}
+
+.home-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 32px;
+  animation: fadeIn 1.2s var(--ease-out-expo);
+  user-select: none;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.brand {
+  font-family: "Didot", "Bodoni MT", "Times New Roman", serif;
+  font-size: 140px;
+  font-weight: 400;
+  letter-spacing: -3px;
+  line-height: 1;
+  /* Clean White-Gray Gradient */
+  background: linear-gradient(180deg, #ffffff 30%, #888888 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 0 40px rgba(255,255,255,0.1));
+  cursor: default;
+}
+
+.hint {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.4);
+  font-weight: 400;
+  letter-spacing: 0.5px;
+  background: rgba(255, 255, 255, 0.03);
+  padding: 12px 24px;
+  border-radius: 50px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(10px);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.3s ease;
+}
+
+.hint:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.1);
+  transform: translateY(-2px);
+}
+
+kbd {
+  background: rgba(255, 255, 255, 0.1);
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-weight: 600;
+  color: #fff;
+  font-size: 12px;
+  box-shadow: 0 2px 0 rgba(0,0,0,0.3);
+}

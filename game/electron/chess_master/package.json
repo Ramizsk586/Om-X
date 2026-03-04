@@ -1,0 +1,13 @@
+
+{
+  "name": "chess-master",
+  "version": "1.0.0",
+  "description": "Interactive Chess Coaching",
+  "main": "java/main.js",
+  "author": "GameHub",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "start": "electron ."
+  }
+}
