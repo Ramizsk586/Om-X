@@ -13,7 +13,7 @@ const coachName = document.getElementById('coach-name');
 
 let selectedSquare = null;
 let currentValidMoves = [];
-let currentApiKey = localStorage.getItem('cm_api_key') || "";
+let currentApiKey = sessionStorage.getItem('cm_api_key') || "";
 let currentProvider = localStorage.getItem('cm_ai_provider') || "gemini";
 let currentModel = localStorage.getItem('cm_ai_model') || "";
 
@@ -1694,13 +1694,13 @@ function initAiPanel() {
             currentApiKey = key;
             currentProvider = prov;
             currentModel = mod;
-            localStorage.setItem('cm_api_key', key);
+            sessionStorage.setItem('cm_api_key', key);
             localStorage.setItem('cm_ai_provider', prov);
             localStorage.setItem('cm_ai_model', mod);
             alert("Neural Link Established.");
         } else {
             currentApiKey = "";
-            localStorage.removeItem('cm_api_key');
+            sessionStorage.removeItem('cm_api_key');
             alert("Neural Link Severed.");
         }
     };

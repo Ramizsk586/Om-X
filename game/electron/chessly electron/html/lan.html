@@ -155,20 +155,43 @@
           }
           
           players.forEach(p => {
+              const safeId = String(p?.id || '');
+              const safeName = String(p?.name || 'Guest');
+              const avatar = String(p?.avatar || 'bK.png');
+              const safeAvatar = /^[bw][KQRNBP]\.png$/i.test(avatar) ? avatar : 'bK.png';
               const div = document.createElement('div');
               div.className = 'player-item';
-              div.innerHTML = `
-                  <div class="p-info">
-                      <img src="../assets/pieces/${p.avatar || 'bK.png'}" class="p-avatar">
-                      <div>
-                          <div class="p-name">${p.name}</div>
-                          <div class="p-ip">${p.id}</div>
-                      </div>
-                  </div>
-                  <div style="display:flex; gap:8px;">
-                      <button class="btn-kick" onclick="kickPlayer('${p.id}')">Block</button>
-                  </div>
-              `;
+
+              const infoWrap = document.createElement('div');
+              infoWrap.className = 'p-info';
+
+              const avatarEl = document.createElement('img');
+              avatarEl.className = 'p-avatar';
+              avatarEl.src = `../assets/pieces/${safeAvatar}`;
+              infoWrap.appendChild(avatarEl);
+
+              const textWrap = document.createElement('div');
+              const nameEl = document.createElement('div');
+              nameEl.className = 'p-name';
+              nameEl.textContent = safeName;
+              const idEl = document.createElement('div');
+              idEl.className = 'p-ip';
+              idEl.textContent = safeId;
+              textWrap.appendChild(nameEl);
+              textWrap.appendChild(idEl);
+              infoWrap.appendChild(textWrap);
+
+              const actions = document.createElement('div');
+              actions.style.display = 'flex';
+              actions.style.gap = '8px';
+              const blockBtn = document.createElement('button');
+              blockBtn.className = 'btn-kick';
+              blockBtn.textContent = 'Block';
+              blockBtn.addEventListener('click', () => kickPlayer(safeId));
+              actions.appendChild(blockBtn);
+
+              div.appendChild(infoWrap);
+              div.appendChild(actions);
               playersList.appendChild(div);
           });
       }

@@ -222,7 +222,8 @@ function createMainWindow() {
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true, nodeIntegration: false, webviewTag: true,
-      webSecurity: false 
+      webSecurity: true,
+      sandbox: true
     }
   });
   attachWindowContextMenu(mainWindow);
@@ -254,7 +255,13 @@ function setupIPC() {
       const win = new BrowserWindow({
           width: 900, height: 600, parent: mainWindow, modal: true,
           frame: false, show: false,
-          webPreferences: { preload: path.join(__dirname, "preload.js"), webSecurity: false }
+          webPreferences: {
+              preload: path.join(__dirname, "preload.js"),
+              contextIsolation: true,
+              nodeIntegration: false,
+              webSecurity: true,
+              sandbox: true
+          }
       });
       win.loadFile(path.join(__dirname, "../html/profile.html"));
       win.once('ready-to-show', () => win.show());

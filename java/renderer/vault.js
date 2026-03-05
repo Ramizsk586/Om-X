@@ -58,6 +58,13 @@ export async function mountVaultPanel(mountPoint) {
 
     let allEntries = [];
     let activeModule = 'ai-keys';
+    const escapeHtml = (value = '') =>
+        String(value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
 
     const refreshState = async () => {
         const isUnlocked = await window.browserAPI.vault.status();
@@ -83,6 +90,12 @@ export async function mountVaultPanel(mountPoint) {
             els.aiList.innerHTML = `<div style="text-align:center; padding:48px; color:var(--v-text-muted); font-size:13px; font-weight:600;">No Intelligence Keys Found.</div>`;
         } else {
             aiKeys.forEach(entry => {
+                const provider = String(entry.provider || '').trim();
+                const model = String(entry.model || '').trim();
+                const gmail = String(entry.gmail || '').trim();
+                const safeProvider = escapeHtml(provider);
+                const safeModel = escapeHtml(model);
+                const safeGmail = escapeHtml(gmail);
                 const item = document.createElement('div');
                 item.className = 'v-item';
                 item.style.borderColor = 'rgba(124, 77, 255, 0.2)';
@@ -90,8 +103,8 @@ export async function mountVaultPanel(mountPoint) {
                     <div class="v-item-id">
                         <div class="v-avatar" style="color:var(--accent-color);"><svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M21 16.5C21 16.88 20.79 17.21 20.47 17.38L12.57 21.82C12.41 21.94 12.21 22 12 22C11.79 22 11.59 21.94 11.43 21.82L3.53 17.38C3.21 17.21 3 16.88 3 16.5V7.5C3 7.12 3.21 6.79 3.53 6.62L11.43 2.18C11.59 2.06 11.79 2 12 2C12.21 2 12.41 2.06 12.57 2.18L20.47 6.62C20.79 6.79 21 7.12 21 7.5V16.5Z"/></svg></div>
                         <div class="v-details">
-                            <span class="v-title">${entry.provider.toUpperCase()} <span style="font-size:10px; opacity:0.5;">(${entry.model})</span></span>
-                            <span class="v-sub">${entry.gmail}</span>
+                            <span class="v-title">${safeProvider.toUpperCase()} <span style="font-size:10px; opacity:0.5;">(${safeModel})</span></span>
+                            <span class="v-sub">${safeGmail}</span>
                         </div>
                     </div>
                     <div class="v-actions">
@@ -111,7 +124,7 @@ export async function mountVaultPanel(mountPoint) {
                 };
                 
                 item.querySelector('.del-btn').onclick = async () => {
-                    if (confirm(`Irreversibly purge AI key for ${entry.provider}?`)) {
+                    if (confirm(`Irreversibly purge AI key for ${provider || 'unknown provider'}?`)) {
                         await window.browserAPI.vault.delete(entry.id);
                         await refreshState();
                     }

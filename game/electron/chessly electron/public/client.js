@@ -17,6 +17,7 @@ const gameOverOverlay = document.getElementById('game-over-overlay');
 const goTitle = document.getElementById('go-title');
 const goReason = document.getElementById('go-reason');
 const avatarGrid = document.getElementById('avatarGrid');
+const lanJoinToken = new URLSearchParams(window.location.search).get('token') || '';
 
 // Sounds
 const sndMove = document.getElementById('snd-move');
@@ -59,7 +60,7 @@ joinBtn.addEventListener('click', () => {
     myDisplayname.textContent = name;
     myAvatarImg.src = `/assets/pieces/${selectedAvatar}`;
     
-    socket.emit('client-join', { name, avatar: selectedAvatar });
+    socket.emit('client-join', { name, avatar: selectedAvatar, token: lanJoinToken });
     playSound(sndNotify);
 });
 

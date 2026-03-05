@@ -66,6 +66,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
   enginesSave: (engine) => ipcRenderer.invoke("engines-save", engine),
   enginesDelete: (id) => ipcRenderer.invoke("engines-delete", id),
   enginesGetBasic: () => ipcRenderer.invoke("engines-get-basic"),
+  scanEnginesDir: () => ipcRenderer.invoke("scan-engines-dir"),
   requestEngineMove: (info) => ipcRenderer.send("request-engine-move", info),
   requestEngineMovePromise: (payload) => ipcRenderer.invoke("request-engine-move-promise", payload),
   onEngineMove: (callback) => ipcRenderer.on("engine-move", (_event, move) => callback(move)),
@@ -109,9 +110,6 @@ contextBridge.exposeInMainWorld("electronAPI", {
   saveProfile: (data) => ipcRenderer.invoke("save-profile", data),
   getAvailableAvatars: () => ipcRenderer.invoke("get-available-avatars"),
   onProfileUpdated: (callback) => ipcRenderer.on("profile-updated", (_event, data) => callback(data)),
-  
-  // Generic Invoke Wrapper
-  invoke: (channel, ...args) => ipcRenderer.invoke(channel, ...args),
   
   // DEBUG & LOGGING
   getSystemLogs: () => ipcRenderer.invoke("get-system-logs"),

@@ -31,6 +31,35 @@ document.addEventListener('DOMContentLoaded', () => {
     let geminiAnalysisEnabled = false;
     let engineAnalysisEnabled = false;
     let reviewMarkers = { best: null, wrong: null, forIndex: -2 };
+
+    function appendSafeCitations(container, citations) {
+        if (!Array.isArray(citations) || citations.length === 0) return;
+        const wrapper = document.createElement('div');
+        wrapper.className = 'grounding-citations';
+
+        const heading = document.createElement('h4');
+        heading.textContent = 'Sources';
+        wrapper.appendChild(heading);
+
+        const list = document.createElement('ul');
+        citations.forEach((citation) => {
+            const href = String(citation?.uri || '').trim();
+            const title = String(citation?.title || href || 'Source');
+            if (!/^https?:\/\//i.test(href)) return;
+            const item = document.createElement('li');
+            const link = document.createElement('a');
+            link.href = href;
+            link.target = '_blank';
+            link.rel = 'noopener noreferrer';
+            link.textContent = title;
+            item.appendChild(link);
+            list.appendChild(item);
+        });
+
+        if (list.childElementCount === 0) return;
+        wrapper.appendChild(list);
+        container.appendChild(wrapper);
+    }
     
     // --- COORDINATE & ANNOTATION HELPERS ---
     const LETTERS = "ABCDEFGHJKLMNOPQRSTUVWXYZ";
@@ -196,7 +225,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (engineAnalysisEnabled) {
             // Start the engine
             engineOutput.textContent = "Starting engine...";
-            const success = await window.electronAPI.invoke('go-review-start-engine', { engineId, boardSize: gameRecord.size });
+            const success = await window.electronAPI.goReviewStartEngine({ engineId, boardSize: gameRecord.size });
             if (success) {
                 runEngineAnalysis();
             } else {
@@ -207,7 +236,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 reviewEngineSelect.disabled = false;
             }
         } else {
-            window.electronAPI.invoke('go-review-stop-engine');
+            window.electronAPI.goReviewStopEngine();
             reviewMarkers = { best: null, wrong: null, forIndex: currentMoveIndex };
             renderBoardState(currentMoveIndex);
             engineOutput.innerHTML = '<span style="opacity: 0.5;">Analysis disabled</span>';
@@ -236,7 +265,7 @@ document.addEventListener('DOMContentLoaded', () => {
             movesToReplay.push({ color, coord });
         }
         
-        const bestMove = await window.electronAPI.invoke('go-review-analyze', { 
+        const bestMove = await window.electronAPI.goReviewAnalyze({ 
             turn, 
             moves: movesToReplay 
         });
@@ -293,15 +322,7 @@ document.addEventListener('DOMContentLoaded', () => {
             } else {
                 geminiAnalysisContent.textContent = result.text;
                 if (result.citations && result.citations.length > 0) {
-                    const citationsDiv = document.createElement('div');
-                    citationsDiv.className = 'grounding-citations';
-                    let citationsHTML = `<h4>Sources</h4><ul>`;
-                     result.citations.forEach(citation => {
-                        citationsHTML += `<li><a href="${citation.uri}" target="_blank">${citation.title}</a></li>`;
-                    });
-                    citationsHTML += `</ul>`;
-                    citationsDiv.innerHTML = citationsHTML;
-                    geminiAnalysisContent.appendChild(citationsDiv);
+                    appendSafeCitations(geminiAnalysisContent, result.citations);
                 }
             }
 
@@ -340,15 +361,7 @@ document.addEventListener('DOMContentLoaded', () => {
             } else {
                 geminiAnalysisContent.textContent = result.text;
                 if (result.citations && result.citations.length > 0) {
-                    const citationsDiv = document.createElement('div');
-                    citationsDiv.className = 'grounding-citations';
-                    let citationsHTML = `<h4>Sources</h4><ul>`;
-                     result.citations.forEach(citation => {
-                        citationsHTML += `<li><a href="${citation.uri}" target="_blank">${citation.title}</a></li>`;
-                    });
-                    citationsHTML += `</ul>`;
-                    citationsDiv.innerHTML = citationsHTML;
-                    geminiAnalysisContent.appendChild(citationsDiv);
+                    appendSafeCitations(geminiAnalysisContent, result.citations);
                 }
             }
         } catch (e) {

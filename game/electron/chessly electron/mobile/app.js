@@ -92,21 +92,28 @@ if(btnJoin) {
         let host = inputIp.value.trim();
         if(!host) host = window.location.origin;
         else if(!host.startsWith('http')) host = 'http://' + host;
+
+        let joinToken = new URLSearchParams(window.location.search).get('token') || '';
+        try {
+            const parsedHost = new URL(host);
+            joinToken = parsedHost.searchParams.get('token') || joinToken;
+            host = `${parsedHost.protocol}//${parsedHost.host}`;
+        } catch (_) {}
         
         localStorage.setItem('chessly_player_name', name);
         saveServer(inputIp.value.trim());
         
-        initSocket(host, name);
+        initSocket(host, name, joinToken);
     };
 }
 
-function initSocket(host, name) {
+function initSocket(host, name, joinToken = '') {
     if(btnJoin) btnJoin.textContent = "CONNECTING...";
     
     socket = io(host);
 
     socket.on('connect', () => {
-        socket.emit('client-join', { name, avatar: selectedAvatar });
+        socket.emit('client-join', { name, avatar: selectedAvatar, token: joinToken });
         document.getElementById('screen-connect').classList.remove('active');
         document.getElementById('screen-connect').classList.add('hidden');
         document.getElementById('screen-game').classList.remove('hidden');

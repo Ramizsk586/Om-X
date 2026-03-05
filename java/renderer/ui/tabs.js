@@ -379,12 +379,93 @@ export class TabManager {
     `;
   }
 
+  _looksLikeLocalPath(target = '') {
+    const raw = String(target || '').trim();
+    if (!raw) return false;
+    return /^[A-Za-z]:[\\/]/.test(raw) || /^\\\\[^\\]+\\[^\\]+/.test(raw) || /^[\\/]/.test(raw) || /^[.]{1,2}[\\/]/.test(raw);
+  }
+
   checkUrlSafety(url) {
-    if (!url) return { safe: true };
-    if (url.startsWith('file:') || url.startsWith('data:') || url.startsWith('about:') || url.includes('security-defense.html')) {
-        return { safe: true };
+    const rawUrl = String(url || '').trim();
+    if (!rawUrl) {
+      return {
+        safe: false,
+        type: 'invalid-url',
+        originalUrl: '',
+        reason: 'URL is empty'
+      };
     }
-    return { safe: true };
+    if (rawUrl.includes('security-defense.html')) {
+      return { safe: true, originalUrl: rawUrl };
+    }
+    // Keep compatibility for app flows that pass an OS path instead of a file:// URL.
+    if (this._looksLikeLocalPath(rawUrl)) {
+      return { safe: true, originalUrl: rawUrl };
+    }
+
+    let parsed;
+    try {
+      parsed = new URL(rawUrl, window.location.href);
+    } catch (_) {
+      return {
+        safe: false,
+        type: 'invalid-url',
+        originalUrl: rawUrl,
+        reason: 'Malformed URL'
+      };
+    }
+
+    const protocol = String(parsed.protocol || '').toLowerCase();
+    if (protocol === 'javascript:' || protocol === 'vbscript:' || protocol === 'devtools:') {
+      return {
+        safe: false,
+        type: 'blocked-scheme',
+        originalUrl: parsed.href,
+        reason: `Blocked URL scheme: ${protocol}`
+      };
+    }
+
+    const allowedProtocols = new Set(['http:', 'https:', 'file:', 'mindclone:', 'about:', 'data:']);
+    if (!allowedProtocols.has(protocol)) {
+      return {
+        safe: false,
+        type: 'blocked-scheme',
+        originalUrl: parsed.href,
+        reason: `Unsupported URL scheme: ${protocol || '(none)'}`
+      };
+    }
+
+    if (protocol === 'about:' && parsed.href !== 'about:blank') {
+      return {
+        safe: false,
+        type: 'blocked-url',
+        originalUrl: parsed.href,
+        reason: 'Only about:blank is allowed'
+      };
+    }
+
+    if ((protocol === 'http:' || protocol === 'https:') && !parsed.hostname) {
+      return {
+        safe: false,
+        type: 'invalid-url',
+        originalUrl: parsed.href,
+        reason: 'HTTP/HTTPS URL must include a hostname'
+      };
+    }
+
+    try {
+      const blocked = isBlocked(parsed.href);
+      if (blocked && typeof blocked === 'object' && String(blocked.status || '').toUpperCase() === 'BLOCKED') {
+        return {
+          safe: false,
+          type: 'blocked-site',
+          originalUrl: parsed.href,
+          reason: String(blocked.reason || 'Blocked by policy')
+        };
+      }
+    } catch (_) {}
+
+    return { safe: true, originalUrl: parsed.href };
   }
 
   createDefenseUrl(type, url, reason) {

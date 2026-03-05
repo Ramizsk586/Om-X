@@ -912,7 +912,11 @@ class LlamaServerRenderer {
         line.className = `terminal-line ${type}`;
 
         const timestamp = new Date().toLocaleTimeString();
-        line.innerHTML = `<span class="timestamp">[${timestamp}]</span> ${message}`;
+        const time = document.createElement('span');
+        time.className = 'timestamp';
+        time.textContent = `[${timestamp}]`;
+        line.appendChild(time);
+        line.appendChild(document.createTextNode(` ${String(message ?? '')}`));
 
         output.appendChild(line);
         
@@ -3753,7 +3757,11 @@ class AIPlayerRenderer {
         line.className = `terminal-line ${type}`;
 
         const timestamp = new Date().toLocaleTimeString();
-        line.innerHTML = `<span class="timestamp">[${timestamp}]</span> ${message}`;
+        const time = document.createElement('span');
+        time.className = 'timestamp';
+        time.textContent = `[${timestamp}]`;
+        line.appendChild(time);
+        line.appendChild(document.createTextNode(` ${String(message ?? '')}`));
 
         output.appendChild(line);
 

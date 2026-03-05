@@ -20,6 +20,7 @@ let stockfish;
 let dialogues = {};
 let config = { enginePath: null };
 let ipcRegistered = false;
+const ALLOWED_PANEL_NAMES = new Set(['settings', 'ai_config', 'achievements']);
 
 // Config File Path
 const USER_DATA_PATH = app.getPath("userData");
@@ -430,7 +431,11 @@ function registerIpcHandlers() {
     // 3. Get Panel HTML Content
     ipcMain.handle('get-panel-html', (event, panelName) => {
         try {
-            const filePath = path.join(__dirname, `../html/${panelName}.html`);
+            const safePanelName = String(panelName || '').trim();
+            if (!ALLOWED_PANEL_NAMES.has(safePanelName)) {
+                return "<p>Panel not found.</p>";
+            }
+            const filePath = path.join(__dirname, `../html/${safePanelName}.html`);
             if (fs.existsSync(filePath)) {
                 return fs.readFileSync(filePath, "utf8");
             }

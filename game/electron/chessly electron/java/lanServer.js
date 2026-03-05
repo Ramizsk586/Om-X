@@ -4,6 +4,7 @@ const http = require('http');
 const { Server } = require('socket.io');
 const os = require('os');
 const path = require('path');
+const crypto = require('crypto');
 
 class LanServer {
     constructor(mainWindow) {
@@ -22,6 +23,7 @@ class LanServer {
         this.connectedPlayers = []; 
         this.blockedIDs = new Set();
         this.maxPlayers = 4;
+        this.joinToken = this.generateJoinToken();
 
         this.gameState = {
             fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
@@ -30,6 +32,21 @@ class LanServer {
 
         this.setupRoutes();
         this.setupSocket();
+    }
+
+    generateJoinToken() {
+        return crypto.randomBytes(16).toString('hex');
+    }
+
+    sanitizePlayerName(value) {
+        const raw = String(value || '').replace(/[\r\n\t]/g, ' ').trim();
+        const compact = raw.replace(/\s+/g, ' ').slice(0, 32);
+        return compact || 'Guest';
+    }
+
+    sanitizeAvatar(value) {
+        const avatar = String(value || '').trim();
+        return /^[bw][KQRNBP]\.png$/i.test(avatar) ? avatar : 'bK.png';
     }
 
     setupRoutes() {
@@ -50,15 +67,20 @@ class LanServer {
             socket.emit('game-state', this.gameState);
 
             socket.on('client-join', (data) => {
+                const token = String(data?.token || '').trim();
+                if (!token || token !== this.joinToken) {
+                    socket.disconnect();
+                    return;
+                }
                 if(this.blockedIDs.has(socket.id)) {
                     socket.disconnect();
                     return;
                 }
                 
                 const player = {
-                    name: data.name,
+                    name: this.sanitizePlayerName(data?.name),
                     id: socket.id,
-                    avatar: data.avatar
+                    avatar: this.sanitizeAvatar(data?.avatar)
                 };
                 this.connectedPlayers.push(player);
                 
@@ -85,6 +107,8 @@ class LanServer {
     start() {
         if (this.isRunning) return this.getServerInfo();
         return new Promise((resolve, reject) => {
+            this.joinToken = this.generateJoinToken();
+            this.connectedPlayers = [];
             this.server.listen(this.port, '0.0.0.0', () => {
                 this.isRunning = true;
                 resolve(this.getServerInfo());
@@ -102,13 +126,14 @@ class LanServer {
 
     getServerInfo() {
         const info = this.getLocalIpAddress();
+        const tokenQuery = `token=${encodeURIComponent(this.joinToken)}`;
         return {
             ip: info.primary,
             port: this.port,
-            url: `http://${info.primary}:${this.port}/mobile`,
+            url: `http://${info.primary}:${this.port}/mobile?${tokenQuery}`,
             addresses: info.candidates.map((address) => ({
                 ip: address,
-                url: `http://${address}:${this.port}/mobile`
+                url: `http://${address}:${this.port}/mobile?${tokenQuery}`
             }))
         };
     }

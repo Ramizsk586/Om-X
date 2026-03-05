@@ -53,9 +53,8 @@ ipcRenderer.sendToHost = (channel, ...args) => {
   return __rawSendToHost(channel, ...args);
 };
 
-contextBridge.exposeInMainWorld('env', IS_TRUSTED_PRELOAD_CONTEXT ? {
-  API_KEY: process.env.API_KEY
-} : {});
+// Keep compatibility for callers expecting `window.env`, but never expose process secrets.
+contextBridge.exposeInMainWorld('env', {});
 
 contextBridge.exposeInMainWorld('minecraftAPI', {
   close: () => ipcRenderer.send('minecraft-game:close'),

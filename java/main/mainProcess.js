@@ -127,8 +127,48 @@ protocol.registerSchemesAsPrivileged([
     }
 ]);
 
+const OMX_APP_ROOT = path.resolve(__dirname, '../../');
+const OMX_GAMES_ROOT = path.resolve(OMX_APP_ROOT, 'game', 'electron');
+const OMX_ALLOWED_SCRIPT_ENTRY_EXTENSIONS = new Set(['.js', '.cjs', '.mjs']);
+const OMX_ALLOWED_RENDERER_ENTRY_EXTENSIONS = new Set(['.html', '.htm']);
+const OMX_ALLOW_UNSAFE_STANDALONE_ENTRY = String(process.env.OMX_ALLOW_UNSAFE_STANDALONE_ENTRY || '').trim() === '1';
+
+function validateLocalEntryFile(targetPath, options = {}) {
+    const raw = String(targetPath || '').trim();
+    if (!raw) throw new Error('Entry path is required');
+    const resolved = path.resolve(raw);
+    const allowedExtensions = options.allowedExtensions instanceof Set
+        ? options.allowedExtensions
+        : OMX_ALLOWED_SCRIPT_ENTRY_EXTENSIONS;
+    const ext = path.extname(resolved).toLowerCase();
+    if (allowedExtensions.size && !allowedExtensions.has(ext)) {
+        throw new Error(`Unsupported entry extension: ${ext || '(none)'}`);
+    }
+    if (!fs.existsSync(resolved)) throw new Error('Entry file does not exist');
+    const stat = fs.statSync(resolved);
+    if (!stat.isFile()) throw new Error('Entry path must be a file');
+
+    const allowedRoots = Array.isArray(options.allowedRoots) ? options.allowedRoots.filter(Boolean) : [];
+    if (!OMX_ALLOW_UNSAFE_STANDALONE_ENTRY && allowedRoots.length) {
+        const allowed = allowedRoots.some((root) => isSameOrSubFsPath(resolved, root));
+        if (!allowed) throw new Error('Entry path is outside allowed directories');
+    }
+    return resolved;
+}
+
 const standaloneEntryArg = process.argv.find(arg => arg.startsWith('--standalone-entry='));
-const standaloneEntry = standaloneEntryArg ? standaloneEntryArg.slice('--standalone-entry='.length) : null;
+let standaloneEntry = null;
+if (standaloneEntryArg) {
+    const requestedEntry = standaloneEntryArg.slice('--standalone-entry='.length);
+    try {
+        standaloneEntry = validateLocalEntryFile(requestedEntry, {
+            allowedRoots: [OMX_APP_ROOT],
+            allowedExtensions: OMX_ALLOWED_SCRIPT_ENTRY_EXTENSIONS
+        });
+    } catch (error) {
+        console.error('[Security] Blocked invalid standalone entry:', requestedEntry, error?.message || error);
+    }
+}
 const miniAppArg = process.argv.find(arg => arg.startsWith('--mini-app='));
 const miniAppId = miniAppArg ? miniAppArg.slice('--mini-app='.length) : null;
 const isStandaloneLaunch = Boolean(standaloneEntry);
@@ -714,10 +754,19 @@ if (!isStandaloneLikeLaunch) {
     }
 }
 
-process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = 'true';
+if (!app.isPackaged) {
+    process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = 'true';
+}
 app.commandLine.appendSwitch('process-per-site');
 app.commandLine.appendSwitch('enable-gpu-rasterization');
-app.commandLine.appendSwitch('allow-file-access-from-files');
+const allowFileAccessFromFiles = !app.isPackaged
+    || String(process.env.OMX_ALLOW_FILE_ACCESS_FROM_FILES || '').trim() === '1';
+if (allowFileAccessFromFiles) {
+    app.commandLine.appendSwitch('allow-file-access-from-files');
+    if (app.isPackaged) {
+        console.warn('[Security] Enabled allow-file-access-from-files via OMX_ALLOW_FILE_ACCESS_FROM_FILES=1');
+    }
+}
 // Suppress noisy non-fatal Chromium internals (e.g. blink.mojom.Widget rejects on teardown).
 app.commandLine.appendSwitch('log-level', '3');
 
@@ -3238,11 +3287,21 @@ global.electronGames = global.electronGames || {};
 
 ipcMain.handle('electron-game:launch', async (event, gameConfig) => {
     try {
-        const { id, name, gamePath, preloadPath, windowConfig } = gameConfig;
+        const config = (gameConfig && typeof gameConfig === 'object') ? gameConfig : {};
+        const { id, name, gamePath, preloadPath } = config;
+        const windowConfig = (config.windowConfig && typeof config.windowConfig === 'object') ? config.windowConfig : {};
         
         // Resolve paths relative to app root
-        const fullGamePath = path.join(__dirname, '../../', gamePath);
-        const fullPreloadPath = preloadPath ? path.join(__dirname, '../../', preloadPath) : null;
+        const fullGamePath = validateLocalEntryFile(path.resolve(__dirname, '../../', String(gamePath || '')), {
+            allowedRoots: [OMX_GAMES_ROOT],
+            allowedExtensions: OMX_ALLOWED_RENDERER_ENTRY_EXTENSIONS
+        });
+        const fullPreloadPath = preloadPath
+            ? validateLocalEntryFile(path.resolve(__dirname, '../../', String(preloadPath || '')), {
+                allowedRoots: [OMX_APP_ROOT],
+                allowedExtensions: OMX_ALLOWED_SCRIPT_ENTRY_EXTENSIONS
+            })
+            : null;
         
         // Create new independent BrowserWindow for the game
         const gameWindow = new BrowserWindow({
@@ -3316,7 +3375,10 @@ ipcMain.handle('electron-game:get-windows', async () => {
 // Uses root node_modules - no separate node_modules for games
 ipcMain.handle('electron-game:launch-standalone', async (event, gameConfig) => {
     try {
-        const { id, name, gamePath } = gameConfig;
+        const config = (gameConfig && typeof gameConfig === 'object') ? gameConfig : {};
+        const id = String(config.id || '').trim();
+        const name = String(config.name || id || 'Standalone game');
+        const gamePath = String(config.gamePath || '').trim();
 
         if (id === 'chess-master-electron') {
           chessMasterApp?.openWindow?.();
@@ -3333,7 +3395,10 @@ ipcMain.handle('electron-game:launch-standalone', async (event, gameConfig) => {
         // Resolve paths - use root node_modules
         const appDir = __dirname; // Om-X app directory
         const rootNodeModules = path.join(appDir, '../node_modules');
-        const gameMainFile = path.join(appDir, '../../', gamePath);
+        const gameMainFile = validateLocalEntryFile(path.resolve(appDir, '../../', gamePath), {
+            allowedRoots: [OMX_GAMES_ROOT],
+            allowedExtensions: OMX_ALLOWED_SCRIPT_ENTRY_EXTENSIONS
+        });
         
         console.log(`[Main] Launching standalone game: ${name}`);
         console.log(`[Main] Game main file: ${gameMainFile}`);

@@ -36,12 +36,12 @@ contextBridge.exposeInMainWorld("electronAPI", {
   // Analysis & Review
   goAnalyzeMove: (payload) => ipcRenderer.invoke('go-analyze-move', payload),
   goSummarizeGame: (payload) => ipcRenderer.invoke('go-summarize-game', payload),
+  goReviewStartEngine: (payload) => ipcRenderer.invoke('go-review-start-engine', payload),
+  goReviewStopEngine: () => ipcRenderer.invoke('go-review-stop-engine'),
+  goReviewAnalyze: (payload) => ipcRenderer.invoke('go-review-analyze', payload),
   startReviewMode: (gameData) => ipcRenderer.send('start-review-mode', gameData),
   goGameStateUpdated: (gameData) => ipcRenderer.send("go-game-state-updated", gameData),
   getLastGame: () => ipcRenderer.invoke("get-last-game"),
-  
-  // NEW: Engine Review Controls
-  invoke: (channel, ...args) => ipcRenderer.invoke(channel, ...args), // Generic fallback
   
   // Events
   onForwardToAllViews: (callback) => ipcRenderer.on('forward-to-all-views', (_event, payload) => callback(payload)),
