@@ -166,9 +166,10 @@ input[type="range"]::-moz-range-thumb {
 
 .theme-selector {
   display: flex;
-  gap: 8px;
+  gap: 18px;
+  width: fit-content;
   background: #09090b;
-  padding: 4px;
+  padding: 6px 14px;
   border-radius: 10px;
   border: 1px solid #1c1c1f;
 }

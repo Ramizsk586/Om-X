@@ -30,7 +30,7 @@ process.emitWarning = (warning, ...args) => {
   return originalEmitWarning(warning, ...args);
 };
 
-const TRUSTED_RENDERER_PROTOCOLS = new Set(['file:', 'mindclone:']);
+const TRUSTED_RENDERER_PROTOCOLS = new Set(['file:']);
 
 function resolveTrustedRendererFileRoots() {
   const roots = [];
@@ -114,18 +114,6 @@ ipcMain.on = (channel, listener) => __origIpcMainOn(channel, (event, ...args) =>
   }
   return listener(event, ...args);
 });
-
-protocol.registerSchemesAsPrivileged([
-    {
-        scheme: 'mindclone',
-        privileges: {
-            standard: true,
-            secure: true,
-            supportFetchAPI: true,
-            corsEnabled: true
-        }
-    }
-]);
 
 const OMX_APP_ROOT = path.resolve(__dirname, '../../');
 const OMX_GAMES_ROOT = path.resolve(OMX_APP_ROOT, 'game', 'electron');
@@ -228,7 +216,7 @@ function ensureTrustedServerControlSender(event) {
   if (!senderWin || senderWin.isDestroyed()) {
     throw new Error('Unauthorized server control request');
   }
-  const allowedWindows = [mainWindow, aiPlayerWindow, minecraftGameWindow]
+  const allowedWindows = [mainWindow, aiPlayerWindow]
     .filter((win) => win && !win.isDestroyed());
   if (!allowedWindows.includes(senderWin)) {
     throw new Error('Unauthorized server control request');
@@ -1201,7 +1189,6 @@ function getMainWindowHtmlPath(settings = cachedSettings) {
 let mainWindow = null;
 let previewWindow = null;
 let coderPreviewWindow = null;
-let minecraftGameWindow = null;
 let updateManager = null;
 let securityManager = null;
 let antivirusEngine = null;
@@ -2130,10 +2117,7 @@ function createMainWindow() {
   mainWindow.on('minimize', () => vaultManager.lock());
   mainWindow.on('closed', () => { 
     if (previewWindow) previewWindow.close(); 
-    // Keep game/runtime services alive when Minecraft mini app is still open.
-    if (!minecraftGameWindow || minecraftGameWindow.isDestroyed()) {
-      if (mineflayerBotManager) mineflayerBotManager.disconnectAll();
-    }
+    if (mineflayerBotManager) mineflayerBotManager.disconnectAll();
     mainWindow = null; 
   });
 
@@ -2676,177 +2660,6 @@ function createPreviewWindow(url) {
     previewWindow.on('closed', () => previewWindow = null);
 }
 
-function getMindcloneAppRoot() {
-    const devRoot = path.join(__dirname, '../../');
-    if (!app.isPackaged) return devRoot;
-
-    const unpackedRoot = path.join(process.resourcesPath, 'app.asar.unpacked');
-    const packedRoot = path.join(process.resourcesPath, 'app.asar');
-    const unpackedMindcloneModern = path.join(unpackedRoot, 'html', 'pages', 'minecraft.html');
-    const unpackedMindcloneLegacy = path.join(unpackedRoot, 'game', 'electron', 'mindclone', 'minecraft.html');
-    return (fs.existsSync(unpackedMindcloneModern) || fs.existsSync(unpackedMindcloneLegacy)) ? unpackedRoot : packedRoot;
-}
-
-function registerMindcloneProtocol(gameSession) {
-    const root = getMindcloneAppRoot();
-    const rootAbs = path.resolve(root);
-    const rootCmp = process.platform === 'win32' ? rootAbs.toLowerCase() : rootAbs;
-    const fallbackHtmlModern = path.join(rootAbs, 'html', 'pages', 'minecraft.html');
-    const fallbackHtmlLegacy = path.join(rootAbs, 'game', 'electron', 'mindclone', 'minecraft.html');
-    const fallbackHtml = fs.existsSync(fallbackHtmlModern) ? fallbackHtmlModern : fallbackHtmlLegacy;
-    const fallbackTexture = path.join(rootAbs, 'game', 'electron', 'mindclone', 'assets', 'stone.png');
-    const fallbackModule = path.join(rootAbs, 'game', 'electron', 'mindclone', 'assets', 'empty-module.js');
-    const fallbackCss = path.join(rootAbs, 'game', 'electron', 'mindclone', 'assets', 'empty.css');
-    const fallbackText = path.join(rootAbs, 'game', 'electron', 'mindclone', 'assets', 'empty.txt');
-    const imageExt = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.ico']);
-    const moduleExt = new Set(['.js', '.mjs', '.cjs', '.json', '.map']);
-
-    const pickFallback = (resolvedPath) => {
-        const ext = path.extname(String(resolvedPath || '')).toLowerCase();
-        if (imageExt.has(ext) && fs.existsSync(fallbackTexture)) return fallbackTexture;
-        if (moduleExt.has(ext) && fs.existsSync(fallbackModule)) return fallbackModule;
-        if (ext === '.css' && fs.existsSync(fallbackCss)) return fallbackCss;
-        if ((ext === '.html' || ext === '.htm' || ext === '') && fs.existsSync(fallbackHtml)) return fallbackHtml;
-        if (fs.existsSync(fallbackText)) return fallbackText;
-        if (fs.existsSync(fallbackHtml)) return fallbackHtml;
-        return null;
-    };
-
-    try {
-        gameSession.protocol.registerFileProtocol('mindclone', (request, callback) => {
-            try {
-                const req = new URL(request.url);
-                let relative = decodeURIComponent(req.pathname || '/').replace(/^[/\\]+/, '');
-                const resolved = path.resolve(rootAbs, relative);
-                const resolvedCmp = process.platform === 'win32' ? resolved.toLowerCase() : resolved;
-                const inRoot = resolvedCmp === rootCmp || resolvedCmp.startsWith(rootCmp + path.sep);
-                if (!inRoot) {
-                    console.warn('[Mindclone] Protocol access denied:', request.url, '->', resolved);
-                    const denyFallback = pickFallback(resolved);
-                    if (denyFallback) callback({ path: denyFallback });
-                    else callback({ error: -10 }); // ACCESS_DENIED
-                    return;
-                }
-                if (fs.existsSync(resolved)) {
-                    let finalPath = resolved;
-                    const stat = fs.statSync(resolved);
-                    if (stat.isDirectory()) {
-                        const indexHtml = path.join(resolved, 'index.html');
-                        finalPath = fs.existsSync(indexHtml) ? indexHtml : pickFallback(resolved);
-                    }
-                    if (finalPath && fs.existsSync(finalPath)) {
-                        callback({ path: finalPath });
-                        return;
-                    }
-                }
-
-                const fallback = pickFallback(resolved);
-                if (fallback) {
-                    console.warn('[Mindclone] Protocol file missing, using fallback:', request.url, '->', resolved, '=>', fallback);
-                    callback({ path: fallback });
-                    return;
-                }
-                console.warn('[Mindclone] Protocol file not found with no fallback:', request.url, '->', resolved);
-                callback({ error: -6 }); // FILE_NOT_FOUND
-            } catch (error) {
-                console.error('[Mindclone] Protocol resolve error:', error);
-                const fallback = fs.existsSync(fallbackHtml) ? fallbackHtml : null;
-                if (fallback) callback({ path: fallback });
-                else callback({ error: -2 }); // FAILED
-            }
-        });
-    } catch (error) {
-        if (!String(error.message || '').includes('ERR_PROTOCOL_REGISTERED')) {
-            console.error('[Mindclone] protocol registration failed:', error);
-        }
-    }
-}
-
-function createMinecraftGameWindow() {
-    if (minecraftGameWindow) {
-        const currentUrl = minecraftGameWindow.webContents.getURL();
-        if (!currentUrl.startsWith('mindclone://')) {
-            minecraftGameWindow.loadURL('mindclone://app/html/pages/minecraft.html');
-        }
-        minecraftGameWindow.show();
-        minecraftGameWindow.focus();
-        return;
-    }
-
-    const gameSession = session.fromPartition('persist:omx-minecraft-sandbox', { cache: true });
-    registerMindcloneProtocol(gameSession);
-
-    minecraftGameWindow = new BrowserWindow({
-        width: 1400,
-        height: 900,
-        show: false,
-        title: 'Mindclone - Om-X',
-        icon: MINECRAFT_WINDOW_ICON,
-        backgroundColor: '#000000',
-        resizable: true,
-        webPreferences: {
-            preload: path.join(__dirname, '../preload/minecraft-preload.js'),
-            contextIsolation: true,
-            nodeIntegration: false,
-            nodeIntegrationInWorker: false,
-            nodeIntegrationInSubFrames: false,
-            sandbox: true,
-            webSecurity: true,
-            allowRunningInsecureContent: false,
-            webviewTag: false,
-            devTools: false,  // Security: Disable DevTools
-            session: gameSession
-        }
-    });
-
-    // If the page tries to block closing (beforeunload), force close
-    minecraftGameWindow.webContents.on('will-prevent-unload', (event) => {
-        event.preventDefault();
-        if (!minecraftGameWindow.isDestroyed()) {
-            minecraftGameWindow.destroy();
-        }
-    });
-
-    minecraftGameWindow.webContents.on('did-fail-load', (_event, code, desc, url) => {
-        console.error('[Mindclone] did-fail-load:', code, desc, url);
-    });
-
-    // Keep terminal noise low: only surface renderer errors for this mini app.
-    minecraftGameWindow.webContents.on('console-message', (_event, level, message, line, sourceId) => {
-        if (Number(level) >= 3) {
-            console.error(`[Mindclone:renderer] ${sourceId}:${line} ${message}`);
-        }
-    });
-
-    minecraftGameWindow.loadURL('mindclone://app/html/pages/minecraft.html');
-    attachMiniAppContextMenu(minecraftGameWindow, { includeNavigation: true });
-
-    minecraftGameWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
-    minecraftGameWindow.webContents.on('will-navigate', (event, url) => {
-        // Allow ONLY local mindclone protocol navigation
-        if (!url.startsWith('mindclone://')) event.preventDefault();
-    });
-
-    gameSession.webRequest.onBeforeRequest((details, callback) => {
-        const url = details.url;
-        // Allow only local mindclone:// resources for this game (+ devtools when opened manually)
-        if (url.startsWith('mindclone://') || url.startsWith('devtools://')) {
-            callback({ cancel: false });
-            return;
-        }
-        // Block everything else (http/https/wss/etc.)
-        callback({ cancel: true });
-    });
-
-    gameSession.setPermissionRequestHandler((_wc, _permission, callback) => callback(false));
-
-    minecraftGameWindow.once('ready-to-show', () => minecraftGameWindow.show());
-    minecraftGameWindow.on('closed', () => {
-        minecraftGameWindow = null;
-        if (!mainWindow && process.platform !== 'darwin') app.quit();
-    });
-}
-
 ipcMain.on('window-minimize', (e) => BrowserWindow.fromWebContents(e.sender)?.minimize());
 ipcMain.on('window-maximize', (e) => { const w = BrowserWindow.fromWebContents(e.sender); w?.isMaximized() ? w.unmaximize() : w?.maximize(); });
 ipcMain.on('window-close', (e) => BrowserWindow.fromWebContents(e.sender)?.close());
@@ -2918,22 +2731,6 @@ ipcMain.handle('window:restore-after-game', async () => {
     }
 });
 
-ipcMain.handle('minecraft-game:open', () => {
-    if (minecraftGameWindow && !minecraftGameWindow.isDestroyed()) {
-        minecraftGameWindow.show();
-        minecraftGameWindow.focus();
-        return true;
-    }
-    createMinecraftGameWindow();
-    return true;
-});
-
-ipcMain.on('minecraft-game:close', () => {
-    if (minecraftGameWindow && !minecraftGameWindow.isDestroyed()) {
-        minecraftGameWindow.close();
-    }
-});
-
 ipcMain.on('open-tab', (e, url) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('open-tab', url);
@@ -2943,204 +2740,6 @@ ipcMain.on('open-tab', (e, url) => {
 ipcMain.on('preview-open', (e, url) => createPreviewWindow(url));
 ipcMain.on('preview-close', () => { if (previewWindow) previewWindow.close(); });
 ipcMain.on('preview-to-tab', (e, url) => { if (previewWindow) previewWindow.close(); if (mainWindow) mainWindow.webContents.send('open-tab', url); });
-ipcMain.handle('minecraft-game:launch', () => {
-    createMinecraftGameWindow();
-    return { success: true };
-});
-ipcMain.on('minecraft-game:close', () => minecraftGameWindow?.close());
-ipcMain.on('minecraft-game:ready', () => {});
-
-const MINDCLONE_GENERATOR_VERSION = 'v1';
-const getMindcloneRoot = () => path.join(app.getPath('userData'), 'mindclone', 'worlds');
-const safeWorldId = (raw) => String(raw || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64);
-const chunkFilePath = (worldId, cx, cz) => {
-    const rx = Math.floor(Number(cx) / 32);
-    const rz = Math.floor(Number(cz) / 32);
-    const regionDir = path.join(getMindcloneRoot(), safeWorldId(worldId), 'chunks', `r.${rx}.${rz}`);
-    return path.join(regionDir, `c.${Number(cx)}.${Number(cz)}.bin`);
-};
-
-async function ensureMindcloneWorldDir(worldId) {
-    const id = safeWorldId(worldId);
-    if (!id) throw new Error('Invalid world id');
-    const dir = path.join(getMindcloneRoot(), id);
-    await fs.promises.mkdir(dir, { recursive: true });
-    return dir;
-}
-
-ipcMain.handle('mindclone:worlds:list', async () => {
-    try {
-        const root = getMindcloneRoot();
-        await fs.promises.mkdir(root, { recursive: true });
-        const entries = await fs.promises.readdir(root, { withFileTypes: true });
-        const worlds = [];
-        for (const entry of entries) {
-            if (!entry.isDirectory()) continue;
-            const id = entry.name;
-            const metaPath = path.join(root, id, 'world.meta.json');
-            try {
-                const text = await fs.promises.readFile(metaPath, 'utf8');
-                const meta = JSON.parse(text);
-                worlds.push(meta);
-            } catch (_) {}
-        }
-        worlds.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-        return { success: true, worlds };
-    } catch (error) {
-        return { success: false, worlds: [], error: error.message };
-    }
-});
-
-ipcMain.handle('mindclone:worlds:create', async (_event, payload = {}) => {
-    try {
-        const name = String(payload.name || 'New World').trim().slice(0, 80) || 'New World';
-        const seed64 = String(payload.seed64 || `${Date.now()}${Math.floor(Math.random() * 100000)}`);
-        const id = safeWorldId(payload.id || `world_${Date.now()}`);
-        if (!id) throw new Error('Invalid world id');
-        const settings = payload.settings || {};
-        const now = Date.now();
-        const meta = {
-            id,
-            name,
-            seed64,
-            generatorVersion: payload.generatorVersion || MINDCLONE_GENERATOR_VERSION,
-            createdAt: now,
-            updatedAt: now,
-            settings
-        };
-        const dir = await ensureMindcloneWorldDir(id);
-        await fs.promises.mkdir(path.join(dir, 'chunks'), { recursive: true });
-        await fs.promises.writeFile(path.join(dir, 'world.meta.json'), JSON.stringify(meta, null, 2), 'utf8');
-        return { success: true, meta };
-    } catch (error) {
-        return { success: false, error: error.message };
-    }
-});
-
-ipcMain.handle('mindclone:worlds:delete', async (_event, worldId) => {
-    try {
-        const id = safeWorldId(worldId);
-        if (!id) throw new Error('Invalid world id');
-        await fs.promises.rm(path.join(getMindcloneRoot(), id), { recursive: true, force: true });
-        return { success: true };
-    } catch (error) {
-        return { success: false, error: error.message };
-    }
-});
-
-ipcMain.handle('mindclone:worlds:get-meta', async (_event, worldId) => {
-    try {
-        const id = safeWorldId(worldId);
-        if (!id) throw new Error('Invalid world id');
-        const text = await fs.promises.readFile(path.join(getMindcloneRoot(), id, 'world.meta.json'), 'utf8');
-        return { success: true, meta: JSON.parse(text) };
-    } catch (error) {
-        return { success: false, meta: null, error: error.message };
-    }
-});
-
-ipcMain.handle('mindclone:worlds:save-meta', async (_event, worldId, meta) => {
-    try {
-        const id = safeWorldId(worldId);
-        if (!id) throw new Error('Invalid world id');
-        const dir = await ensureMindcloneWorldDir(id);
-        const nextMeta = { ...(meta || {}), id, updatedAt: Date.now() };
-        await fs.promises.writeFile(path.join(dir, 'world.meta.json'), JSON.stringify(nextMeta, null, 2), 'utf8');
-        return { success: true };
-    } catch (error) {
-        return { success: false, error: error.message };
-    }
-});
-
-ipcMain.handle('mindclone:player:load', async (_event, worldId) => {
-    try {
-        const id = safeWorldId(worldId);
-        if (!id) throw new Error('Invalid world id');
-        const filePath = path.join(getMindcloneRoot(), id, 'player.bin');
-        if (!fs.existsSync(filePath)) return { success: true, data: null };
-        const buf = await fs.promises.readFile(filePath);
-        return { success: true, data: buf.toString('base64') };
-    } catch (error) {
-        return { success: false, data: null, error: error.message };
-    }
-});
-
-ipcMain.handle('mindclone:player:save', async (_event, worldId, base64) => {
-    try {
-        const id = safeWorldId(worldId);
-        if (!id) throw new Error('Invalid world id');
-        const dir = await ensureMindcloneWorldDir(id);
-        const buf = Buffer.from(String(base64 || ''), 'base64');
-        await fs.promises.writeFile(path.join(dir, 'player.bin'), buf);
-        return { success: true };
-    } catch (error) {
-        return { success: false, error: error.message };
-    }
-});
-
-ipcMain.handle('mindclone:chunks:list', async (_event, worldId) => {
-    try {
-        const id = safeWorldId(worldId);
-        if (!id) throw new Error('Invalid world id');
-        const baseDir = path.join(getMindcloneRoot(), id, 'chunks');
-        if (!fs.existsSync(baseDir)) return { success: true, chunks: [] };
-        const keys = [];
-        const walk = async (dir) => {
-            const entries = await fs.promises.readdir(dir, { withFileTypes: true });
-            for (const entry of entries) {
-                const full = path.join(dir, entry.name);
-                if (entry.isDirectory()) {
-                    await walk(full);
-                } else if (entry.isFile() && entry.name.startsWith('c.') && entry.name.endsWith('.bin')) {
-                    const m = entry.name.match(/^c\.(-?\d+)\.(-?\d+)\.bin$/);
-                    if (m) keys.push({ cx: Number(m[1]), cz: Number(m[2]) });
-                }
-            }
-        };
-        await walk(baseDir);
-        return { success: true, chunks: keys };
-    } catch (error) {
-        return { success: false, chunks: [], error: error.message };
-    }
-});
-
-ipcMain.handle('mindclone:chunks:load', async (_event, worldId, cx, cz) => {
-    try {
-        const id = safeWorldId(worldId);
-        if (!id) throw new Error('Invalid world id');
-        const filePath = chunkFilePath(id, cx, cz);
-        if (!fs.existsSync(filePath)) return { success: true, data: null };
-        const buf = await fs.promises.readFile(filePath);
-        return { success: true, data: buf.toString('base64') };
-    } catch (error) {
-        return { success: false, data: null, error: error.message };
-    }
-});
-
-ipcMain.handle('mindclone:chunks:save', async (_event, worldId, cx, cz, base64) => {
-    try {
-        const id = safeWorldId(worldId);
-        if (!id) throw new Error('Invalid world id');
-        const filePath = chunkFilePath(id, cx, cz);
-        await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
-        const buf = Buffer.from(String(base64 || ''), 'base64');
-        await fs.promises.writeFile(filePath, buf);
-        return { success: true };
-    } catch (error) {
-        return { success: false, error: error.message };
-    }
-});
-
-ipcMain.handle('mindclone:chunks:delete', async (_event, worldId, cx, cz) => {
-    try {
-        const id = safeWorldId(worldId);
-        if (!id) throw new Error('Invalid world id');
-        await fs.promises.rm(chunkFilePath(id, cx, cz), { force: true });
-        return { success: true };
-    } catch (error) {
-        return { success: false, error: error.message };
-    }
-});
 
 // ============================================
 // WINDOW PICKER IPC HANDLERS (Screenshot System)
@@ -3960,7 +3559,14 @@ const performAITask = async (event, params) => {
     const activeProvider = settings.activeProvider || 'google';
     const contextDefaults = context === 'writer' ? settings.writer?.api : settings.translator?.api;
     const config = configOverride || contextDefaults || { provider: activeProvider, key: '', model: '' };
-    const aiConfig = { ...(settings.aiConfig || {}), searchMode, wikiMode, videoMode, searchDepth };
+    const aiConfig = {
+        ...(settings.aiConfig || {}),
+        searchMode,
+        wikiMode,
+        videoMode,
+        searchDepth,
+        defaultSearchEngineId: settings.defaultSearchEngineId || DEFAULT_SETTINGS.defaultSearchEngineId || 'google'
+    };
 
     const execute = async () => {
         let promptInput = contents || promptOverride;
@@ -6606,13 +6212,6 @@ app.whenReady().then(() => {
   app.on('web-contents-created', (event, contents) => registerGlobalShortcuts(contents));
   vaultManager.registerHandlers();
   websearch.registerHandlers(() => cachedSettings);
-  try {
-    if (session.defaultSession) {
-      registerMindcloneProtocol(session.defaultSession);
-    }
-  } catch (e) {
-    console.error('[Mindclone] Failed to register protocol on default session:', e);
-  }
   createMainWindow();
 }).catch(err => {
     console.error('[Om-X] Startup Error:', err);

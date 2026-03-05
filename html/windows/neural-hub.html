@@ -850,7 +850,7 @@
               <span class="tool-tag">Built-In</span>
               <span class="tool-tag">Image Editor</span>
             </div>
-            <button class="tool-btn-start" onclick="openTool('mindclone://app/tools/image-editor/index.html')">Start</button>
+            <button class="tool-btn-start" onclick="openImageEditorTool()">Start</button>
           </div>
           <div class="tool-card">
             <div class="tool-card-header">
@@ -891,8 +891,17 @@
         </div>
 
         <script>
+          function openImageEditorTool() {
+            if (window.browserAPI?.imageEditorWindow?.open) {
+              window.browserAPI.imageEditorWindow.open();
+              return;
+            }
+            const localImageEditor = new URL('../../tools/image-editor/index.html', window.location.href).href;
+            openTool(localImageEditor);
+          }
+
           function openTool(url) {
-            if (!/^(https?:\/\/|file:\/\/|mindclone:\/\/)/i.test(url)) {
+            if (!/^(https?:\/\/|file:\/\/)/i.test(url)) {
               url = 'https://' + url;
             }
             if (window.browserAPI && window.browserAPI.openTab) {

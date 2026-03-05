@@ -64,7 +64,7 @@ async function performTask(input, options = {}) {
 
   const resolveOfflineSearchProfile = (depth) => {
     const normalized = String(depth || '').toLowerCase().trim();
-    if (normalized === 'quick' || normalized === 'quick_search') return { mode: 'quick', searches: 8, sources: 12 };
+    if (normalized === 'quick' || normalized === 'quick_search') return { mode: 'quick', searches: 12, sources: 14 };
     if (normalized === 'deep' || normalized === 'web' || normalized === 'deep_search') return { mode: 'deep', searches: 14, sources: 24 };
     return { mode: 'report', searches: 10, sources: 18 };
   };
@@ -91,6 +91,101 @@ async function performTask(input, options = {}) {
       out.push(`${base} ${suffixes[i] || `angle ${i + 1}`}`.trim());
     }
     return out;
+  };
+
+  const normalizeSearchProvider = (provider = '') => {
+    const raw = String(provider || '').toLowerCase().trim();
+    if (!raw) return 'native';
+    if (raw === 'ddg' || raw === 'duckduckgo') return 'duckduckgo';
+    if (raw === 'serp' || raw === 'serpapi') return 'serpapi';
+    if (raw === 'pse' || raw === 'google_pse') return 'google_pse';
+    return raw;
+  };
+
+  const resolveQuickHybridPlan = (cfg = {}) => {
+    const provider = normalizeSearchProvider(cfg?.searchProvider || cfg?.defaultSearchEngineId || 'duckduckgo');
+    const keys = cfg?.keys || {};
+    const hasSerp = !!(keys.scrapeSerp || keys.serpapi);
+    const hasGooglePse = !!(keys.googlePse && keys.googleCx);
+    let premiumProvider = null;
+    if (provider === 'serpapi' && hasSerp) premiumProvider = 'serpapi';
+    if (provider === 'google_pse' && hasGooglePse) premiumProvider = 'google_pse';
+    return {
+      ddgCalls: 10,
+      premiumCalls: premiumProvider ? 2 : 0,
+      premiumProvider
+    };
+  };
+
+  const executeQuickHybridSearch = async (query, cfg = {}, retryCount = 1) => {
+    const trimmedQuery = String(query || '').trim();
+    if (!trimmedQuery) {
+      return {
+        query: trimmedQuery,
+        sources: [],
+        images: [],
+        provider: 'hybrid_quick',
+        providersUsed: [],
+        searchesRequested: 0,
+        searchesExecuted: 0,
+        ddgSearchesExecuted: 0,
+        premiumSearchesExecuted: 0,
+        premiumProvider: null,
+        status: 'no_query',
+        error: 'Empty query'
+      };
+    }
+
+    const plan = resolveQuickHybridPlan(cfg);
+    const totalCalls = plan.ddgCalls + plan.premiumCalls;
+    const queries = buildOfflineQueries(trimmedQuery, totalCalls);
+    const schedule = [
+      ...Array.from({ length: plan.ddgCalls }, () => 'duckduckgo'),
+      ...Array.from({ length: plan.premiumCalls }, () => plan.premiumProvider)
+    ].filter(Boolean);
+
+    const aggregatedSources = [];
+    const aggregatedImages = [];
+    const seenSourceUrls = new Set();
+    const providersUsed = new Set();
+    let ddgSearchesExecuted = 0;
+    let premiumSearchesExecuted = 0;
+    let errors = 0;
+
+    for (let i = 0; i < queries.length; i += 1) {
+      const forcedProvider = schedule[i] || 'duckduckgo';
+      const scopedCfg = { ...(cfg || {}), searchProvider: forcedProvider };
+      const result = await websearch.performWebSearch(queries[i], scopedCfg, retryCount, { forceProvider: forcedProvider });
+      if (result?.error) errors += 1;
+      if (result?.provider) providersUsed.add(String(result.provider).trim().toLowerCase());
+      if (forcedProvider === 'duckduckgo') ddgSearchesExecuted += 1;
+      else premiumSearchesExecuted += 1;
+
+      (result?.sources || []).forEach((s) => {
+        const url = String(s?.url || '').trim();
+        if (!url || seenSourceUrls.has(url)) return;
+        seenSourceUrls.add(url);
+        aggregatedSources.push(s);
+      });
+      if (Array.isArray(result?.images) && result.images.length > 0) {
+        aggregatedImages.push(...result.images);
+      }
+    }
+
+    return {
+      query: trimmedQuery,
+      sources: aggregatedSources,
+      images: [...new Set(aggregatedImages)],
+      provider: 'hybrid_quick',
+      providersUsed: Array.from(providersUsed),
+      searchesRequested: totalCalls,
+      searchesExecuted: queries.length,
+      ddgSearchesExecuted,
+      premiumSearchesExecuted,
+      premiumProvider: plan.premiumProvider || null,
+      status: aggregatedSources.length > 0 ? (errors > 0 ? 'partial' : 'success') : (errors > 0 ? 'error' : 'no_results'),
+      error: errors > 0 ? `${errors} search call(s) failed` : null
+    };
   };
 
   const normalizeWikiQuery = (query = '') => {
@@ -124,14 +219,21 @@ async function performTask(input, options = {}) {
     const seenUrls = new Set();
     const seenGroundedImages = new Set();
     const wikiPageDetails = [];
-    const offlineSerpLimit = 2;
-    let offlineSerpCalls = 0;
+    const offlinePremiumLimit = 2;
+    let offlinePremiumCalls = 0;
+    let offlineDdgCalls = 0;
 
     const runOfflineSearch = async (query) => {
-      const configuredProvider = String(aiConfig?.searchProvider || '').toLowerCase().trim();
-      const allowSerp = configuredProvider === 'serpapi' && offlineSerpCalls < offlineSerpLimit;
-      const providerForThisCall = allowSerp ? 'serpapi' : 'duckduckgo';
-      if (allowSerp) offlineSerpCalls += 1;
+      const configuredProvider = normalizeSearchProvider(aiConfig?.searchProvider || '');
+      const keys = aiConfig?.keys || {};
+      const canUseSerp = configuredProvider === 'serpapi' && !!(keys.scrapeSerp || keys.serpapi);
+      const canUsePse = configuredProvider === 'google_pse' && !!(keys.googlePse && keys.googleCx);
+      const allowPremium = (canUseSerp || canUsePse) && offlinePremiumCalls < offlinePremiumLimit;
+      const providerForThisCall = allowPremium
+        ? (canUseSerp ? 'serpapi' : 'google_pse')
+        : 'duckduckgo';
+      if (providerForThisCall === 'duckduckgo') offlineDdgCalls += 1;
+      else offlinePremiumCalls += 1;
 
       const scopedAiConfig = {
         ...(aiConfig || {}),
@@ -180,7 +282,9 @@ async function performTask(input, options = {}) {
 
     const collectWeb = async () => {
       const profile = resolveOfflineSearchProfile(searchDepth);
-      const queries = buildOfflineQueries(userPrompt, profile.searches);
+      const quickPlan = profile.mode === 'quick' ? resolveQuickHybridPlan(aiConfig) : null;
+      const quickCalls = quickPlan ? (quickPlan.ddgCalls + quickPlan.premiumCalls) : profile.searches;
+      const queries = buildOfflineQueries(userPrompt, quickCalls);
       const aggregated = [];
       const aggregatedImages = [];
       let errors = 0;
@@ -223,11 +327,19 @@ async function performTask(input, options = {}) {
         response: {
           results: dedup,
           status: dedup.length > 0 ? (errors > 0 ? 'partial' : 'success') : (errors > 0 ? 'error' : 'no_results'),
+          searchesRequested: queries.length,
           searchesExecuted: queries.length,
           sourcesUsed: dedup.length,
           mode: profile.mode,
-          serpCallsUsed: offlineSerpCalls,
-          serpCallsLimit: offlineSerpLimit
+          ddgSearchesExecuted: offlineDdgCalls,
+          premiumSearchesExecuted: offlinePremiumCalls,
+          premiumCallsLimit: offlinePremiumLimit,
+          premiumProvider: (() => {
+            if (offlinePremiumCalls <= 0) return null;
+            const configured = normalizeSearchProvider(aiConfig?.searchProvider || '');
+            if (configured === 'serpapi' || configured === 'google_pse') return configured;
+            return null;
+          })()
         }
       });
 
@@ -415,7 +527,7 @@ async function performTask(input, options = {}) {
       `- Wikipedia index matches scanned: ${Math.max(0, wikiPageDetails.length)}`,
       `- Evidence sources collected: ${reportSources.length}`,
       `- Visual assets attached: ${groundedImages.length}`,
-      `- Search routing: DuckDuckGo-first with SerpAPI cap ${offlineSerpCalls}/${offlineSerpLimit}`
+      `- Search routing: DDG ${offlineDdgCalls} calls + Premium ${offlinePremiumCalls}/${offlinePremiumLimit} calls`
     ];
 
     const responseText = reportSources.length > 0
@@ -465,13 +577,95 @@ async function performTask(input, options = {}) {
 
   let groundedImages = [];
   let groundContext = "";
+  let prefetchedSourceRows = [];
+  let prefetchedSearchRows = [];
+  let prefetchedToolLogs = [];
+  let prefetchedProvider = '';
+
+  const dedupeSources = (items = []) => {
+    const out = [];
+    const seen = new Set();
+    (items || []).forEach((item) => {
+      if (!item || !item.url) return;
+      const url = String(item.url || '').trim();
+      if (!url || seen.has(url)) return;
+      seen.add(url);
+      out.push({
+        title: String(item.title || 'Source').trim() || 'Source',
+        url,
+        snippet: String(item.snippet || '').trim(),
+        via: item.via || item.provider || 'web_prefetch'
+      });
+    });
+    return out;
+  };
+
+  const mergeGroundingPayload = (payload = {}) => {
+    const usedSources = dedupeSources([...(payload.usedSources || []), ...prefetchedSourceRows]);
+    const webSources = dedupeSources([...(payload.webSources || []), ...(payload.sources || []), ...prefetchedSourceRows]);
+    const searchResults = dedupeSources([...(payload.searchResults || []), ...(payload.results || []), ...prefetchedSearchRows, ...prefetchedSourceRows]);
+
+    const existingFunctionResponses = Array.isArray(payload.functionResponses) ? payload.functionResponses : [];
+    const shouldInjectToolLog = searchMode && prefetchedToolLogs.length > 0 && existingFunctionResponses.length === 0;
+    const functionResponses = shouldInjectToolLog ? [...prefetchedToolLogs] : existingFunctionResponses;
+
+    const merged = {
+      ...payload,
+      usedSources,
+      webSources,
+      sources: dedupeSources([...(payload.sources || []), ...webSources]),
+      searchResults,
+      results: dedupeSources([...(payload.results || []), ...searchResults])
+    };
+
+    if (functionResponses.length > 0) {
+      merged.functionResponses = functionResponses;
+    }
+
+    return merged;
+  };
   
-  // --- AUTOMATIC VISUAL GROUNDING PIPELINE (SerpAPI Powered) ---
-  if (searchMode || wikiMode || videoMode) {
+  // --- AUTOMATIC VISUAL GROUNDING PIPELINE ---
+  const normalizedSearchDepth = String(searchDepth || '').toLowerCase().trim();
+  const isQuickHybridMode = searchMode && (normalizedSearchDepth === 'quick' || normalizedSearchDepth === 'quick_search' || normalizedSearchDepth === '3-4');
+  const skipPrefetchForGoogleQuick = provider === 'google' && isQuickHybridMode;
+  if ((searchMode || wikiMode || videoMode) && !skipPrefetchForGoogleQuick) {
       try {
           const query = typeof input === 'string' ? input : (Array.isArray(input) ? input[input.length - 1].parts[0].text : "");
           if (query && query.length > 2) {
-              const searchResults = await websearch.performWebSearch(query, aiConfig, 1);
+              const searchResults = isQuickHybridMode
+                ? await executeQuickHybridSearch(query, aiConfig, 1)
+                : await websearch.performWebSearch(query, aiConfig, 1);
+              prefetchedProvider = String(searchResults?.provider || '').trim().toLowerCase();
+              prefetchedSourceRows = dedupeSources(
+                (searchResults?.sources || []).map((s) => ({
+                  ...s,
+                  via: prefetchedProvider || 'web_prefetch',
+                  provider: prefetchedProvider || 'web_prefetch'
+                }))
+              );
+              prefetchedSearchRows = [...prefetchedSourceRows];
+
+              if (searchMode) {
+                  prefetchedToolLogs = [{
+                      id: `prefetch-search-${Date.now()}`,
+                      name: 'SEARCH_WEB',
+                      response: {
+                          query,
+                          results: prefetchedSourceRows,
+                          status: searchResults?.error ? 'error' : (prefetchedSourceRows.length > 0 ? 'success' : 'no_results'),
+                          sourcesUsed: prefetchedSourceRows.length,
+                          searchesRequested: Number(searchResults?.searchesRequested || 1),
+                          searchesExecuted: Number(searchResults?.searchesExecuted || 1),
+                          mode: String(searchDepth || 'standard'),
+                          provider: prefetchedProvider || String(aiConfig?.searchProvider || 'duckduckgo'),
+                          providersUsed: Array.isArray(searchResults?.providersUsed) ? searchResults.providersUsed : [],
+                          ddgSearchesExecuted: Number(searchResults?.ddgSearchesExecuted || 0),
+                          premiumSearchesExecuted: Number(searchResults?.premiumSearchesExecuted || 0),
+                          premiumProvider: searchResults?.premiumProvider || null
+                      }
+                  }];
+              }
               
               if (searchResults && searchResults.images && searchResults.images.length > 0) {
                   const targetCount = aiConfig?.scraping?.imageCount || 4;
@@ -479,7 +673,7 @@ async function performTask(input, options = {}) {
               }
               
               if (searchResults && provider !== 'google') {
-                  const snippets = (searchResults.sources || []).slice(0, 3).map(s => `[SOURCE: ${s.title}] ${s.snippet}`).join('\n');
+                  const snippets = (prefetchedSourceRows || []).slice(0, 3).map(s => `[SOURCE: ${s.title}] ${s.snippet}`).join('\n');
                   groundContext = `\n\nWEB SEARCH CONTEXT:\n${snippets}\n\n(Note: ${groundedImages.length} relevant images have been automatically discovered for your reference.)`;
               }
           }
@@ -490,8 +684,9 @@ async function performTask(input, options = {}) {
 
   if (provider === 'lmstudio') {
       const result = await lmstudio.performTask(input, { ...options, searchMode, wikiMode, videoMode, searchDepth });
-      result.groundedImages = [...new Set([...(groundedImages || []), ...(result.attachments || [])])];
-      return result;
+      const merged = mergeGroundingPayload(result);
+      merged.groundedImages = [...new Set([...(groundedImages || []), ...(result.attachments || []), ...(result.groundedImages || [])])];
+      return merged;
   }
 
   if (provider === 'local') {
@@ -508,7 +703,7 @@ async function performTask(input, options = {}) {
         });
         if (!res.ok) throw new Error("Local model is not responding.");
         const data = await res.json();
-        return { text: data.content, provider: 'local', groundedImages };
+        return mergeGroundingPayload({ text: data.content, provider: 'local', groundedImages });
     } catch (e) { throw new Error("Local Engine Failure: " + e.message); }
   }
 
@@ -517,7 +712,7 @@ async function performTask(input, options = {}) {
       let prompt = isChat ? input.map(entry => `[${entry.role}]: ${entry.parts.map(p => p.text).join('\n')}`).join('\n\n') : String(input);
       if (systemInstruction) prompt = `SYSTEM: ${systemInstruction}${groundContext}\n\n${prompt}`;
       const res = await ollama.generate(prompt, model, isChat);
-      return { text: res || "Ollama offline", functionCalls: [], groundedImages };
+      return mergeGroundingPayload({ text: res || "Ollama offline", functionCalls: [], groundedImages });
   }
 
   if (provider === 'llamacpp') {
@@ -528,8 +723,9 @@ async function performTask(input, options = {}) {
           videoMode,
           searchDepth
       });
-      result.groundedImages = [...new Set([...(groundedImages || []), ...(result.attachments || [])])];
-      return result;
+      const merged = mergeGroundingPayload(result);
+      merged.groundedImages = [...new Set([...(groundedImages || []), ...(result.attachments || []), ...(result.groundedImages || [])])];
+      return merged;
   }
 
   if (provider === 'google') {
@@ -542,8 +738,9 @@ async function performTask(input, options = {}) {
     
     const result = await gemini.generate(contents, targetModel, options.tools || [], key, systemInstruction, { ...aiConfig, searchMode, wikiMode, videoMode, searchDepth });
     const toolImages = (result.toolSources || []).filter(s => s.startsWith('data:image'));
-    result.groundedImages = [...new Set([...(groundedImages || []), ...toolImages])];
-    return result;
+    const merged = mergeGroundingPayload(result);
+    merged.groundedImages = [...new Set([...(groundedImages || []), ...toolImages, ...(result.groundedImages || [])])];
+    return merged;
   }
 
   if (provider === 'sarvamai') {
@@ -586,11 +783,11 @@ async function performTask(input, options = {}) {
     }
 
     const response = await client.chat.completions(requestBody);
-    return {
+    return mergeGroundingPayload({
       text: response?.choices?.[0]?.message?.content || '',
       functionCalls: [],
       groundedImages
-    };
+    });
   }
 
   // --- OpenAI Compatible Multi-Modal Dispatcher (Groq, OpenRouter, OpenAI, Mistral, Cohere) ---
@@ -654,11 +851,12 @@ async function performTask(input, options = {}) {
         throw new Error(`${provider.toUpperCase()} API Error: ${response.status} - ${errText}`);
     }
     const data = await response.json();
-    return { text: data.choices[0]?.message?.content || "", functionCalls: [], groundedImages };
+    return mergeGroundingPayload({ text: data.choices[0]?.message?.content || "", functionCalls: [], groundedImages });
   }
 
   const gemini = await getGeminiProvider();
-  return await gemini.generate(input, model, options.tools || [], key, systemInstruction, aiConfig);
+  const result = await gemini.generate(input, model, options.tools || [], key, systemInstruction, aiConfig);
+  return mergeGroundingPayload(result);
 }
 
 module.exports = { performTask };

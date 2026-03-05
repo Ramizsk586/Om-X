@@ -22,6 +22,147 @@ function getAiProvider() {
     return cachedAiProvider;
 }
 
+const ELIZA_SCRIPT_DIR = path.join(__dirname, '..', '..', 'Eliza', 'scripts');
+const SCRIPT_CACHE_TTL_MS = 60 * 1000;
+const MAX_SCRIPT_LINES = 1200;
+const ELIZA_STOP_WORDS = new Set([
+    'about', 'after', 'again', 'against', 'also', 'always', 'among', 'been', 'being', 'between',
+    'both', 'cannot', 'could', 'does', 'doing', 'done', 'each', 'else', 'from', 'have', 'having',
+    'into', 'just', 'like', 'make', 'many', 'more', 'most', 'much', 'only', 'other', 'over',
+    'same', 'some', 'such', 'than', 'that', 'their', 'there', 'these', 'they', 'this', 'those',
+    'through', 'under', 'very', 'what', 'when', 'where', 'which', 'while', 'with', 'would',
+    'your', 'you', 'are', 'and', 'for', 'the', 'was', 'were', 'why', 'how'
+]);
+let cachedScriptCorpus = null;
+
+function normalizeText(value = '') {
+    return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function extractTokens(value = '') {
+    const tokens = normalizeText(value).toLowerCase().match(/[a-z]{3,}/g) || [];
+    return [...new Set(tokens.filter((token) => !ELIZA_STOP_WORDS.has(token)))];
+}
+
+function getLastUserText(contents = []) {
+    for (let i = contents.length - 1; i >= 0; i -= 1) {
+        const msg = contents[i];
+        if (!msg || msg.role !== 'user') continue;
+        if (Array.isArray(msg.parts)) {
+            return normalizeText(msg.parts.map((p) => p?.text || '').join(' '));
+        }
+        return normalizeText(msg.text || '');
+    }
+    return '';
+}
+
+function getScriptMode(options = {}) {
+    const configured = String(options.aiConfig?.elizaScriptMode || '').trim().toLowerCase();
+    if (configured === 'all') return 'all';
+    return 'doctor';
+}
+
+function isModeAllowedScript(fileName = '', mode = 'doctor') {
+    if (mode === 'all') return true;
+    return /doctor/i.test(fileName);
+}
+
+function loadScriptCorpus() {
+    const now = Date.now();
+    if (cachedScriptCorpus && cachedScriptCorpus.expiresAt > now) {
+        return cachedScriptCorpus;
+    }
+
+    const files = [];
+    const lines = [];
+
+    try {
+        for (const name of fs.readdirSync(ELIZA_SCRIPT_DIR)) {
+            if (!name.endsWith('.txt')) continue;
+            files.push(name);
+            const fullPath = path.join(ELIZA_SCRIPT_DIR, name);
+            const raw = fs.readFileSync(fullPath, 'utf8');
+            const rawLines = raw.split(/\r?\n/);
+            for (const rawLine of rawLines) {
+                const trimmed = normalizeText(rawLine);
+                if (!trimmed) continue;
+                if (trimmed.startsWith(';')) continue;
+                if (trimmed.startsWith('(') || trimmed.startsWith(')')) continue;
+                if (trimmed.length < 24) continue;
+
+                const cleaned = normalizeText(
+                    trimmed
+                        .replace(/^[^A-Za-z]+/, '')
+                        .replace(/[^A-Za-z0-9.,!?'"`\-\s]/g, ' ')
+                );
+                if (cleaned.length < 24) continue;
+
+                const lowered = cleaned.toLowerCase();
+                lines.push({
+                    file: name,
+                    text: cleaned,
+                    lower: lowered,
+                    tokens: extractTokens(lowered)
+                });
+                if (lines.length >= MAX_SCRIPT_LINES) break;
+            }
+            if (lines.length >= MAX_SCRIPT_LINES) break;
+        }
+    } catch (_) {
+        // best-effort corpus loading
+    }
+
+    cachedScriptCorpus = {
+        expiresAt: now + SCRIPT_CACHE_TTL_MS,
+        files,
+        lines
+    };
+    return cachedScriptCorpus;
+}
+
+function scoreScriptLine(line = {}, queryTokens = []) {
+    if (!line || !Array.isArray(queryTokens) || queryTokens.length === 0) return 0;
+    let score = 0;
+    const tokenSet = new Set(line.tokens || []);
+    for (const token of queryTokens) {
+        if (!tokenSet.has(token)) continue;
+        score += token.length >= 7 ? 4 : 3;
+    }
+    return score;
+}
+
+function findScriptSupplement(userText = '', options = {}) {
+    const query = normalizeText(userText);
+    if (!query) return null;
+
+    const queryTokens = extractTokens(query);
+    if (queryTokens.length === 0) return null;
+
+    const mode = getScriptMode(options);
+    const preferredScript = String(options.aiConfig?.elizaScriptFile || '').trim().toLowerCase();
+    const corpus = loadScriptCorpus();
+
+    let candidates = (corpus.lines || []).filter((entry) => isModeAllowedScript(entry.file, mode));
+    if (preferredScript) {
+        const preferred = candidates.filter((entry) => entry.file.toLowerCase() === preferredScript);
+        if (preferred.length > 0) candidates = preferred;
+    }
+    if (candidates.length === 0) return null;
+
+    let bestLine = null;
+    let bestScore = 0;
+    for (const entry of candidates) {
+        const score = scoreScriptLine(entry, queryTokens);
+        if (score > bestScore) {
+            bestScore = score;
+            bestLine = entry;
+        }
+    }
+
+    if (!bestLine || bestScore < 5) return null;
+    return bestLine.text;
+}
+
 
 /**
  * Run an Eliza bot over the supplied contents array (the same format
@@ -61,6 +202,7 @@ async function performTask(input = {}, options = {}) {
     // `input` is expected to have a `contents` array; allow old callers to
     // pass the array directly.
     const contents = Array.isArray(input) ? input : input.contents || [];
+    const lastUserText = getLastUserText(contents);
 
     const reply = runEliza(contents, options);
 
@@ -77,7 +219,21 @@ async function performTask(input = {}, options = {}) {
     ];
     const lower = reply.trim().toLowerCase();
     const isGeneric = genericTriggers.some((g) => lower.includes(g));
-    if (isGeneric && options.enhanced) {
+    const needsSupport = isGeneric || reply.trim().length < 24;
+
+    // Script boost: when Eliza returns a generic/short reply, enrich with a
+    // relevant line from bundled ELIZA script files.
+    const scriptBoostEnabled = options.aiConfig?.elizaScriptBoost !== false;
+    if (needsSupport && scriptBoostEnabled && lastUserText) {
+        const supplement = findScriptSupplement(lastUserText, options);
+        if (supplement) {
+            finalText = `${reply}\n\n(ELIZA script) ${supplement}`;
+        }
+    }
+
+    // Enhanced boost can append the offline bot when Eliza is too generic.
+    const enhancedEnabled = Boolean(options.enhanced || options.aiConfig?.elizaEnhanced);
+    if (needsSupport && enhancedEnabled) {
         try {
             const ai = getAiProvider();
             const offline = await ai.performTask({ contents }, { provider: 'offline' });
@@ -108,9 +264,8 @@ module.exports = {
     // list the available script files (names only) so UI code can present a
     // picker in the future.
     listScripts: () => {
-        const dir = path.join(__dirname, '..', 'Eliza', 'scripts');
         try {
-            return fs.readdirSync(dir).filter((f) => f.endsWith('.txt'));
+            return fs.readdirSync(ELIZA_SCRIPT_DIR).filter((f) => f.endsWith('.txt'));
         } catch {
             return [];
         }

@@ -42,13 +42,39 @@ const SEARCH_QUERY_SUFFIXES = [
 function resolveSearchProfile(searchDepth, requestedResultCount = 5) {
   const normalizedDepth = String(searchDepth || '').toLowerCase().trim();
   if (normalizedDepth === 'quick' || normalizedDepth === '3-4' || normalizedDepth === 'quick_search') {
-    return { mode: 'quick', searches: 5, sources: 5 };
+    return { mode: 'quick', searches: 12, sources: 10 };
   }
   if (normalizedDepth === 'deep' || normalizedDepth === '15-20' || normalizedDepth === 'deep_search' || normalizedDepth === 'web') {
     return { mode: 'deep', searches: 15, sources: 15 };
   }
   const safeSources = Math.max(1, Math.min(Number(requestedResultCount) || 5, 10));
   return { mode: 'standard', searches: 1, sources: safeSources };
+}
+
+function normalizeSearchProvider(provider = '') {
+  const raw = String(provider || '').toLowerCase().trim();
+  if (!raw) return 'native';
+  if (raw === 'ddg' || raw === 'duckduckgo') return 'duckduckgo';
+  if (raw === 'serp' || raw === 'serpapi') return 'serpapi';
+  if (raw === 'pse' || raw === 'google_pse') return 'google_pse';
+  return raw;
+}
+
+function resolveQuickHybridPlan(aiConfig = {}) {
+  const provider = normalizeSearchProvider(aiConfig?.searchProvider || aiConfig?.defaultSearchEngineId || 'duckduckgo');
+  const keys = aiConfig?.keys || {};
+  const hasSerp = !!(keys.scrapeSerp || keys.serpapi);
+  const hasGooglePse = !!(keys.googlePse && keys.googleCx);
+
+  let premiumProvider = null;
+  if (provider === 'serpapi' && hasSerp) premiumProvider = 'serpapi';
+  if (provider === 'google_pse' && hasGooglePse) premiumProvider = 'google_pse';
+
+  return {
+    ddgCalls: 10,
+    premiumCalls: premiumProvider ? 2 : 0,
+    premiumProvider
+  };
 }
 
 function buildSearchQueries(baseQuery, count) {
@@ -200,7 +226,7 @@ async function generate(input, model, tools = [], keyOverride = '', systemInstru
   if (searchEnabled) {
       const searchProfile = resolveSearchProfile(aiConfig?.searchDepth, 5);
       if (searchProfile.mode === 'quick') {
-          finalInstruction += " Quick Retrieval policy: execute exactly 5 web searches and synthesize exactly 5 high-value sources.";
+          finalInstruction += " Quick Retrieval policy: always execute 10 DuckDuckGo searches. If configured provider is SerpAPI or Google PSE (with valid keys), execute 2 additional searches on that provider. Then synthesize concise evidence-backed output.";
       } else if (searchProfile.mode === 'deep') {
           finalInstruction += " Deep Intelligence policy: execute exactly 15 web searches and synthesize broad multi-source coverage.";
       }
@@ -229,6 +255,10 @@ async function generate(input, model, tools = [], keyOverride = '', systemInstru
     };
 
     const fixedSearchProfile = resolveSearchProfile(aiConfig?.searchDepth, 5);
+    if (fixedSearchProfile.mode === 'quick') {
+      const quickBudget = resolveQuickHybridPlan(aiConfig);
+      fixedSearchProfile.searches = quickBudget.ddgCalls + quickBudget.premiumCalls;
+    }
     const hasFixedSearchBudget = fixedSearchProfile.mode === 'quick' || fixedSearchProfile.mode === 'deep';
     let searchesRemaining = hasFixedSearchBudget ? fixedSearchProfile.searches : Infinity;
 
@@ -242,6 +272,130 @@ async function generate(input, model, tools = [], keyOverride = '', systemInstru
     const MAX_ITERATIONS = 5;
     let toolResults = [];
     let functionResponsesForUI = [];
+    const extractLatestUserQuery = () => {
+      for (let i = contents.length - 1; i >= 0; i -= 1) {
+        const entry = contents[i];
+        if (String(entry?.role || '').toLowerCase() !== 'user') continue;
+        const text = (Array.isArray(entry?.parts) ? entry.parts : [])
+          .map((part) => (typeof part?.text === 'string' ? part.text : ''))
+          .filter(Boolean)
+          .join('\n')
+          .trim();
+        if (text) return text;
+      }
+      return '';
+    };
+    const executeWebSearchTool = async (query, requestedResultCount = 5, toolId = `search_web_${Date.now()}`) => {
+      const normalizedQuery = String(query || '').trim();
+      const profile = resolveSearchProfile(aiConfig?.searchDepth, requestedResultCount);
+      const isQuickMode = profile.mode === 'quick';
+      const quickPlan = isQuickMode ? resolveQuickHybridPlan(aiConfig) : null;
+      const plannedSearchCount = isQuickMode
+        ? (quickPlan.ddgCalls + quickPlan.premiumCalls)
+        : profile.searches;
+
+      if (!normalizedQuery) {
+        return {
+          id: toolId,
+          name: 'search_web',
+          response: {
+            results: [],
+            imageCount: 0,
+            status: 'no_query',
+            searchesRequested: plannedSearchCount,
+            searchesExecuted: 0,
+            sourcesUsed: 0,
+            mode: profile.mode,
+            providersUsed: []
+          }
+        };
+      }
+
+      if (hasFixedSearchBudget && searchesRemaining <= 0) {
+        return {
+          id: toolId,
+          name: 'search_web',
+          response: {
+            results: [],
+            imageCount: 0,
+            status: 'limit_reached',
+            searchesRequested: plannedSearchCount,
+            searchesExecuted: 0,
+            sourcesUsed: 0,
+            mode: profile.mode,
+            providersUsed: []
+          }
+        };
+      }
+
+      const searchCount = hasFixedSearchBudget ? Math.min(plannedSearchCount, searchesRemaining) : plannedSearchCount;
+      const searchQueries = buildSearchQueries(normalizedQuery, searchCount);
+      const aggregatedSources = [];
+      const seenSourceUrlsForCall = new Set();
+      const aggregatedImages = [];
+      const providersUsed = new Set();
+      let hadSearchErrors = false;
+      let ddgSearchesExecuted = 0;
+      let premiumSearchesExecuted = 0;
+
+      for (let i = 0; i < searchQueries.length; i += 1) {
+        const searchQuery = searchQueries[i];
+        const forcedProvider = isQuickMode
+          ? (i < quickPlan.ddgCalls ? 'duckduckgo' : (quickPlan.premiumProvider || 'duckduckgo'))
+          : null;
+        const result = forcedProvider
+          ? await websearch.performWebSearch(searchQuery, { ...(aiConfig || {}), searchProvider: forcedProvider }, 1, { forceProvider: forcedProvider })
+          : await websearch.performWebSearch(searchQuery, aiConfig, 1);
+        if (result?.error) hadSearchErrors = true;
+        if (result?.provider) providersUsed.add(String(result.provider).trim().toLowerCase());
+        if (forcedProvider === 'duckduckgo') ddgSearchesExecuted += 1;
+        else if (forcedProvider) premiumSearchesExecuted += 1;
+
+        (result?.sources || []).forEach((s) => {
+          if (!s?.url) return;
+          const url = String(s.url).trim();
+          if (!url || seenSourceUrlsForCall.has(url)) return;
+          seenSourceUrlsForCall.add(url);
+          aggregatedSources.push(s);
+        });
+
+        if (Array.isArray(result?.images) && result.images.length > 0) {
+          aggregatedImages.push(...result.images);
+        }
+      }
+
+      if (hasFixedSearchBudget) {
+        searchesRemaining = Math.max(0, searchesRemaining - searchQueries.length);
+      }
+
+      const sources = aggregatedSources.slice(0, profile.sources);
+      sources.forEach((s) => addUsedSource(s, 'web_search'));
+
+      const mergedImageResults = {
+        images: [...new Set(aggregatedImages)],
+        sources
+      };
+      const images = await imageScraper.processSearchImages(mergedImageResults, aiConfig?.scraping?.imageCount || 4);
+      toolResults.push(...images);
+
+      return {
+        id: toolId,
+        name: 'search_web',
+        response: {
+          results: sources,
+          imageCount: images.length,
+          status: sources.length > 0 ? (hadSearchErrors ? 'partial' : 'success') : (hadSearchErrors ? 'error' : 'no_results'),
+          searchesRequested: plannedSearchCount,
+          searchesExecuted: searchQueries.length,
+          sourcesUsed: sources.length,
+          mode: profile.mode,
+          providersUsed: Array.from(providersUsed),
+          ddgSearchesExecuted: isQuickMode ? ddgSearchesExecuted : undefined,
+          premiumSearchesExecuted: isQuickMode ? premiumSearchesExecuted : undefined,
+          premiumProvider: isQuickMode ? (quickPlan.premiumProvider || null) : undefined
+        }
+      };
+    };
 
     while (response.functionCalls && response.functionCalls.length > 0 && iterations < MAX_ITERATIONS) {
       iterations++;
@@ -250,77 +404,7 @@ async function generate(input, model, tools = [], keyOverride = '', systemInstru
       for (const fc of response.functionCalls) {
         try {
             if (fc.name === 'search_web') {
-              const profile = resolveSearchProfile(aiConfig?.searchDepth, fc.args?.result_count || 5);
-              if (hasFixedSearchBudget && searchesRemaining <= 0) {
-                const exhausted = {
-                  id: fc.id,
-                  name: fc.name,
-                  response: {
-                    results: [],
-                    imageCount: 0,
-                    status: 'limit_reached',
-                    searchesRequested: profile.searches,
-                    searchesExecuted: 0,
-                    sourcesUsed: 0,
-                    mode: profile.mode
-                  }
-                };
-                functionResponses.push(exhausted);
-                functionResponsesForUI.push(exhausted);
-                continue;
-              }
-
-              const searchCount = hasFixedSearchBudget ? Math.min(profile.searches, searchesRemaining) : profile.searches;
-              const searchQueries = buildSearchQueries(fc.args?.query || '', searchCount);
-              const aggregatedSources = [];
-              const seenSourceUrlsForCall = new Set();
-              const aggregatedImages = [];
-              let hadSearchErrors = false;
-
-              for (const searchQuery of searchQueries) {
-                const result = await websearch.performWebSearch(searchQuery, aiConfig, 1);
-                if (result?.error) hadSearchErrors = true;
-
-                (result?.sources || []).forEach((s) => {
-                  if (!s?.url) return;
-                  const url = String(s.url).trim();
-                  if (!url || seenSourceUrlsForCall.has(url)) return;
-                  seenSourceUrlsForCall.add(url);
-                  aggregatedSources.push(s);
-                });
-
-                if (Array.isArray(result?.images) && result.images.length > 0) {
-                  aggregatedImages.push(...result.images);
-                }
-              }
-
-              if (hasFixedSearchBudget) {
-                searchesRemaining = Math.max(0, searchesRemaining - searchQueries.length);
-              }
-
-              const sources = aggregatedSources.slice(0, profile.sources);
-              sources.forEach((s) => addUsedSource(s, 'web_search'));
-
-              const mergedImageResults = {
-                images: [...new Set(aggregatedImages)],
-                sources
-              };
-              const images = await imageScraper.processSearchImages(mergedImageResults, aiConfig?.scraping?.imageCount || 4);
-              toolResults.push(...images);
-
-              const fr = {
-                id: fc.id,
-                name: fc.name,
-                response: {
-                  results: sources,
-                  imageCount: images.length,
-                  status: sources.length > 0 ? (hadSearchErrors ? 'partial' : 'success') : (hadSearchErrors ? 'error' : 'no_results'),
-                  searchesRequested: profile.searches,
-                  searchesExecuted: searchQueries.length,
-                  sourcesUsed: sources.length,
-                  mode: profile.mode
-                }
-              };
+              const fr = await executeWebSearchTool(fc.args?.query || '', fc.args?.result_count || 5, fc.id || `search_web_${Date.now()}`);
               functionResponses.push(fr);
               functionResponsesForUI.push(fr);
             }
@@ -525,6 +609,46 @@ async function generate(input, model, tools = [], keyOverride = '', systemInstru
         });
       } else {
         break;
+      }
+    }
+
+    if (searchEnabled && functionResponsesForUI.length === 0) {
+      const fallbackQuery = extractLatestUserQuery();
+      if (fallbackQuery) {
+        try {
+          const forcedFr = await executeWebSearchTool(
+            fallbackQuery,
+            fixedSearchProfile.sources || 5,
+            `forced_search_web_${Date.now()}`
+          );
+          functionResponsesForUI.push(forcedFr);
+
+          const forcedResults = Array.isArray(forcedFr?.response?.results) ? forcedFr.response.results : [];
+          const providerLabel = Array.isArray(forcedFr?.response?.providersUsed) && forcedFr.response.providersUsed.length > 0
+            ? forcedFr.response.providersUsed.join(', ')
+            : 'duckduckgo';
+
+          const compactEvidence = forcedResults
+            .slice(0, fixedSearchProfile.sources || 5)
+            .map((s, idx) => `${idx + 1}. ${s.title || 'Source'}\nURL: ${s.url || ''}\nSnippet: ${s.snippet || ''}`)
+            .join('\n\n');
+
+          const evidencePrompt = compactEvidence
+            ? `Web retrieval tool executed (provider: ${providerLabel}). Use this live evidence before answering.\n\n${compactEvidence}`
+            : `Web retrieval tool executed (provider: ${providerLabel}) but returned no source rows. State that clearly and answer conservatively.`;
+
+          contents.push({ role: 'user', parts: [{ text: evidencePrompt }] });
+          response = await ai.models.generateContent({
+            model: targetModel,
+            contents,
+            config: {
+              ...config,
+              tools: undefined
+            }
+          });
+        } catch (forcedSearchError) {
+          console.warn('[Gemini Provider] Forced DDG/search_web fallback failed:', forcedSearchError?.message || forcedSearchError);
+        }
       }
     }
 

@@ -1,6 +1,6 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
-const TRUSTED_CONTEXT_PROTOCOLS = new Set(['file:', 'mindclone:']);
+const TRUSTED_CONTEXT_PROTOCOLS = new Set(['file:']);
 
 function getCurrentPageUrl() {
   try {
@@ -55,28 +55,6 @@ ipcRenderer.sendToHost = (channel, ...args) => {
 
 // Keep compatibility for callers expecting `window.env`, but never expose process secrets.
 contextBridge.exposeInMainWorld('env', {});
-
-contextBridge.exposeInMainWorld('minecraftAPI', {
-  close: () => ipcRenderer.send('minecraft-game:close'),
-  ready: () => ipcRenderer.send('minecraft-game:ready'),
-  worlds: {
-    list: () => ipcRenderer.invoke('mindclone:worlds:list'),
-    create: (payload) => ipcRenderer.invoke('mindclone:worlds:create', payload),
-    delete: (worldId) => ipcRenderer.invoke('mindclone:worlds:delete', worldId),
-    getMeta: (worldId) => ipcRenderer.invoke('mindclone:worlds:get-meta', worldId),
-    saveMeta: (worldId, meta) => ipcRenderer.invoke('mindclone:worlds:save-meta', worldId, meta)
-  },
-  player: {
-    load: (worldId) => ipcRenderer.invoke('mindclone:player:load', worldId),
-    save: (worldId, base64) => ipcRenderer.invoke('mindclone:player:save', worldId, base64)
-  },
-  chunks: {
-    list: (worldId) => ipcRenderer.invoke('mindclone:chunks:list', worldId),
-    load: (worldId, cx, cz) => ipcRenderer.invoke('mindclone:chunks:load', worldId, cx, cz),
-    save: (worldId, cx, cz, base64) => ipcRenderer.invoke('mindclone:chunks:save', worldId, cx, cz, base64),
-    delete: (worldId, cx, cz) => ipcRenderer.invoke('mindclone:chunks:delete', worldId, cx, cz)
-  }
-});
 
 contextBridge.exposeInMainWorld('browserAPI', {
   navigate: (url) => {

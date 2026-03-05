@@ -95,7 +95,6 @@ export class TabManager {
     if (!url) return false;
     try {
       const parsed = new URL(url);
-      if (parsed.protocol === 'mindclone:') return true;
       if (parsed.protocol !== 'file:') return false;
       const normalizedUrl = this._normalizeUrlForCompare(parsed.href);
       const normalizedRoot = this._normalizeUrlForCompare(this.APP_ROOT_URL);
@@ -425,7 +424,7 @@ export class TabManager {
       };
     }
 
-    const allowedProtocols = new Set(['http:', 'https:', 'file:', 'mindclone:', 'about:', 'data:']);
+    const allowedProtocols = new Set(['http:', 'https:', 'file:', 'about:', 'data:']);
     if (!allowedProtocols.has(protocol)) {
       return {
         safe: false,

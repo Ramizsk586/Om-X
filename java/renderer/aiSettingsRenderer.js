@@ -109,6 +109,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         serpQuotaRenew: document.getElementById('serp-quota-renew'),
         providerFields: document.querySelectorAll('.provider-field'),
         fontSelect: document.getElementById('font-select'),
+        chatUiModeSelect: document.getElementById('chat-ui-mode-select'),
         colorUserText: document.getElementById('color-user-text'),
         colorAiText: document.getElementById('color-ai-text'),
         animationsToggle: document.getElementById('animations-toggle'),
@@ -188,6 +189,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     let config = {
         theme: 'dark',
         font: 'sans',
+        chatUiMode: 'default',
         density: 'standard',
         animations: true,
         streamSpeed: 6,
@@ -224,6 +226,13 @@ document.addEventListener('DOMContentLoaded', async () => {
             autoPlay: false,
             showIndicator: true
         }
+    };
+
+    const mapThemeToResponseTheme = (theme = '') => {
+        const normalized = String(theme || '').trim().toLowerCase();
+        if (normalized === 'glass') return 'glass';
+        if (normalized === 'cyber') return 'cyber';
+        return 'default';
     };
 
     let dynamicProviderModels = {};
@@ -2166,8 +2175,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         verifiedProfiles = JSON.parse(localStorage.getItem('omni_verified_profiles') || '[]');
         const active = browserSettings.activeProvider || 'google';
         if (els.provider) els.provider.value = active;
+        const persisted = browserSettings.aiConfig || {};
         const saved = JSON.parse(localStorage.getItem('omni_ai_module_settings') || '{}');
-        config = { ...config, ...saved };
+        config = { ...config, ...persisted, ...saved };
         if (els.openaiBaseUrl) els.openaiBaseUrl.value = config.openaiCompatible?.baseUrl || 'http://localhost:1234/v1';
         if (els.lmBaseUrl) els.lmBaseUrl.value = config.lmStudio?.baseUrl || 'http://localhost:1234/v1';
         if (els.lmEnableImageScrape) els.lmEnableImageScrape.checked = config.lmStudio?.enableImageScraping ?? true;
@@ -2210,9 +2220,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (els.scrapeImageCount) els.scrapeImageCount.value = config.scraping?.imageCount ?? 4;
         if (els.animationsToggle) els.animationsToggle.checked = config.animations ?? true;
         if (els.fontSelect) els.fontSelect.value = config.font || 'sans';
+        if (els.chatUiModeSelect) els.chatUiModeSelect.value = config.chatUiMode === 'simple' ? 'simple' : 'default';
         if (els.colorUserText) els.colorUserText.value = config.chromatics?.userText || '#ffffff';
         if (els.colorAiText) els.colorAiText.value = config.chromatics?.aiText || '#e4e4e7';
         if (els.themeChips) els.themeChips.forEach(chip => chip.classList.toggle('active', chip.dataset.theme === config.theme));
+        localStorage.setItem('ai_response_theme', mapThemeToResponseTheme(config.theme));
         if (els.personaStyle) els.personaStyle.value = config.persona?.style || 'enhanced';
         if (els.personaEmojis) els.personaEmojis.checked = config.persona?.useEmojis ?? true;
         if (els.personaSources) els.personaSources.checked = config.persona?.showSources ?? true;
@@ -2261,7 +2273,18 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (els.providerFields) els.providerFields.forEach(f => f.classList.toggle('hidden', f.dataset.provider !== selected));
     };
 
-    [els.fontSelect, els.webSearchToggle, els.colorUserText, els.colorAiText, els.animationsToggle, els.lmEnableImageScrape, els.lmImageScrapeCount, els.personaStyle, els.personaEmojis, els.personaSources, els.personaVideos, els.scrapeImagesEnabled, els.scrape4kEnabled, els.scrapeImageCount,
+    if (els.themeChips && els.themeChips.length > 0) {
+        els.themeChips.forEach((chip) => {
+            chip.addEventListener('click', () => {
+                els.themeChips.forEach((other) => other.classList.remove('active'));
+                chip.classList.add('active');
+                config.theme = chip.dataset.theme || 'dark';
+                markModified();
+            });
+        });
+    }
+
+    [els.fontSelect, els.chatUiModeSelect, els.webSearchToggle, els.colorUserText, els.colorAiText, els.animationsToggle, els.lmEnableImageScrape, els.lmImageScrapeCount, els.personaStyle, els.personaEmojis, els.personaSources, els.personaVideos, els.scrapeImagesEnabled, els.scrape4kEnabled, els.scrapeImageCount,
      // eliza controls
      els.elizaRandom, els.elizaEnhanced, els.elizaMemSize].forEach(el => {
         if (el) el.addEventListener('change', markModified);
@@ -2497,6 +2520,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (els.btnSave) {
         els.btnSave.onclick = async () => {
             const finalModel = els.model?.value === 'custom' ? els.customModel?.value.trim() : els.model?.value;
+            const activeThemeChip = document.querySelector('.theme-chip.active');
             els.btnSave.disabled = true; els.btnSave.textContent = "Saving...";
 
             config.webSearchEnabled = els.webSearchToggle?.checked || false;
@@ -2510,7 +2534,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                 elevenlabs: els.elevenlabsKey?.value.trim() || '',
                 sarvam: els.sarvamKey?.value.trim() || ''
             };
+            config.theme = activeThemeChip?.dataset?.theme || config.theme || 'dark';
             config.font = els.fontSelect?.value || 'sans';
+            config.chatUiMode = els.chatUiModeSelect?.value === 'simple' ? 'simple' : 'default';
             config.animations = els.animationsToggle?.checked ?? true;
             config.openaiCompatible = { baseUrl: els.openaiBaseUrl?.value.trim() || '' };
             config.lmStudio = { baseUrl: els.lmBaseUrl?.value.trim() || '', enableImageScraping: els.lmEnableImageScrape?.checked ?? true, imageScrapeCount: parseInt(els.lmImageScrapeCount?.value || '3') };
@@ -2521,7 +2547,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             config.elizaEnhanced = els.elizaEnhanced?.checked ?? false;
             config.elizaMemSize = parseInt(els.elizaMemSize?.value || '20');
             config.llamaWebUrl = els.llamaWebUrl?.value.trim() || '';
-            config.chromatics = { userText: els.colorUserText?.value || '#ffffff', aiText: '#e4e4e7' };
+            config.chromatics = {
+                userText: els.colorUserText?.value || '#ffffff',
+                aiText: els.colorAiText?.value || '#e4e4e7'
+            };
             config.persona = { style: els.personaStyle?.value || 'enhanced', useEmojis: els.personaEmojis?.checked ?? true, showSources: els.personaSources?.checked ?? true, showImages: els.personaSources?.checked ?? true, showVideos: els.personaVideos?.checked ?? true };
             config.tts = {
                 provider: els.ttsProviderSelect?.value || 'system',
@@ -2536,6 +2565,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             };
 
             localStorage.setItem('omni_ai_module_settings', JSON.stringify(config));
+            localStorage.setItem('ai_response_theme', mapThemeToResponseTheme(config.theme));
             try {
                 const full = await window.browserAPI.settings.get();
                 const providerKey = els.provider?.value || 'google';
@@ -2567,5 +2597,3 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     loadConfig();
 });
-
-

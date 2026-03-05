@@ -6,7 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const aiGuardian = require('./AIGuardian');
 
-const TRUSTED_VAULT_PROTOCOLS = new Set(['file:', 'mindclone:']);
+const TRUSTED_VAULT_PROTOCOLS = new Set(['file:']);
 
 function isSameOrSubFsPath(targetPath, basePath) {
   const target = path.resolve(String(targetPath || ''));

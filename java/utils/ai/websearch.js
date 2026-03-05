@@ -89,7 +89,39 @@ function extractDdgHtmlSources(html = '', limit = 12) {
         }
     }
 
+    // Fallback 2: capture DDG redirect links that contain uddg=... regardless of class name.
+    if (sources.length === 0) {
+        const uddgRegex = /<a[^>]+href="([^"]*uddg=[^"]+)"[^>]*>([\s\S]*?)<\/a>/gi;
+        let match;
+        while ((match = uddgRegex.exec(html)) !== null && sources.length < limit) {
+            pushSource(match[2], match[1], '');
+        }
+    }
+
+    // Fallback 3: generic direct external links from lite/basic pages.
+    if (sources.length === 0) {
+        const genericLinkRegex = /<a[^>]+href="(https?:\/\/[^"]+)"[^>]*>([\s\S]*?)<\/a>/gi;
+        let match;
+        while ((match = genericLinkRegex.exec(html)) !== null && sources.length < limit) {
+            const href = String(match[1] || '').trim();
+            if (!href) continue;
+            if (/duckduckgo\.com/i.test(href)) continue;
+            if (/javascript:/i.test(href)) continue;
+            pushSource(match[2], href, '');
+        }
+    }
+
     return sources;
+}
+
+function normalizeSearchProvider(provider = '') {
+    const raw = String(provider || '').toLowerCase().trim();
+    if (!raw) return 'native';
+    if (raw === 'ddg' || raw === 'duckduckgo') return 'duckduckgo';
+    if (raw === 'serp' || raw === 'serpapi') return 'serpapi';
+    if (raw === 'google_pse' || raw === 'pse') return 'google_pse';
+    if (raw === 'native' || raw === 'default' || raw === 'auto') return 'native';
+    return raw;
 }
 
 /**
@@ -127,15 +159,23 @@ async function performWebSearch(query, aiConfig, retryCount = 1, options = {}) {
     const keys = aiConfig?.keys || {};
     const serpKey = keys.scrapeSerp || keys.serpapi;
     
-    // Explicitly determine effective provider for this request
-    // If a SerpAPI key exists, we often want to use it regardless of global default for high-fidelity needs
-    let effectiveProvider = String(options?.forceProvider || aiConfig?.searchProvider || 'native').toLowerCase();
-    if (effectiveProvider === 'ddg') effectiveProvider = 'duckduckgo';
-    if (effectiveProvider === 'serp') effectiveProvider = 'serpapi';
+    // Resolve provider with precedence:
+    // 1) explicit forceProvider
+    // 2) aiConfig.searchProvider
+    // 3) when ai search provider is native/auto, inherit browser default engine
+    // 4) fallback to previous behavior (SerpAPI when key exists, otherwise DDG)
+    let effectiveProvider = normalizeSearchProvider(options?.forceProvider || aiConfig?.searchProvider || 'native');
+    if (!options?.forceProvider && effectiveProvider === 'native') {
+        const inheritedDefault = normalizeSearchProvider(aiConfig?.defaultSearchEngineId || '');
+        if (inheritedDefault === 'duckduckgo' || inheritedDefault === 'serpapi' || inheritedDefault === 'google_pse') {
+            effectiveProvider = inheritedDefault;
+        }
+    }
 
     if (!options?.forceProvider && serpKey && (effectiveProvider === 'native' || effectiveProvider === 'serpapi')) {
         effectiveProvider = 'serpapi';
     }
+    if (effectiveProvider === 'native') effectiveProvider = 'duckduckgo';
 
     const cacheKey = `${effectiveProvider}:${query.toLowerCase().trim()}`;
     if (webSearchCache.has(cacheKey)) {
@@ -237,6 +277,7 @@ function registerHandlers(getSettingsFn) {
         // Ensure image scraping is enabled for this specific call
         const searchConfig = { 
             ...settings?.aiConfig, 
+            defaultSearchEngineId: settings?.defaultSearchEngineId,
             scraping: { ...settings?.aiConfig?.scraping, imagesEnabled: true } 
         };
         return await performWebSearch(query, searchConfig, 2);
@@ -245,6 +286,7 @@ function registerHandlers(getSettingsFn) {
         const settings = getSettingsFn();
         const searchConfig = {
             ...settings?.aiConfig,
+            defaultSearchEngineId: settings?.defaultSearchEngineId,
             scraping: { ...settings?.aiConfig?.scraping, imagesEnabled: true }
         };
         return await performWebSearch(query, searchConfig, 2, { forceProvider: 'duckduckgo' });
@@ -253,6 +295,7 @@ function registerHandlers(getSettingsFn) {
         const settings = getSettingsFn();
         const searchConfig = {
             ...settings?.aiConfig,
+            defaultSearchEngineId: settings?.defaultSearchEngineId,
             scraping: { ...settings?.aiConfig?.scraping, imagesEnabled: true }
         };
         return await performWebSearch(query, searchConfig, 1, { forceProvider: 'serpapi' });

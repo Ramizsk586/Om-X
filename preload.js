@@ -210,10 +210,6 @@ contextBridge.exposeInMainWorld('browserAPI', {
     onOutput: (callback) => ipcRenderer.on('pocket-tts-output', (event, data) => callback(data)),
     onExit: (callback) => ipcRenderer.on('pocket-tts-exit', (event, data) => callback(data))
   },
-  minecraftGame: {
-    launch: () => ipcRenderer.invoke('minecraft-game:launch'),
-    close: () => ipcRenderer.send('minecraft-game:close')
-  },
   screenshot: {
     getWindows: () => ipcRenderer.invoke('screenshot:get-windows'),
     captureWindow: (windowId) => ipcRenderer.invoke('screenshot:capture-window', windowId)
