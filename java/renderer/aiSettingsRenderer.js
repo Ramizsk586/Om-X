@@ -252,6 +252,17 @@ document.addEventListener('DOMContentLoaded', async () => {
             els.btnSave.textContent = "Save";
         }
     };
+    const defaultSaveStatusText = (els.saveStatus?.textContent || 'Settings Saved').trim();
+    const flashSaveStatus = (message, duration = 2000) => {
+        if (!els.saveStatus) return;
+        els.saveStatus.textContent = message;
+        els.saveStatus.classList.add('visible');
+        setTimeout(() => {
+            if (!els.saveStatus) return;
+            els.saveStatus.classList.remove('visible');
+            els.saveStatus.textContent = defaultSaveStatusText;
+        }, duration);
+    };
 
     const setSaveAllButtonState = ({ visible, text, disabled } = {}) => {
         if (!els.btnSaveAllDesktop) return;
@@ -2177,7 +2188,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (els.provider) els.provider.value = active;
         const persisted = browserSettings.aiConfig || {};
         const saved = JSON.parse(localStorage.getItem('omni_ai_module_settings') || '{}');
-        config = { ...config, ...persisted, ...saved };
+        // Settings file is authoritative; local cache is fallback only.
+        config = { ...config, ...saved, ...persisted };
+        try {
+            localStorage.setItem('omni_ai_module_settings', JSON.stringify(config));
+        } catch {}
         if (els.openaiBaseUrl) els.openaiBaseUrl.value = config.openaiCompatible?.baseUrl || 'http://localhost:1234/v1';
         if (els.lmBaseUrl) els.lmBaseUrl.value = config.lmStudio?.baseUrl || 'http://localhost:1234/v1';
         if (els.lmEnableImageScrape) els.lmEnableImageScrape.checked = config.lmStudio?.enableImageScraping ?? true;
@@ -2264,7 +2279,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
 
         updateVisibility(); renderProfiles();
-        if (els.btnSave) { els.btnSave.disabled = true; els.btnSave.textContent = "Save"; }
+        if (els.btnSave) { els.btnSave.disabled = false; els.btnSave.textContent = "Save"; }
     };
 
     const updateVisibility = () => {
@@ -2564,8 +2579,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                 showIndicator: els.ttsShowIndicator?.checked ?? true
             };
 
-            localStorage.setItem('omni_ai_module_settings', JSON.stringify(config));
-            localStorage.setItem('ai_response_theme', mapThemeToResponseTheme(config.theme));
             try {
                 const full = await window.browserAPI.settings.get();
                 const providerKey = els.provider?.value || 'google';
@@ -2590,8 +2603,28 @@ document.addEventListener('DOMContentLoaded', async () => {
                     aiConfig: config 
                 };
                 const success = await window.browserAPI.settings.save(updatedSettings);
-                if (success) { if (els.saveStatus) els.saveStatus.classList.add('visible'); els.btnSave.textContent = "Saved"; browserSettings = updatedSettings; renderProfiles(); setTimeout(() => { if (els.saveStatus) els.saveStatus.classList.remove('visible'); }, 2000); }
-            } catch (e) { els.btnSave.textContent = "Save Error"; els.btnSave.disabled = false; }
+                if (success) {
+                    localStorage.setItem('omni_ai_module_settings', JSON.stringify(config));
+                    localStorage.setItem('ai_response_theme', mapThemeToResponseTheme(config.theme));
+                    flashSaveStatus(defaultSaveStatusText, 2000);
+                    els.btnSave.textContent = "Saved";
+                    els.btnSave.disabled = false;
+                    browserSettings = updatedSettings;
+                    renderProfiles();
+                    setTimeout(() => {
+                        if (els.btnSave) els.btnSave.textContent = "Save";
+                    }, 1200);
+                } else {
+                    flashSaveStatus('Save failed. Retry.', 2600);
+                    els.btnSave.textContent = "Save Failed";
+                    els.btnSave.disabled = false;
+                }
+            } catch (e) {
+                console.error('[AI Settings] Save failed:', e);
+                flashSaveStatus('Save error. Retry.', 2600);
+                els.btnSave.textContent = "Save Error";
+                els.btnSave.disabled = false;
+            }
         };
     }
 

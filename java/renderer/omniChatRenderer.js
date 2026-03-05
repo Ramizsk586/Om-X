@@ -2372,16 +2372,22 @@ document.addEventListener('DOMContentLoaded', async () => {
                 localAiConfig = {};
             }
             const mergedAiConfig = {
-                ...(settings.aiConfig || {}),
-                ...(localAiConfig || {})
+                ...(localAiConfig || {}),
+                ...(settings.aiConfig || {})
             };
             config = {
                 provider,
                 key: pConfig.key || '',
                 model: pConfig.model || (provider === 'google' ? 'gemini-3-flash-preview' : ''),
                 baseUrl: pConfig.baseUrl || '',
-                aiConfig: mergedAiConfig
+                aiConfig: {
+                    ...mergedAiConfig,
+                    chatUiMode: resolveChatUiMode(mergedAiConfig?.chatUiMode)
+                }
             };
+            try {
+                localStorage.setItem('omni_ai_module_settings', JSON.stringify(config.aiConfig || {}));
+            } catch {}
         } catch (e) {
             console.warn("AI Config Load Failure", e);
             // Never keep stale offline lock if config read fails.

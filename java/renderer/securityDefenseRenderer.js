@@ -12,6 +12,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const detailTimeEl = document.getElementById('detail-time');
   const detailsEl = document.getElementById('technical-details');
   const actionsEl = document.querySelector('.actions');
+  const passwordPanelEl = document.getElementById('password-panel');
   const btnBack = document.getElementById('btn-back');
   const btnDetails = document.getElementById('btn-details');
 
@@ -53,6 +54,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   if (type === 'sitelock') {
     document.body.className = 'theme-sitelock';
+    if (passwordPanelEl) passwordPanelEl.classList.add('hidden');
 
     if (titleEl) titleEl.textContent = 'Neurological Boundary Locked';
     if (reasonEl) {
@@ -67,8 +69,38 @@ document.addEventListener('DOMContentLoaded', () => {
     if (actionsEl) {
       actionsEl.innerHTML = `
         <div class="lock-auth">
+          <div id="lock-scanner" class="scanner-panel" aria-hidden="true">
+            <div class="scanner-header">
+              <span class="scanner-title">Credential Reader</span>
+              <span class="scanner-state">Active</span>
+            </div>
+            <div class="scanner-track">
+              <div class="scanner-noise"></div>
+              <div class="scanner-beam"></div>
+              <div class="scanner-pulse"></div>
+            </div>
+          </div>
+          <label for="pass-field" class="lock-label">Vault Command Key</label>
           <div class="lock-input-wrap">
             <input type="password" id="pass-field" class="lock-input" placeholder="ENTER COMMAND KEY" autofocus autocomplete="off">
+          </div>
+          <div class="lock-detail-grid">
+            <div class="lock-detail-item">
+              <span class="lock-detail-label">AUTH CHANNEL</span>
+              <span class="lock-detail-value">Vault Sitelock</span>
+            </div>
+            <div class="lock-detail-item">
+              <span class="lock-detail-label">SECURITY MODE</span>
+              <span id="lock-detail-protocol" class="lock-detail-value">Neuro Isolation</span>
+            </div>
+            <div class="lock-detail-item">
+              <span class="lock-detail-label">TARGET DOMAIN</span>
+              <span id="lock-detail-domain" class="lock-detail-value">unknown</span>
+            </div>
+            <div class="lock-detail-item">
+              <span class="lock-detail-label">THREAT SIGNATURE</span>
+              <span id="lock-detail-threat" class="lock-detail-value">UNKNOWN</span>
+            </div>
           </div>
           <div id="error-msg" class="lock-error"></div>
           <div class="lock-btn-row">
@@ -84,6 +116,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const verifyBtn = document.getElementById('btn-verify');
     const abortBtn = document.getElementById('btn-abort');
     const errorMsg = document.getElementById('error-msg');
+    const scannerPanel = document.getElementById('lock-scanner');
+    const lockDetailDomain = document.getElementById('lock-detail-domain');
+    const lockDetailThreat = document.getElementById('lock-detail-threat');
+    const lockDetailProtocol = document.getElementById('lock-detail-protocol');
+
+    if (lockDetailDomain) lockDetailDomain.textContent = domain || 'unknown';
+    if (lockDetailThreat) lockDetailThreat.textContent = formatTypeLabel(type);
+    if (lockDetailProtocol) lockDetailProtocol.textContent = 'Neuro Isolation';
 
     const showError = (text = '') => {
       if (!errorMsg) return;
@@ -95,6 +135,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!verifyBtn) return;
       verifyBtn.disabled = busy;
       verifyBtn.textContent = busy ? 'Verifying...' : 'Verify';
+      if (scannerPanel) scannerPanel.classList.toggle('busy', busy);
     };
 
     const verify = async () => {

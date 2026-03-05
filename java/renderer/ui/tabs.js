@@ -32,6 +32,7 @@ export class TabManager {
     this.HOME_URL = new URL('../../../html/pages/home.html', import.meta.url).href;
     this.HISTORY_URL = new URL('../../../html/pages/history.html', import.meta.url).href;
     this.SECURITY_DEFENSE_URL = new URL('../../../html/pages/security-defense.html', import.meta.url).href;
+    this.SECURITY_BLOCKED_DEFENSE_URL = new URL('../../../html/pages/security-defense-blocked.html', import.meta.url).href;
     this.PRELOAD_URL = new URL('../../preload.js', import.meta.url).href;
     this.APP_ROOT_URL = new URL('../../../', import.meta.url).href;
     this.OMX_ICON_URL = new URL('../../../assets/icons/app.ico', import.meta.url).href;
@@ -394,7 +395,7 @@ export class TabManager {
         reason: 'URL is empty'
       };
     }
-    if (rawUrl.includes('security-defense.html')) {
+    if (rawUrl.includes('security-defense.html') || rawUrl.includes('security-defense-blocked.html')) {
       return { safe: true, originalUrl: rawUrl };
     }
     // Keep compatibility for app flows that pass an OS path instead of a file:// URL.
@@ -468,9 +469,13 @@ export class TabManager {
   }
 
   createDefenseUrl(type, url, reason) {
+      const normalizedType = String(type || '').toLowerCase();
+      const defenseBase = normalizedType === 'blocked-site' || normalizedType === 'custom_block'
+        ? this.SECURITY_BLOCKED_DEFENSE_URL
+        : this.SECURITY_DEFENSE_URL;
       const safeUrl = encodeURIComponent(url);
       const safeReason = encodeURIComponent(reason || 'Blocked by Safety Policy');
-      return `${this.SECURITY_DEFENSE_URL}?type=${type}&url=${safeUrl}&reason=${safeReason}`;
+      return `${defenseBase}?type=${type}&url=${safeUrl}&reason=${safeReason}`;
   }
   
   navigateTo(url, options = {}) {
@@ -511,7 +516,7 @@ export class TabManager {
     const isTextStudio = finalUrl.includes('text-editor.html');
     const isHistoryPage = finalUrl.includes('history.html');
     const isGamesPage = finalUrl.includes('games.html');
-    const isDefensePage = finalUrl.includes('security-defense.html');
+    const isDefensePage = finalUrl.includes('security-defense.html') || finalUrl.includes('security-defense-blocked.html');
     const isHomePage = finalUrl.includes('home.html');
     const isAIChatPage = finalUrl.includes('omni-chat.html');
     const isTodoPage = finalUrl.includes('todo.html');

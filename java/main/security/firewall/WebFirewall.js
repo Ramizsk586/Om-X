@@ -77,7 +77,12 @@ class WebFirewall {
     const identity = aiGuardian.getPrimaryIdentity(hostname);
 
     // 1. SYSTEM BYPASS: Internal/Extension protocols must always load.
-    if (url.startsWith('file:') || url.startsWith('chrome:') || url.includes('security-defense.html')) {
+    if (
+      url.startsWith('file:') ||
+      url.startsWith('chrome:') ||
+      url.includes('security-defense.html') ||
+      url.includes('security-defense-blocked.html')
+    ) {
         return { action: 'allow' };
     }
 
@@ -115,7 +120,7 @@ class WebFirewall {
         if (isMainFrame) {
             return { 
                 action: 'block', 
-                type: 'sitelock', 
+                type: 'custom_block',
                 reason: 'Site added to block list' 
             };
         }

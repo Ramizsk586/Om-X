@@ -18,8 +18,8 @@ class SecurityManager {
     this.adBlockCountsByWebContentsId = new Map();
     this.totalAdBlockCount = 0;
     
-    // Updated to point to security-defense.html as site-lock.html is removed
     this.defensePagePath = path.join(app.getAppPath(), 'html', 'pages', 'security-defense.html');
+    this.blockedDefensePagePath = path.join(app.getAppPath(), 'html', 'pages', 'security-defense-blocked.html');
     
     this.verifyPathIntegrity();
     this.init();
@@ -29,11 +29,26 @@ class SecurityManager {
    * Fail-fast assertion to log path resolution on startup.
    */
   verifyPathIntegrity() {
-    if (fs.existsSync(this.defensePagePath)) {
-    } else {
+    if (!fs.existsSync(this.defensePagePath)) {
       console.error(`[Om-X Security] CRITICAL: Security-Defense source not found!`);
       console.error(`[Om-X Security] Resolved Path: ${this.defensePagePath}`);
     }
+    if (!fs.existsSync(this.blockedDefensePagePath)) {
+      console.error(`[Om-X Security] CRITICAL: Security-Defense blocked page source not found!`);
+      console.error(`[Om-X Security] Resolved Path: ${this.blockedDefensePagePath}`);
+    }
+  }
+
+  resolveDefensePagePath(type = 'sitelock') {
+    if (String(type || '').toLowerCase() === 'custom_block') {
+      return this.blockedDefensePagePath;
+    }
+    return this.defensePagePath;
+  }
+
+  isDefensePageUrl(url = '') {
+    const value = String(url || '');
+    return value.includes('security-defense.html') || value.includes('security-defense-blocked.html');
   }
 
   updateSettings(newSettings) {
@@ -277,7 +292,8 @@ class SecurityManager {
    */
   getLockScreenUrl(targetUrl, type = 'sitelock', reason = 'Access Restricted') {
     try {
-        const fileUrl = pathToFileURL(this.defensePagePath).href;
+        const pagePath = this.resolveDefensePagePath(type);
+        const fileUrl = pathToFileURL(pagePath).href;
         const url = new URL(fileUrl);
         url.searchParams.set('url', targetUrl);
         url.searchParams.set('type', type);
@@ -298,7 +314,7 @@ class SecurityManager {
        const isMainFrame = resourceType === 'main_frame' || resourceType === 'mainFrame';
 
        // 1. SYSTEM BYPASS: Prevent infinite loops on system pages
-       if (url.startsWith('file:') || url.includes('security-defense.html') || url.startsWith('chrome:')) {
+       if (url.startsWith('file:') || this.isDefensePageUrl(url) || url.startsWith('chrome:')) {
            return callback({ cancel: false });
        }
 
@@ -401,7 +417,7 @@ class SecurityManager {
               });
           }
           contents.setWindowOpenHandler((details) => {
-              if (details.url.startsWith('file:') || details.url.includes('security-defense.html')) return { action: 'allow' };
+              if (details.url.startsWith('file:') || this.isDefensePageUrl(details.url)) return { action: 'allow' };
               return { action: 'deny' };
           });
       });
