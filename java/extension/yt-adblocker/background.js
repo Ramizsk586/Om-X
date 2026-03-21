@@ -1,9 +1,9 @@
 const DEFAULT_STATE = {
-  enabled: true,
+  enabled:      true,
   blockedCount: 0,
   skippedCount: 0,
-  strictMode: false,
-  debug: false
+  strictMode:   true,
+  debug:        false
 };
 
 function isYouTubeUrl(url) {
@@ -15,134 +15,110 @@ function isTrustedSender(sender) {
 }
 
 async function ensureRulesetEnabled(enabled) {
-  await chrome.declarativeNetRequest.updateEnabledRulesets({
-    enableRulesetIds: enabled ? ["main_rules"] : [],
-    disableRulesetIds: enabled ? [] : ["main_rules"]
-  });
-}
-
-async function getState() {
-  return chrome.storage.local.get([
-    "enabled",
-    "blockedCount",
-    "skippedCount",
-    "strictMode",
-    "debug"
-  ]);
+  try {
+    await chrome.declarativeNetRequest.updateEnabledRulesets({
+      enableRulesetIds:  enabled ? ["main_rules"] : [],
+      disableRulesetIds: enabled ? [] : ["main_rules"]
+    });
+  } catch (e) {
+    console.error("[BG] ruleset toggle failed:", e);
+  }
 }
 
 async function getStatsResponse() {
-  const state = await getState();
+  const s = await chrome.storage.local.get([
+    "enabled", "blockedCount", "skippedCount"
+  ]);
   return {
-    enabled: state.enabled !== false,
-    blockedCount: Number(state.blockedCount ?? 0),
-    skippedCount: Number(state.skippedCount ?? 0),
-    strictMode: state.strictMode === true,
-    debug: state.debug === true
+    enabled:      s.enabled      !== false,
+    blockedCount: Number(s.blockedCount ?? 0),
+    skippedCount: Number(s.skippedCount ?? 0),
+    strictMode:   true,
+    debug:        false
   };
 }
 
 async function incrementCounter(key, amount) {
-  const safeAmount = Math.max(0, Number(amount) || 0);
-  if (safeAmount < 1) {
-    return;
-  }
-
-  const current = await chrome.storage.local.get([key]);
-  const nextValue = Number(current[key] ?? 0) + safeAmount;
-  await chrome.storage.local.set({ [key]: nextValue });
+  const n = Math.max(0, Number(amount) || 0);
+  if (n < 1) return;
+  const cur = await chrome.storage.local.get([key]);
+  await chrome.storage.local.set({ [key]: Number(cur[key] ?? 0) + n });
 }
 
+// ── Lifecycle ─────────────────────────────────────────────────────────────
 chrome.runtime.onInstalled.addListener(async () => {
   try {
     const existing = await chrome.storage.local.get(Object.keys(DEFAULT_STATE));
-    await chrome.storage.local.set({ ...DEFAULT_STATE, ...existing });
-
-    const enabled = existing.enabled ?? DEFAULT_STATE.enabled;
-    await ensureRulesetEnabled(enabled);
-  } catch (error) {
-    console.error("Failed during install/update:", error);
+    await chrome.storage.local.set({
+      ...DEFAULT_STATE,
+      ...existing,
+      strictMode: true, // always force strict on
+      debug: false
+    });
+    await ensureRulesetEnabled(existing.enabled ?? DEFAULT_STATE.enabled);
+  } catch (e) {
+    console.error("[BG] install error:", e);
   }
 });
 
 chrome.runtime.onStartup.addListener(async () => {
   try {
-    const state = await getStatsResponse();
-    await ensureRulesetEnabled(state.enabled);
-  } catch (error) {
-    console.error("Failed to restore ruleset state:", error);
+    const s = await chrome.storage.local.get(["enabled"]);
+    await ensureRulesetEnabled(s.enabled !== false);
+  } catch (e) {
+    console.error("[BG] startup error:", e);
   }
 });
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+// ── Message handler ───────────────────────────────────────────────────────
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   (async () => {
     const stats = await getStatsResponse();
 
-    if (message?.type === "GET_STATS") {
-      sendResponse(stats);
-      return;
-    }
+    switch (message?.type) {
+      case "GET_STATS":
+        sendResponse(stats);
+        break;
 
-    if (message?.type === "GET_OPTIONS") {
-      sendResponse({ strictMode: stats.strictMode, debug: stats.debug });
-      return;
-    }
+      case "GET_OPTIONS":
+        sendResponse({ strictMode: true, debug: false });
+        break;
 
-    if (message?.type === "SET_ENABLED") {
-      const nextEnabled = message.enabled !== false;
-      await chrome.storage.local.set({ enabled: nextEnabled });
-      await ensureRulesetEnabled(nextEnabled);
-
-      sendResponse({
-        enabled: nextEnabled,
-        blockedCount: stats.blockedCount,
-        skippedCount: stats.skippedCount,
-        strictMode: stats.strictMode,
-        debug: stats.debug
-      });
-      return;
-    }
-
-    if (message?.type === "UPDATE_OPTIONS") {
-      const nextStrictMode = message.strictMode === true;
-      const nextDebug = message.debug === true;
-      await chrome.storage.local.set({
-        strictMode: nextStrictMode,
-        debug: nextDebug
-      });
-      sendResponse({ strictMode: nextStrictMode, debug: nextDebug });
-      return;
-    }
-
-    if (message?.type === "INCREMENT_BLOCKED") {
-      if (!isTrustedSender(_sender)) {
-        sendResponse({ ok: false, error: "Untrusted sender" });
-        return;
+      case "SET_ENABLED": {
+        const next = message.enabled !== false;
+        await chrome.storage.local.set({ enabled: next });
+        await ensureRulesetEnabled(next);
+        sendResponse({ ...stats, enabled: next });
+        break;
       }
-      await incrementCounter("blockedCount", message.amount ?? 1);
-      sendResponse({ ok: true });
-      return;
-    }
 
-    if (message?.type === "INCREMENT_SKIPPED") {
-      if (!isTrustedSender(_sender)) {
-        sendResponse({ ok: false, error: "Untrusted sender" });
-        return;
-      }
-      await incrementCounter("skippedCount", message.amount ?? 1);
-      sendResponse({ ok: true });
-      return;
-    }
+      case "UPDATE_OPTIONS":
+        await chrome.storage.local.set({ strictMode: true, debug: false });
+        sendResponse({ strictMode: true, debug: false });
+        break;
 
-    if (message?.type === "RESET_STATS") {
-      await chrome.storage.local.set({ blockedCount: 0, skippedCount: 0 });
-      sendResponse({ ok: true });
-      return;
-    }
+      case "INCREMENT_BLOCKED":
+        if (!isTrustedSender(sender)) { sendResponse({ ok: false }); break; }
+        await incrementCounter("blockedCount", message.amount ?? 1);
+        sendResponse({ ok: true });
+        break;
 
-    sendResponse({ ok: false, error: "Unknown message type" });
-  })().catch((error) => {
-    console.error("Message handler error:", error);
+      case "INCREMENT_SKIPPED":
+        if (!isTrustedSender(sender)) { sendResponse({ ok: false }); break; }
+        await incrementCounter("skippedCount", message.amount ?? 1);
+        sendResponse({ ok: true });
+        break;
+
+      case "RESET_STATS":
+        await chrome.storage.local.set({ blockedCount: 0, skippedCount: 0 });
+        sendResponse({ ok: true });
+        break;
+
+      default:
+        sendResponse({ ok: false, error: "Unknown message type" });
+    }
+  })().catch(e => {
+    console.error("[BG] error:", e);
     sendResponse({ ok: false, error: "Internal error" });
   });
 

@@ -1,20 +1,34 @@
 (() => {
-  if (window.__YT_AD_BLOCKER_INSTALLED__) {
-    return;
-  }
-  window.__YT_AD_BLOCKER_INSTALLED__ = true;
+  if (window.__YT_AD_BLOCKER_V2__) return;
+  window.__YT_AD_BLOCKER_V2__ = true;
 
-  const BASE_AD_SELECTORS = [
+  // ─── Selector banks ──────────────────────────────────────────────────────
+  const AD_SELECTORS = [
+    // Player overlays
     ".ytp-ad-overlay-container",
     ".ytp-ad-text-overlay",
     ".ytp-ad-image-overlay",
-    ".ytp-ad-skip-button-container",
     ".ytp-ad-module",
     ".ytp-ad-player-overlay",
+    ".ytp-ad-player-overlay-layout",
+    ".ytp-ad-player-overlay-skip-or-preview",
+    ".ytp-ad-progress",
     ".ytp-ad-progress-list",
     ".ytp-ad-persistent-progress-bar-container",
+    ".ytp-ad-skip-button-container",
+    ".ytp-ad-skip-button-modern",
+    ".ytp-ad-action-interstitial",
+    ".ytp-ad-action-interstitial-background-color",
+    ".ytp-ad-preview-container",
+    ".ytp-ad-preview-text-container",
+    ".video-ads",
+    ".ytp-ad-visit-advertiser-button",
+    // Page-level slots
     "#player-ads",
     "#masthead-ad",
+    "#ad-div",
+    "#watch-sidebar-ads",
+    // Component renderers
     "ytd-ad-slot-renderer",
     "ytd-in-feed-ad-layout-renderer",
     "ytd-promoted-video-renderer",
@@ -22,373 +36,414 @@
     "ytd-action-companion-ad-renderer",
     "ytd-companion-slot-renderer",
     "ytd-statement-banner-renderer",
-    "ytd-engagement-panel-section-list-renderer[target-id='engagement-panel-ads']"
-  ];
-
-  const STRICT_EXTRA_SELECTORS = [
+    "ytd-carousel-ad-renderer",
+    "ytd-player-legacy-desktop-watch-ads-renderer",
     "ytd-rich-item-renderer[is-ad]",
     "ytd-video-masthead-ad-v3-renderer",
-    "ytd-banner-promo-renderer"
+    "ytd-banner-promo-renderer",
+    "ytd-primetime-promo-renderer",
+    "ytd-brand-video-singleton-renderer",
+    "ytd-brand-video-shelf-renderer",
+    "ytd-promoted-sparkles-web-renderer",
+    "ytd-promoted-sparkles-text-search-renderer",
+    "ytd-search-pyv-renderer",
+    "ytd-engagement-panel-section-list-renderer[target-id='engagement-panel-ads']",
+    "[data-google-av-cxn]",
+    // Infocards / end screens that are ads
+    ".ytp-ce-element.ytp-ce-channel.ytp-ce-channel-this",
   ];
 
-  const SKIP_BUTTON_SELECTORS = [
+  const SKIP_SELECTORS = [
     ".ytp-skip-ad-button",
     ".ytp-ad-skip-button",
-    ".ytp-skip-ad-button-modern"
+    ".ytp-skip-ad-button-modern",
+    ".ytp-ad-skip-button-modern",
+    "button.ytp-ad-skip-button-modern",
+    "[class*='skip-button']",
   ];
 
-  const CLEANUP_INTERVAL_MS = 1500;
+  // ─── Hide CSS (painted before any JS runs) ────────────────────────────────
+  const HIDE_CSS = `
+    ${AD_SELECTORS.join(",\n    ")} {
+      display: none !important;
+      visibility: hidden !important;
+      opacity: 0 !important;
+      pointer-events: none !important;
+      height: 0 !important;
+      min-height: 0 !important;
+      max-height: 0 !important;
+    }
+    /* Black ad banner that covers the player */
+    .video-ads.ytp-ad-module { display: none !important; }
+    /* "Ad" badge in feed thumbnails */
+    [aria-label="Ad"], [aria-label="Sponsored"] { display: none !important; }
+    /* Ad info bar at top of player */
+    .ytp-ad-player-overlay-flyout-cta { display: none !important; }
+    /* Removes grey area when ad slot is empty but space is reserved */
+    ytd-rich-section-renderer:has(ytd-statement-banner-renderer) { display: none !important; }
+  `;
 
-  let observer = null;
-  let cleanupIntervalId = null;
-  let scheduled = false;
-  let running = false;
-  let strictMode = false;
-  let debugMode = false;
-  let pendingBlocked = 0;
-  let pendingSkipped = 0;
-  let statsFlushTimer = null;
-  let restorePlaybackRate = null;
+  // ─── State ────────────────────────────────────────────────────────────────
+  let enabled              = true;
+  let styleEl              = null;
+  let observer             = null;
+  let pollTimer            = null;
+  let navListenerBound     = false;
   let storageListenerBound = false;
-  let navigationListenerBound = false;
+  let restoreRate          = null;
+  let pendingBlocked       = 0;
+  let pendingSkipped       = 0;
+  let flushTimer           = null;
 
-  function safeSendMessage(payload) {
+  // ─── CSS injection ────────────────────────────────────────────────────────
+  function injectCSS() {
+    if (styleEl && styleEl.isConnected) return;
+    styleEl = document.createElement("style");
+    styleEl.id          = "__ytab_hide__";
+    styleEl.textContent = HIDE_CSS;
+    (document.head || document.documentElement).appendChild(styleEl);
+  }
+
+  function removeCSS() {
+    document.getElementById("__ytab_hide__")?.remove();
+    styleEl = null;
+  }
+
+  // ─── Messaging ────────────────────────────────────────────────────────────
+  function send(payload) {
+    try { chrome.runtime.sendMessage(payload, () => void chrome.runtime?.lastError); }
+    catch (_) {}
+  }
+
+  function queueStat(type, n) {
+    if (type === "blocked") pendingBlocked += n;
+    else pendingSkipped += n;
+    if (flushTimer) return;
+    flushTimer = setTimeout(() => {
+      flushTimer = null;
+      const b = pendingBlocked, s = pendingSkipped;
+      pendingBlocked = pendingSkipped = 0;
+      if (b > 0) send({ type: "INCREMENT_BLOCKED", amount: b });
+      if (s > 0) send({ type: "INCREMENT_SKIPPED", amount: s });
+    }, 600);
+  }
+
+  // ─── Layer 1: patch ytInitialPlayerResponse ───────────────────────────────
+  // YouTube reads this global before the player boots. Stripping ad fields here
+  // prevents ads from being queued at all on initial page load.
+  function patchInitialPlayerResponse() {
     try {
-      if (!chrome?.runtime?.sendMessage) {
-        debugLog("chrome.runtime.sendMessage is not available");
-        return;
+      if (window.ytInitialPlayerResponse) {
+        stripAdData(window.ytInitialPlayerResponse);
       }
+    } catch (_) {}
 
-      chrome.runtime.sendMessage(payload, (response) => {
-        const ignored = chrome.runtime?.lastError;
-        if (ignored) {
-          debugLog("Error sending message:", ignored);
-        } else {
-          debugLog("Message sent successfully:", payload);
-        }
+    // Also define a setter so any future assignment gets cleaned too.
+    try {
+      let _val = window.ytInitialPlayerResponse;
+      Object.defineProperty(window, "ytInitialPlayerResponse", {
+        get() { return _val; },
+        set(v) { stripAdData(v); _val = v; },
+        configurable: true
       });
-    } catch (error) {
-      debugLog("Exception in safeSendMessage:", error);
+    } catch (_) {}
+  }
+
+  function stripAdData(obj) {
+    if (!obj || typeof obj !== "object") return;
+    // Remove ad placement info from player response
+    const keys = [
+      "adPlacements", "adSlots", "playerAds",
+      "adBreakHeartbeatParams", "auxiliaryUi"
+    ];
+    for (const k of keys) {
+      if (k in obj) { obj[k] = []; }
+    }
+    // Also strip from nested playerConfig
+    if (obj.playerConfig?.adConfig) {
+      obj.playerConfig.adConfig = {};
     }
   }
 
-  function debugLog(...args) {
-    if (!debugMode) {
-      return;
-    }
-    console.debug("[YT Ad Blocker]", ...args);
-  }
+  // ─── Layer 2: fetch/XHR intercept ────────────────────────────────────────
+  // Intercepts YouTube's /youtubei/v1/player API calls and strips ad fields
+  // from the JSON response before the player processes it.
+  function interceptNetwork() {
+    // --- fetch ---
+    const _fetch = window.fetch;
+    window.fetch = async function (...args) {
+      const response = await _fetch.apply(this, args);
+      const url = typeof args[0] === "string" ? args[0] : args[0]?.url || "";
+      if (!shouldInterceptUrl(url)) return response;
 
-  function queueStat(type, amount) {
-    if (type === "blocked") {
-      pendingBlocked += amount;
-    } else if (type === "skipped") {
-      pendingSkipped += amount;
-    }
-
-    if (statsFlushTimer) {
-      return;
-    }
-
-    statsFlushTimer = setTimeout(() => {
-      statsFlushTimer = null;
-      const blockedToSend = pendingBlocked;
-      const skippedToSend = pendingSkipped;
-      pendingBlocked = 0;
-      pendingSkipped = 0;
-
-      if (blockedToSend > 0) {
-        safeSendMessage({ type: "INCREMENT_BLOCKED", amount: blockedToSend });
+      try {
+        const clone = response.clone();
+        const json  = await clone.json();
+        stripAdData(json);
+        return new Response(JSON.stringify(json), {
+          status:     response.status,
+          statusText: response.statusText,
+          headers:    response.headers
+        });
+      } catch (_) {
+        return response;
       }
+    };
 
-      if (skippedToSend > 0) {
-        safeSendMessage({ type: "INCREMENT_SKIPPED", amount: skippedToSend });
+    // --- XMLHttpRequest ---
+    const _open = XMLHttpRequest.prototype.open;
+    const _send = XMLHttpRequest.prototype.send;
+
+    XMLHttpRequest.prototype.open = function (method, url, ...rest) {
+      this.__ytab_url__ = url;
+      return _open.call(this, method, url, ...rest);
+    };
+
+    XMLHttpRequest.prototype.send = function (...args) {
+      if (shouldInterceptUrl(this.__ytab_url__ || "")) {
+        this.addEventListener("readystatechange", function () {
+          if (this.readyState !== 4) return;
+          try {
+            const json = JSON.parse(this.responseText);
+            stripAdData(json);
+            Object.defineProperty(this, "responseText", {
+              get() { return JSON.stringify(json); },
+              configurable: true
+            });
+            Object.defineProperty(this, "response", {
+              get() { return JSON.stringify(json); },
+              configurable: true
+            });
+          } catch (_) {}
+        });
       }
-    }, 1000);
+      return _send.apply(this, args);
+    };
   }
 
-  function flushPendingStats() {
-    if (statsFlushTimer) {
-      clearTimeout(statsFlushTimer);
-      statsFlushTimer = null;
-    }
-
-    const blockedToSend = pendingBlocked;
-    const skippedToSend = pendingSkipped;
-    pendingBlocked = 0;
-    pendingSkipped = 0;
-
-    if (blockedToSend > 0) {
-      safeSendMessage({ type: "INCREMENT_BLOCKED", amount: blockedToSend });
-    }
-
-    if (skippedToSend > 0) {
-      safeSendMessage({ type: "INCREMENT_SKIPPED", amount: skippedToSend });
-    }
+  function shouldInterceptUrl(url) {
+    return /\/youtubei\/v\d+\/player/i.test(url) ||
+           /\/get_video_info/i.test(url);
   }
 
-  function getSelectors() {
-    return strictMode
-      ? BASE_AD_SELECTORS.concat(STRICT_EXTRA_SELECTORS)
-      : BASE_AD_SELECTORS;
-  }
-
-  function skipAd() {
-    if (!document) {
-      return;
-    }
-
-    for (const selector of SKIP_BUTTON_SELECTORS) {
-      const skipButton = document.querySelector(selector);
-      if (skipButton instanceof HTMLElement) {
-        skipButton.click();
-        queueStat("skipped", 1);
-        debugLog("Clicked skip button:", selector);
-        return;
-      }
-    }
-  }
-
+  // ─── Layer 3: DOM removal ─────────────────────────────────────────────────
   function removeAdElements() {
-    if (!document) {
-      return;
-    }
-
-    let removedCount = 0;
-    for (const selector of getSelectors()) {
-      const elements = document.querySelectorAll(selector);
-      elements.forEach((element) => {
-        element.remove();
-        removedCount += 1;
+    let count = 0;
+    for (const sel of AD_SELECTORS) {
+      document.querySelectorAll(sel).forEach(el => {
+        el.remove();
+        count++;
       });
     }
+    if (count > 0) queueStat("blocked", count);
 
-    if (removedCount > 0) {
-      queueStat("blocked", removedCount);
-      debugLog("Removed ad elements:", removedCount);
-    }
+    // Also remove ad badge items from feed
+    document.querySelectorAll("ytd-rich-item-renderer").forEach(el => {
+      if (el.hasAttribute("is-ad") ||
+          el.querySelector("[aria-label='Ad']") ||
+          el.querySelector("[aria-label='Sponsored']")) {
+        el.remove();
+        count++;
+      }
+    });
   }
 
-  function handleUnskippableAd() {
-    if (!document) {
-      return;
-    }
-
-    const video = document.querySelector("video");
-    const player =
-      document.querySelector("#movie_player") ||
-      document.querySelector(".html5-video-player");
-    const bodyHasAd = !!document.body?.classList.contains("ad-showing");
-    const playerHasAd =
-      player instanceof HTMLElement && player.classList.contains("ad-showing");
-    const overlayExists = !!document.querySelector(".ytp-ad-player-overlay");
-    const adShowing = bodyHasAd || playerHasAd || overlayExists;
-
-    if (
-      adShowing &&
-      video instanceof HTMLVideoElement &&
-      Number.isFinite(video.duration) &&
-      video.duration > 0
-    ) {
-      try {
-        if (restorePlaybackRate === null) {
-          restorePlaybackRate = video.playbackRate;
-        }
-        video.currentTime = Math.max(0, video.duration - 0.1);
-        video.playbackRate = 16;
+  // ─── Layer 4: skip button + fast-forward ──────────────────────────────────
+  function trySkipAd() {
+    for (const sel of SKIP_SELECTORS) {
+      const btn = document.querySelector(sel);
+      if (btn instanceof HTMLElement && btn.offsetParent !== null) {
+        btn.click();
         queueStat("skipped", 1);
-        debugLog("Fast-forwarded in-stream ad");
-      } catch (error) {
-        void error;
+        return true;
       }
-      return;
     }
+    return false;
+  }
 
-    if (restorePlaybackRate !== null && video instanceof HTMLVideoElement) {
-      try {
-        video.playbackRate = restorePlaybackRate;
-      } catch (error) {
-        void error;
-      } finally {
-        restorePlaybackRate = null;
+  function isAdPlaying() {
+    const player = document.querySelector("#movie_player") ||
+                   document.querySelector(".html5-video-player");
+    return (
+      !!document.body?.classList.contains("ad-showing") ||
+      (player instanceof HTMLElement && player.classList.contains("ad-showing")) ||
+      !!document.querySelector(".ad-showing") ||
+      !!document.querySelector(".ytp-ad-player-overlay") ||
+      !!document.querySelector(".ytp-ad-progress-list")
+    );
+  }
+
+  function handleAdVideo() {
+    const video = document.querySelector("video.html5-main-video") ||
+                  document.querySelector("video");
+
+    if (!video) return;
+
+    if (isAdPlaying()) {
+      // Try skip button first
+      if (trySkipAd()) return;
+
+      // Fast-forward to end
+      if (Number.isFinite(video.duration) && video.duration > 0) {
+        try {
+          if (restoreRate === null) restoreRate = video.playbackRate;
+          video.currentTime  = video.duration - 0.01;
+          video.playbackRate = 16;
+          video.muted        = false; // unmute to avoid muted-ad detection
+          queueStat("skipped", 1);
+        } catch (_) {}
+      } else {
+        // Duration unknown (buffering) – mute and wait
+        try { video.muted = true; } catch (_) {}
+      }
+    } else {
+      // Restore after ad ends
+      if (restoreRate !== null) {
+        try {
+          video.playbackRate = restoreRate;
+          video.muted        = false;
+        } catch (_) {}
+        restoreRate = null;
       }
     }
   }
 
-  function runCleanup() {
-    if (!running) {
-      return;
-    }
-
-    skipAd();
-    removeAdElements();
-    handleUnskippableAd();
-  }
-
-  function scheduleCleanup() {
-    if (scheduled || !running) {
-      return;
-    }
-
-    scheduled = true;
+  // ─── Layer 5: MutationObserver ────────────────────────────────────────────
+  let rafPending = false;
+  function scheduleRun() {
+    if (rafPending || !enabled) return;
+    rafPending = true;
     requestAnimationFrame(() => {
-      scheduled = false;
-      runCleanup();
+      rafPending = false;
+      run();
     });
   }
 
-  function observeAndClean() {
-    if (!document?.documentElement || !running) {
-      return;
-    }
-
-    if (observer) {
-      observer.disconnect();
-    }
-
+  function startObserver() {
+    observer?.disconnect();
     observer = new MutationObserver((mutations) => {
-      for (const mutation of mutations) {
-        if (mutation.type === "childList") {
-          scheduleCleanup();
+      for (const m of mutations) {
+        if (m.type === "childList" && m.addedNodes.length) {
+          scheduleRun();
           return;
         }
-
-        if (
-          mutation.type === "attributes" &&
-          mutation.target instanceof HTMLElement &&
-          mutation.target.classList.contains("ad-showing")
-        ) {
-          scheduleCleanup();
-          return;
+        if (m.type === "attributes" && m.target instanceof HTMLElement) {
+          const cls = m.target.classList;
+          if (cls.contains("ad-showing") ||
+              cls.contains("ytp-ad-module") ||
+              m.target.id === "movie_player") {
+            scheduleRun();
+            return;
+          }
         }
       }
     });
 
-    observer.observe(document.documentElement, {
-      childList: true,
-      subtree: true,
-      attributes: true,
-      attributeFilter: ["class"]
-    });
+    if (document.documentElement) {
+      observer.observe(document.documentElement, {
+        childList:       true,
+        subtree:         true,
+        attributes:      true,
+        attributeFilter: ["class", "hidden", "style"]
+      });
+    }
+  }
+
+  // ─── Main run ─────────────────────────────────────────────────────────────
+  function run() {
+    if (!enabled) return;
+    injectCSS();       // re-inject if YouTube's SPA nuked it
+    removeAdElements();
+    handleAdVideo();
+  }
+
+  // ─── Polling (safety net, 100 ms) ─────────────────────────────────────────
+  function startPoll() {
+    stopPoll();
+    pollTimer = setInterval(run, 100);
+  }
+
+  function stopPoll() {
+    clearInterval(pollTimer);
+    pollTimer = null;
+  }
+
+  // ─── Start / Stop ─────────────────────────────────────────────────────────
+  function start() {
+    if (!enabled) return;
+    injectCSS();
+    startObserver();
+    startPoll();
+    run();
+
+    if (!navListenerBound) {
+      // YouTube SPA navigation events
+      document.addEventListener("yt-navigate-finish", () => {
+        injectCSS();
+        run();
+      }, { passive: true });
+      document.addEventListener("yt-page-data-updated", () => {
+        run();
+      }, { passive: true });
+      navListenerBound = true;
+    }
   }
 
   function stop() {
-    running = false;
-    scheduled = false;
-
-    if (observer) {
-      observer.disconnect();
-      observer = null;
+    observer?.disconnect();
+    observer = null;
+    stopPoll();
+    removeCSS();
+    // Restore video state
+    const video = document.querySelector("video");
+    if (video && restoreRate !== null) {
+      try { video.playbackRate = restoreRate; video.muted = false; } catch (_) {}
+      restoreRate = null;
     }
-
-    if (cleanupIntervalId) {
-      clearInterval(cleanupIntervalId);
-      cleanupIntervalId = null;
-    }
-
-    if (statsFlushTimer) {
-      flushPendingStats();
-    }
+    // Flush any pending stats
+    if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
+    const b = pendingBlocked, s = pendingSkipped;
+    pendingBlocked = pendingSkipped = 0;
+    if (b > 0) send({ type: "INCREMENT_BLOCKED", amount: b });
+    if (s > 0) send({ type: "INCREMENT_SKIPPED", amount: s });
   }
 
-  function start() {
-    if (running) {
-      return;
-    }
-
-    running = true;
-    observeAndClean();
-    runCleanup();
-
-    cleanupIntervalId = setInterval(() => {
-      runCleanup();
-    }, CLEANUP_INTERVAL_MS);
-
-    if (!navigationListenerBound) {
-      document.addEventListener("yt-navigate-finish", scheduleCleanup, {
-        passive: true
-      });
-      navigationListenerBound = true;
-    }
-  }
-
-  async function getOptions() {
-    try {
-      if (!chrome?.storage?.local?.get) {
-        return { enabled: true, strictMode: false, debug: false };
-      }
-
-      const result = await chrome.storage.local.get([
-        "enabled",
-        "strictMode",
-        "debug"
-      ]);
-
-      return {
-        enabled: result.enabled !== false,
-        strictMode: result.strictMode === true,
-        debug: result.debug === true
-      };
-    } catch (error) {
-      void error;
-      return { enabled: true, strictMode: false, debug: false };
-    }
-  }
-
+  // ─── Storage listener (popup toggle → instant react) ──────────────────────
   function bindStorageListener() {
-    if (storageListenerBound || !chrome?.storage?.onChanged) {
-      return;
-    }
-
-    chrome.storage.onChanged.addListener((changes, areaName) => {
-      if (areaName !== "local") {
-        return;
-      }
-
-      if (changes.strictMode) {
-        strictMode = changes.strictMode.newValue === true;
-        scheduleCleanup();
-      }
-
-      if (changes.debug) {
-        debugMode = changes.debug.newValue === true;
-      }
-
-      if (changes.enabled) {
-        const nextEnabled = changes.enabled.newValue !== false;
-        if (nextEnabled) {
-          start();
-          scheduleCleanup();
-        } else {
-          stop();
-        }
-      }
+    if (storageListenerBound || !chrome?.storage?.onChanged) return;
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area !== "local" || !("enabled" in changes)) return;
+      const next = changes.enabled.newValue !== false;
+      if (next === enabled) return;
+      enabled = next;
+      if (enabled) start(); else stop();
     });
-
     storageListenerBound = true;
   }
 
+  // ─── Init ─────────────────────────────────────────────────────────────────
   async function init() {
-    const options = await getOptions();
-    strictMode = options.strictMode;
-    debugMode = options.debug;
-    bindStorageListener();
+    // Inject CSS immediately — this runs at document_start before any HTML parses
+    injectCSS();
 
-    if (!options.enabled) {
-      debugLog("Extension disabled via settings");
-      return;
+    // Patch player response global ASAP
+    patchInitialPlayerResponse();
+
+    // Hook network ASAP so first player API call is clean
+    interceptNetwork();
+
+    // Read persisted enabled state
+    try {
+      const result = await chrome.storage.local.get(["enabled"]);
+      enabled = result.enabled !== false; // default true
+    } catch (_) {
+      enabled = true;
     }
 
-    start();
+    bindStorageListener();
 
-    // Allow native right-click menu
-    document.addEventListener('contextmenu', (event) => {
-      // Do not interfere with the native context menu
-      return;
-    });
+    if (enabled) start();
   }
 
-  init().catch((error) => {
-    debugLog("Initialization error", error);
-  });
+  init().catch(() => {});
 })();

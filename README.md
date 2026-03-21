@@ -490,32 +490,31 @@ Create desktop shortcuts to launch apps directly:
 
 ### Theme System
 
-**Built-in Themes:**
+**Single Default Theme:**
 | Theme | Style |
 |-------|-------|
-| Noir/Onyx | Dark minimal |
-| Prism | Glass effect |
-| Nordic | Cool blue tones |
-| Charcoal | Dark gray |
-| Deep Ocean | Dark blue |
-| Twilight | Purple accents |
-| Ocean Waves | Light blue |
-| Ember Glow | Warm orange |
-| Honey Amber | Golden brown |
+| Onyx (Noir) | Dark minimal with deep black gradients and subtle texture |
 
-### Loading Animations
+**Theme Features:**
+- Deep black background with subtle gradient (#0c0c0f to #141418)
+- Glass effect panels with blur (28px)
+- Neutral gray accent colors (#6b6b75)
+- Smooth shadow glows for depth
 
-Multiple animation styles for page loading indicator:
-- **Pulse**: Breathing dot effect
-- **Spinner**: Classic rotating circle
-- **Bouncing Dots**: Three bouncing dots
-- **Wave Bars**: Equalizer-style bars
-- **Morph**: Blob morphing shape
-- **Scanline**: Classic loading bar
-- **Orbital**: Orbiting dots
-- **Flutter**: Vertical bars
-- **Spiral**: Spinning dashed circle
-- **Typewriter**: Text line animation
+### Loading Animation
+
+**Scanline Loading Animation:**
+- Horizontal scanline effect that sweeps across the loading bar
+- Uses accent color for the moving gradient
+- Smooth ease-in-out timing for seamless motion
+- Duration: 1.2s per cycle with infinite loop
+
+```css
+@keyframes scanline {
+  0% { left: -100%; }
+  100% { left: 100%; }
+}
+```
 
 ### Search Suggestions
 
