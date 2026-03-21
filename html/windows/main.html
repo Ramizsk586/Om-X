@@ -1,0 +1,1183 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; frame-src 'self' file: https: about: data:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://generativelanguage.googleapis.com https://openrouter.ai https://api.groq.com https://api.github.com https://suggestqueries.google.com; img-src 'self' data: https: http: file: chrome-extension:; font-src 'self';">
+  <title>Om-X Browser</title>
+  <link rel="icon" href="../../assets/icons/app.ico" type="image/x-icon">
+  <link rel="stylesheet" href="../../css/base/reset.css">
+  <link rel="stylesheet" href="../../css/base/variables.css">
+  <link rel="stylesheet" href="../../css/base/base.css">
+  <link rel="stylesheet" href="../../css/themes/all-themes.css">
+  <link rel="stylesheet" href="../../css/layout/browser.css">
+  <style>
+    /* Shortcut Modal Styling */
+    .modal-overlay {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0,0,0,0.7); backdrop-filter: blur(10px);
+      z-index: 30000; display: flex; align-items: center; justify-content: center;
+      opacity: 1; transition: opacity 0.3s;
+    }
+    .modal-overlay.hidden { opacity: 0; pointer-events: none; }
+    .shortcut-modal {
+      width: 400px; background: var(--glass-bg); border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 20px; padding: 24px; box-shadow: 0 40px 80px rgba(0,0,0,0.6);
+      display: flex; flex-direction: column; gap: 20px;
+    }
+    .modal-title { font-size: 18px; font-weight: 700; color: #fff; margin-bottom: 4px; }
+    .modal-group { display: flex; flex-direction: column; gap: 8px; }
+    .modal-label { font-size: 11px; font-weight: 700; color: rgba(255,255,255,0.4); text-transform: uppercase; letter-spacing: 1px; }
+    .modal-input {
+      background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 10px; padding: 12px; color: #fff; font-size: 14px; outline: none;
+    }
+    .modal-input:focus { border-color: var(--accent-color); background: rgba(255,255,255,0.1); }
+    .modal-input.recorder { font-family: monospace; font-weight: 700; text-align: center; cursor: pointer; color: var(--accent-color); }
+    .modal-actions { display: flex; gap: 12px; justify-content: flex-end; margin-top: 8px; }
+    .modal-btn { padding: 10px 20px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; border: none; transition: all 0.2s; }
+    .modal-btn.primary { background: #fff; color: #000; }
+    .modal-btn.primary:hover { background: #e0e0e0; transform: translateY(-1px); }
+    .modal-btn.secondary { background: rgba(255,255,255,0.1); color: #fff; }
+    .modal-btn.secondary:hover { background: rgba(255,255,255,0.15); }
+    .vt-scan-modal {
+      width: min(680px, calc(100vw - 56px));
+      max-height: min(78vh, 780px);
+      overflow: hidden;
+      gap: 14px;
+    }
+    .vt-scan-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+    .vt-scan-header .modal-title {
+      margin: 0;
+    }
+    .vt-scan-target {
+      font-size: 12px;
+      color: rgba(255,255,255,0.75);
+      word-break: break-all;
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid rgba(255,255,255,0.1);
+      background: rgba(0,0,0,0.2);
+    }
+    .vt-scan-status {
+      font-size: 12px;
+      font-weight: 700;
+      color: rgba(255,255,255,0.6);
+      min-height: 18px;
+    }
+    .vt-scan-status.success {
+      color: #10b981;
+    }
+    .vt-scan-status.error {
+      color: #ef4444;
+    }
+    .vt-scan-report {
+      flex: 1;
+      min-height: 160px;
+      max-height: min(52vh, 460px);
+      overflow: auto;
+      padding: 12px;
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,0.1);
+      background: rgba(0,0,0,0.28);
+    }
+    .vt-scan-report.hidden {
+      display: none;
+    }
+    .vt-risk-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    .vt-risk-badge {
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      border-radius: 999px;
+      padding: 4px 10px;
+      border: 1px solid transparent;
+    }
+    .vt-risk-badge.clean {
+      color: #22c55e;
+      background: rgba(34, 197, 94, 0.15);
+      border-color: rgba(34, 197, 94, 0.4);
+    }
+    .vt-risk-badge.suspicious {
+      color: #f59e0b;
+      background: rgba(245, 158, 11, 0.15);
+      border-color: rgba(245, 158, 11, 0.4);
+    }
+    .vt-risk-badge.danger {
+      color: #ef4444;
+      background: rgba(239, 68, 68, 0.15);
+      border-color: rgba(239, 68, 68, 0.4);
+    }
+    .vt-risk-badge.unknown {
+      color: #a1a1aa;
+      background: rgba(161, 161, 170, 0.15);
+      border-color: rgba(161, 161, 170, 0.4);
+    }
+    .vt-risk-score {
+      font-size: 11px;
+      color: rgba(255,255,255,0.7);
+      font-weight: 700;
+    }
+    .vt-report-url {
+      font-size: 12px;
+      color: #fff;
+      word-break: break-all;
+      margin-bottom: 10px;
+    }
+    .vt-stats-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    .vt-stat {
+      border-radius: 8px;
+      border: 1px solid rgba(255,255,255,0.08);
+      background: rgba(255,255,255,0.04);
+      padding: 8px;
+    }
+    .vt-stat-k {
+      font-size: 10px;
+      text-transform: uppercase;
+      color: rgba(255,255,255,0.5);
+      font-weight: 700;
+      letter-spacing: 0.4px;
+    }
+    .vt-stat-v {
+      font-size: 15px;
+      color: #fff;
+      font-weight: 800;
+      margin-top: 2px;
+    }
+    .vt-meta-line {
+      font-size: 11px;
+      color: rgba(255,255,255,0.68);
+      margin-bottom: 6px;
+    }
+    .vt-detections {
+      margin-top: 10px;
+      border-top: 1px solid rgba(255,255,255,0.08);
+      padding-top: 8px;
+    }
+    .vt-detections-title {
+      font-size: 11px;
+      color: #fff;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+    .vt-detection-item {
+      font-size: 11px;
+      color: rgba(255,255,255,0.82);
+      margin-bottom: 4px;
+      word-break: break-word;
+    }
+
+    /* Translator Popup Styling - Enhanced */
+    .translator-popup {
+      position: absolute; width: 420px; background: var(--glass-bg); backdrop-filter: var(--glass-blur);
+      border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 24px; padding: 20px;
+      box-shadow: 0 30px 70px rgba(0,0,0,0.6), inset 0 1px 1px rgba(255,255,255,0.1); z-index: 50000; 
+      display: flex; flex-direction: column; gap: 16px;
+      animation: popupIn 0.3s var(--ease-out-expo) forwards; pointer-events: auto;
+    }
+    .translator-popup.hidden { display: none; }
+    .translator-header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.06); cursor: move; }
+    .translator-title { font-size: 13px; font-weight: 800; color: #fff; text-transform: uppercase; letter-spacing: 1.5px; display: flex; align-items: center; gap: 8px; pointer-events: none; }
+    .translator-close { color: rgba(255,255,255,0.4); cursor: pointer; padding: 4px; transition: color 0.2s; }
+    .translator-close:hover { color: #fff; }
+    .translator-body { display: flex; flex-direction: column; gap: 12px; }
+    .translator-row { display: flex; flex-direction: column; gap: 6px; }
+    .translator-label-row { display: flex; justify-content: space-between; align-items: center; }
+    .translator-label { font-size: 10px; font-weight: 800; color: rgba(255,255,255,0.3); text-transform: uppercase; letter-spacing: 1px; }
+    .translator-input-box { background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.05); border-radius: 12px; padding: 12px; font-size: 14px; color: #e4e4e7; line-height: 1.5; max-height: 120px; overflow-y: auto; }
+    .translator-output-box { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 12px; font-size: 14px; color: #fff; min-height: 50px; line-height: 1.5; position: relative; }
+    .translator-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 4px; gap: 12px; }
+    .translator-select-wrapper { flex: 1; position: relative; }
+    .translator-select { width: 100%; background: rgba(24, 24, 27, 0.8); border: 1px solid rgba(255,255,255,0.1); color: #fff; font-size: 12px; padding: 8px 12px; border-radius: 10px; outline: none; appearance: none; cursor: pointer; }
+    .translator-select:focus { border-color: var(--accent-color); }
+    .btn-translate-action { display: flex; gap: 8px; }
+    .btn-translate { background: #fff; color: #000; border: none; padding: 10px 20px; border-radius: 10px; font-size: 12px; font-weight: 700; cursor: pointer; transition: all 0.2s; white-space: nowrap; }
+    .btn-translate:hover { background: #e4e4e7; transform: translateY(-1px); }
+    .btn-translate:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+    .btn-translate.secondary { background: rgba(255,255,255,0.1); color: #fff; border: 1px solid rgba(255,255,255,0.05); }
+    .btn-translate.secondary:hover { background: rgba(255,255,255,0.15); }
+    .btn-copy-translate { background: rgba(255,255,255,0.1); color: #fff; border: none; padding: 10px; border-radius: 10px; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; justify-content: center; }
+    .btn-copy-translate:hover { background: rgba(255,255,255,0.15); }
+
+    @keyframes popupIn { from { opacity: 0; transform: translateY(10px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
+
+    /* Home Top Slide Panel */
+    .home-features-popup {
+      position: fixed;
+      top: 0;
+      left: 50%;
+      right: auto;
+      width: fit-content;
+      max-width: calc(100vw - 24px);
+      transform: translateX(-50%) translateY(0);
+      background: linear-gradient(180deg, rgba(28, 29, 33, 0.98), rgba(34, 35, 40, 0.96));
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-top: none;
+      border-radius: 0 0 16px 16px;
+      padding: 6px 14px;
+      z-index: 35000;
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.22);
+      transition: transform 0.2s ease;
+    }
+    .home-features-popup.hidden {
+      transform: translateX(-50%) translateY(-115%);
+      pointer-events: none;
+    }
+    .features-grid {
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+      width: fit-content;
+      max-width: calc(100vw - 52px);
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+    .features-grid::-webkit-scrollbar {
+      display: none;
+    }
+    .quick-launch-tools {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      flex: 0 0 auto;
+    }
+    .feature-tile {
+      position: relative;
+      width: 38px;
+      height: 38px;
+      flex: 0 0 auto;
+      overflow: visible;
+      background: transparent;
+      border: none;
+      border-radius: 10px;
+      padding: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+    .feature-tile:hover {
+      background: rgba(255,255,255,0.08);
+    }
+    .feature-tile svg {
+      width: 18px;
+      height: 18px;
+      color: rgba(220,220,224,0.92);
+    }
+    .feature-tile-discord svg {
+      width: 20px;
+      height: 20px;
+      color: #5865f2;
+      filter: drop-shadow(0 0 8px rgba(88, 101, 242, 0.28));
+    }
+    .feature-tile-discord:hover {
+      background: rgba(88, 101, 242, 0.12);
+    }
+    .feature-tile::after {
+      content: attr(data-tooltip);
+      position: absolute;
+      left: 50%;
+      top: calc(100% + 8px);
+      transform: translateX(-50%);
+      padding: 5px 8px;
+      border-radius: 999px;
+      background: rgba(27, 30, 38, 0.98);
+      border: 1px solid rgba(255,255,255,0.08);
+      color: rgba(255,255,255,0.82);
+      font-size: 10px;
+      font-weight: 600;
+      white-space: nowrap;
+      opacity: 0;
+      pointer-events: none;
+      box-shadow: 0 10px 24px rgba(0,0,0,0.28);
+    }
+    .feature-tile:hover::after,
+    .feature-tile:focus-visible::after {
+      opacity: 1;
+      transform: translateX(-50%);
+    }
+    .feature-tile:focus-visible {
+      outline: 2px solid var(--accent-color);
+      outline-offset: 2px;
+    }
+    .feature-tile[aria-disabled="true"] {
+      opacity: 0.38;
+      cursor: default;
+    }
+    .feature-tile[aria-disabled="true"]:hover {
+      background: transparent;
+    }
+    @media (max-width: 560px) {
+      .home-features-popup {
+        max-width: calc(100vw - 16px);
+        padding: 6px 8px;
+        border-radius: 0 0 14px 14px;
+      }
+      .features-grid {
+        max-width: calc(100vw - 32px);
+      }
+    }
+
+    /* Image Download Modal Specific */
+    .dl-options-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+      margin-top: 10px;
+    }
+    .dl-format-btn {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 12px;
+      padding: 16px;
+      color: #fff;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .dl-format-btn:hover {
+      background: rgba(255, 255, 255, 0.1);
+      border-color: var(--accent-color);
+      transform: translateY(-2px);
+    }
+    .dl-format-btn .ext {
+      font-weight: 800;
+      font-size: 14px;
+      color: var(--accent-color);
+    }
+    .dl-format-btn .desc {
+      font-size: 11px;
+      opacity: 0.5;
+    }
+    .dl-preview-container {
+      width: 100%;
+      height: 120px;
+      background: #000;
+      border-radius: 12px;
+      margin-bottom: 20px;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid rgba(255,255,255,0.05);
+    }
+    .dl-preview-container img {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+    }
+
+    /* Search Suggestions Styling */
+    .search-suggestions {
+      width: 100%;
+      background: rgba(24, 24, 27, 0.6);
+      backdrop-filter: blur(20px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-top: none;
+      border-radius: 0 0 20px 20px;
+      overflow: hidden;
+      margin-top: -10px;
+      padding-top: 10px;
+      z-index: 90;
+      box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+    }
+    .suggestion-item {
+      padding: 12px 20px;
+      color: rgba(255, 255, 255, 0.7);
+      font-size: 15px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      transition: all 0.2s;
+    }
+    .suggestion-item:hover, .suggestion-item.active {
+      background: rgba(255, 255, 255, 0.08);
+      color: #fff;
+    }
+    .suggestion-item svg {
+      width: 14px;
+      height: 14px;
+      opacity: 0.4;
+    }
+
+    /* Search Refresh Button Styling */
+    .search-refresh-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: rgba(255, 255, 255, 0.3);
+      cursor: pointer;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      margin-left: 12px;
+    }
+    .search-refresh-btn:hover {
+      background: rgba(255, 255, 255, 0.1);
+      color: #fff;
+    }
+    .search-refresh-btn.spinning svg {
+      animation: spin 0.6s linear;
+    }
+    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+    /* Floating Sidebar Toggle Button */
+    .floating-sidebar-toggle {
+      position: fixed;
+      left: 8px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 52px;
+      height: 52px;
+      padding: 8px;
+      background: var(--glass-bg);
+      backdrop-filter: var(--glass-blur);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: grab;
+      touch-action: none;
+      color: rgba(255, 255, 255, 0.9);
+      z-index: 10000;
+      box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
+      transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+      user-select: none;
+    }
+    .floating-sidebar-toggle::before {
+      content: '';
+      position: absolute;
+      inset: -10px;
+      border-radius: 20px;
+      background: radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0));
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s ease, transform 0.2s ease;
+    }
+    .floating-sidebar-toggle::after {
+      content: '';
+      position: absolute;
+      left: 10px;
+      width: 6px;
+      height: 22px;
+      border-radius: 10px;
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.75), rgba(255, 255, 255, 0.25));
+      opacity: 0.6;
+      pointer-events: none;
+    }
+    .floating-sidebar-toggle svg {
+      pointer-events: none;
+      transform: translateX(4px);
+    }
+    .floating-sidebar-toggle:hover {
+      background: rgba(255, 255, 255, 0.1);
+      color: #fff;
+      transform: translateY(-50%) scale(1.05);
+      border-color: var(--accent-color);
+    }
+    .floating-sidebar-toggle:hover::before,
+    .floating-sidebar-toggle:focus-visible::before {
+      opacity: 1;
+      transform: scale(1.03);
+    }
+    .floating-sidebar-toggle:active {
+      cursor: grabbing;
+    }
+
+</style>
+  <script type="importmap">
+  {
+    "imports": {
+      "jspdf": "../../node_modules/jspdf/dist/jspdf.es.min.js"
+    }
+  }
+  </script>
+</head>
+<body>
+
+  <!-- Custom Auto-Hiding Window Controls -->
+  <div class="window-controls">
+    <button id="btn-min" class="control-btn" title="Minimize">
+      <svg viewBox="0 0 12 12"><path d="M1 6h10" stroke="currentColor" stroke-width="1"/></svg>
+    </button>
+    <button id="btn-max" class="control-btn" title="Maximize">
+      <svg viewBox="0 0 12 12"><rect width="10" height="10" x="1" y="1" stroke="currentColor" stroke-width="1" fill="none"/></svg>
+    </button>
+    <button id="btn-close" class="control-btn close" title="Close">
+      <svg viewBox="0 0 12 12"><path d="M1 1l10 10M1 11L11 1" stroke="currentColor" stroke-width="1"/></svg>
+    </button>
+  </div>
+
+  <div class="browser">
+    <!-- Left Side Panel -->
+    <div id="left-panel" class="left-panel">
+      <div class="left-panel-header">
+        <div class="header-spacer"></div>
+      </div>
+      
+      <div class="left-panel-nav">
+        <button id="btn-nav-home" class="nav-item">
+           <svg viewBox="0 0 24 24"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z" fill="currentColor"/></svg>
+           <span class="nav-text">Home</span>
+        </button>
+        <button id="btn-nav-ai-chat" class="nav-item">
+           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5a3.5 3.5 0 0 0-3.5 3.5v1.1l-1.9.95A2.5 2.5 0 0 0 5.2 10.3v3.4a2.5 2.5 0 0 0 1.4 2.25l1.9.95V18a3.5 3.5 0 0 0 7 0v-1.1l1.9-.95a2.5 2.5 0 0 0 1.4-2.25v-3.4a2.5 2.5 0 0 0-1.4-2.25l-1.9-.95V6A3.5 3.5 0 0 0 12 2.5zm-1.5 4A1.5 1.5 0 0 1 12 5h0a1.5 1.5 0 0 1 1.5 1.5V8h-3V6.5zM8.2 10h7.6a.5.5 0 0 1 .5.5v3a.5.5 0 0 1-.28.45l-2.57 1.28a1 1 0 0 0-.55.9V18A1.5 1.5 0 0 1 12 19.5h0A1.5 1.5 0 0 1 10.5 18v-1.87a1 1 0 0 0-.55-.9L7.38 13.95A.5.5 0 0 1 7.1 13.5v-3a.5.5 0 0 1 .5-.5zm2.05 1.5a.75.75 0 0 0-.75.75v.02a.75.75 0 0 0 .75.75h3.5a.75.75 0 0 0 .75-.75v-.02a.75.75 0 0 0-.75-.75h-3.5z" fill="currentColor"/></svg>
+           <span class="nav-text">AI Chat</span>
+        </button>
+        <button id="btn-nav-history" class="nav-item">
+           <svg viewBox="0 0 24 24"><path d="M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-1 5v5l4 2.4.75-1.23-3.25-1.92V8H12z" fill="currentColor"/></svg>
+           <span class="nav-text">History</span>
+        </button>
+        <button id="btn-nav-settings" class="nav-item">
+           <svg viewBox="0 0 24 24"><path d="M19.14,12.94c0.04-0.3,0.06-0.61,0.06-0.94c0-0.32-0.02-0.64-0.07-0.94l2.03-1.58c0.18-0.14,0.23-0.41,0.12-0.61 l-1.92-3.32c-0.12-0.22-0.37-0.29-0.59-0.22l-2.39,0.96c-0.5-0.38-1.03-0.7-1.62-0.94L14.4,2.81c-0.04-0.24-0.24-0.41-0.48-0.41 h-3.84c-0.24,0-0.43,0.17-0.47,0.41L9.25,5.35C8.66,5.59,8.12,5.92,7.63,6.29L5.24,5.33c-0.22-0.08-0.47,0-0.59,0.22L2.74,8.87 C2.62,9.08,2.66,9.34,2.86,9.49l2.03,1.58C4.84,11.36,4.8,11.69,4.8,12s0.02,0.64,0.07,0.94l-2.03,1.58 c-0.18,0.14-0.23,0.41-0.12,0.61l1.92,3.32c0.12,0.22,0.37,0.29,0.59-0.22l2.39-0.96c0.5,0.38,1.03,0.7,1.62,0.94l0.36,2.54 c0.05,0.24,0.24,0.41,0.48,0.41h3.84c0.24,0,0.44-0.17,0.47-0.41l0.36-2.54c0.59-0.24,1.13-0.56,1.62-0.94l2.39,0.96 c0.22,0.08,0.47,0,0.59-0.22l1.92-3.32c0.12-0.22,0.07-0.47-0.12-0.61L19.14,12.94z M12,15.6c-1.98,0-3.6-1.62-3.6-3.6 s1.62-3.6,3.6-3.6s3.6,1.62,3.6,3.6S13.98,15.6,12,15.6z" fill="currentColor"/></svg>
+           <span class="nav-text">Settings</span>
+        </button>
+      </div>
+
+      <div class="left-panel-divider"></div>
+      
+      <div class="tab-section-header">
+        <span class="nav-text">TABS</span>
+        <button id="btn-new-tab" class="icon-btn small">
+           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+        </button>
+      </div>
+
+      <div class="left-panel-content">
+         <div id="tab-list-container" class="tab-list">
+           <!-- Tabs injected here -->
+         </div>
+      </div>
+
+      <div class="left-panel-footer">
+         <!-- Default Controls -->
+         <div id="sidebar-footer-controls">
+             <button id="btn-nav-downloads" class="nav-item" title="Downloads">
+                <svg viewBox="0 0 24 24">
+                  <path d="M5 20h14v-2H5v2zm7-16l-5.5 6H10v6h4v-6h3.5L12 4z" fill="currentColor"/>
+                </svg>
+                <span class="nav-text">Downloads</span>
+             </button>
+             <button id="btn-sidebar-toggle" class="nav-item" title="Toggle Sidebar">
+                <svg viewBox="0 0 24 24" class="toggle-icon"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z" fill="currentColor"/></svg>
+                <span class="nav-text">Collapse</span>
+             </button>
+         </div>
+      </div>
+    </div>
+
+    <!-- Webview Container -->
+    <div id="webview-container">
+      <!-- Loading Indicator with Dynamic Animation Selection -->
+      <div id="loading-indicator" class="loading-indicator hidden">
+        <div id="loading-finding-state">
+          <!-- Default/Pulse Animation -->
+          <div id="anim-pulse-container" class="anim-container hidden">
+            <div class="finding-status-row">
+              <span id="finding-label">Initiating Neural Link...</span>
+              <span id="finding-timer">0.000s</span>
+            </div>
+            <div style="display: flex; justify-content: center; margin: 16px 0;">
+              <div style="width: 40px; height: 40px; border-radius: 50%; background: var(--accent-color); opacity: 0.7;" class="anim-pulse"></div>
+            </div>
+          </div>
+
+          <!-- Spinner Animation -->
+          <div id="anim-spinner-container" class="anim-container hidden">
+            <div class="finding-status-row">
+              <span id="finding-label">Initiating Neural Link...</span>
+              <span id="finding-timer">0.000s</span>
+            </div>
+            <div style="display: flex; justify-content: center; margin: 16px 0;">
+              <div style="width: 40px; height: 40px; border: 3px solid rgba(255,255,255,0.2); border-top: 3px solid var(--accent-color); border-radius: 50%;" class="anim-spin"></div>
+            </div>
+          </div>
+
+          <!-- Bouncing Dots Animation -->
+          <div id="anim-bouncing-container" class="anim-container hidden">
+            <div class="finding-status-row">
+              <span id="finding-label">Initiating Neural Link...</span>
+              <span id="finding-timer">0.000s</span>
+            </div>
+            <div style="display: flex; gap: 8px; justify-content: center; align-items: flex-end; margin: 16px 0;">
+              <div style="width: 8px; height: 8px; background: var(--accent-color); border-radius: 50%;" class="anim-dot"></div>
+              <div style="width: 8px; height: 8px; background: var(--accent-color); border-radius: 50%;" class="anim-dot"></div>
+              <div style="width: 8px; height: 8px; background: var(--accent-color); border-radius: 50%;" class="anim-dot"></div>
+            </div>
+          </div>
+
+          <!-- Wave Bars Animation -->
+          <div id="anim-wave-container" class="anim-container hidden">
+            <div class="finding-status-row">
+              <span id="finding-label">Initiating Neural Link...</span>
+              <span id="finding-timer">0.000s</span>
+            </div>
+            <div style="display: flex; gap: 6px; justify-content: center; align-items: center; margin: 16px 0;">
+              <div style="width: 5px; height: 10px; background: var(--accent-color); border-radius: 2px;" class="anim-bar"></div>
+              <div style="width: 5px; height: 10px; background: var(--accent-color); border-radius: 2px;" class="anim-bar"></div>
+              <div style="width: 5px; height: 10px; background: var(--accent-color); border-radius: 2px;" class="anim-bar"></div>
+              <div style="width: 5px; height: 10px; background: var(--accent-color); border-radius: 2px;" class="anim-bar"></div>
+            </div>
+          </div>
+
+          <!-- Morph Animation -->
+          <div id="anim-morph-container" class="anim-container hidden">
+            <div class="finding-status-row">
+              <span id="finding-label">Initiating Neural Link...</span>
+              <span id="finding-timer">0.000s</span>
+            </div>
+            <div style="display: flex; justify-content: center; margin: 16px 0;">
+              <div style="width: 40px; height: 40px; border-radius: 60% 40% 30% 70% / 60% 30% 70% 40%; background: linear-gradient(-45deg, var(--accent-color), rgba(90, 53, 215, 0.8), var(--accent-color), rgba(90, 53, 215, 0.8)); background-size: 400% 400%;" class="anim-morph"></div>
+            </div>
+          </div>
+
+          <!-- Scanline Animation (Classic) -->
+          <div id="anim-scanline-container" class="anim-container hidden">
+            <div class="finding-status-row">
+              <span id="finding-label">Initiating Neural Link...</span>
+              <span id="finding-timer">0.000s</span>
+            </div>
+            <div style="display: flex; justify-content: center; margin: 16px 0; width: 100%;">
+              <div class="finding-scanline"></div>
+            </div>
+          </div>
+
+          <!-- Orbital Animation -->
+          <div id="anim-orbit-container" class="anim-container hidden">
+            <div class="finding-status-row">
+              <span id="finding-label">Initiating Neural Link...</span>
+              <span id="finding-timer">0.000s</span>
+            </div>
+            <div style="display: flex; justify-content: center; margin: 16px 0;">
+              <div style="position: relative; width: 40px; height: 40px;">
+                <div style="position: absolute; width: 8px; height: 8px; background: var(--accent-color); border-radius: 50%; top: 50%; left: 50%; transform: translate(-50%, -50%);" class="anim-orbit-center"></div>
+                <div style="position: absolute; width: 6px; height: 6px; background: var(--accent-color); border-radius: 50%; top: 0; left: 50%; transform: translateX(-50%);" class="anim-orbit"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Flutter Animation -->
+          <div id="anim-flutter-container" class="anim-container hidden">
+            <div class="finding-status-row">
+              <span id="finding-label">Initiating Neural Link...</span>
+              <span id="finding-timer">0.000s</span>
+            </div>
+            <div style="display: flex; gap: 4px; justify-content: center; align-items: center; margin: 16px 0;">
+              <div style="width: 4px; height: 24px; background: var(--accent-color); border-radius: 2px;" class="anim-flutter"></div>
+              <div style="width: 4px; height: 24px; background: var(--accent-color); border-radius: 2px; animation-delay: 0.1s;" class="anim-flutter"></div>
+              <div style="width: 4px; height: 24px; background: var(--accent-color); border-radius: 2px; animation-delay: 0.2s;" class="anim-flutter"></div>
+            </div>
+          </div>
+
+          <!-- Spiral Animation -->
+          <div id="anim-spiral-container" class="anim-container hidden">
+            <div class="finding-status-row">
+              <span id="finding-label">Initiating Neural Link...</span>
+              <span id="finding-timer">0.000s</span>
+            </div>
+            <div style="display: flex; justify-content: center; margin: 16px 0;">
+              <div style="width: 40px; height: 40px; border: 2px dashed var(--accent-color); border-radius: 50%;" class="anim-spiral"></div>
+            </div>
+          </div>
+
+          <!-- Typewriter Animation -->
+          <div id="anim-typewriter-container" class="anim-container hidden">
+            <div class="finding-status-row">
+              <span id="finding-label">Initiating Neural Link...</span>
+              <span id="finding-timer">0.000s</span>
+            </div>
+            <div style="display: flex; justify-content: center; margin: 16px 0; width: 100%; padding: 0 20px;">
+              <div style="width: 100%; max-width: 120px; display: flex; flex-direction: column; gap: 3px;">
+                <div style="width: 0; height: 2px; background: var(--accent-color); border-radius: 1px;" class="anim-typewriter"></div>
+                <div style="width: 0; height: 2px; background: var(--accent-color); border-radius: 1px; animation-delay: 0.2s;" class="anim-typewriter"></div>
+                <div style="width: 0; height: 2px; background: var(--accent-color); border-radius: 1px; animation-delay: 0.4s;" class="anim-typewriter"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- Webviews will be injected here by renderer.js -->
+    </div>
+    
+    <!-- Translator Popup - Redesigned -->
+    <div id="translator-popup" class="translator-popup hidden">
+        <div id="translator-drag-handle" class="translator-header">
+            <span class="translator-title">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="var(--accent-color)"><path d="M12.87 15.07l-2.54-2.51.03-.03c1.74-1.94 2.98-4.17 3.71-6.53H17V4h-7V2H8v2H1v2h11.17c-.71 2.06-1.75 4.05-3.04 5.81-1.01-1.12-1.87-2.34-2.57-3.64H4.5c.81 1.63 1.83 3.17 3.03 4.58L3.06 18.06l1.41 1.41 4.7-4.7 3.13 3.13 1.98-1.83zM19 8l-6 11h2l1.25-2.5h5.5L23 19h2L19 8zm-1.15 6.5L20 10.3l2.15 4.2h-4.3z"/></svg>
+              Omni Translator
+            </span>
+            <span id="btn-close-translator" class="translator-close">✕</span>
+        </div>
+        <div class="translator-body">
+            <div class="translator-row">
+                <div class="translator-label-row">
+                    <span class="translator-label">Source Language</span>
+                </div>
+                <select id="translator-popup-source" class="translator-select">
+                    <option value="auto" selected>Auto-Detect</option>
+                    <option value="en">English</option>
+                    <option value="hi">Hindi</option>
+                    <option value="bn">Bengali</option>
+                    <option value="te">Telugu</option>
+                    <option value="ta">Tamil</option>
+                    <option value="ar">Arabic</option>
+                    <option value="ja">Japanese</option>
+                    <option value="zh">Chinese (Simplified)</option>
+                    <option value="ur">Urdu</option>
+                    <option value="es">Spanish</option>
+                    <option value="fr">French</option>
+                </select>
+                <div id="translator-source-text" class="translator-input-box"></div>
+            </div>
+            
+            <div class="translator-row">
+                <div class="translator-label-row">
+                    <span class="translator-label">Target Language</span>
+                </div>
+                <select id="translator-popup-target" class="translator-select">
+                    <option value="en">English</option>
+                    <option value="hi">Hindi</option>
+                    <option value="bn">Bengali</option>
+                    <option value="te">Telugu</option>
+                    <option value="ta">Tamil</option>
+                    <option value="ar">Arabic</option>
+                    <option value="ja">Japanese</option>
+                    <option value="zh">Chinese (Simplified)</option>
+                    <option value="ur">Urdu</option>
+                    <option value="es">Spanish</option>
+                    <option value="fr">French</option>
+                </select>
+                <div id="translator-output-text" class="translator-output-box">Translation results will appear here...</div>
+            </div>
+        </div>
+        <div class="translator-footer">
+            <button id="btn-copy-translation" class="btn-copy-translate" title="Copy to Clipboard">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
+            </button>
+            <div class="btn-translate-action">
+                <button id="btn-perform-translation" class="btn-translate">Translate Selection</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Writer Popup -->
+    <div id="writer-popup" class="translator-popup hidden">
+        <div id="writer-drag-handle" class="translator-header">
+            <span class="translator-title">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="var(--accent-color)"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+              Omni Writer
+            </span>
+            <span id="btn-close-writer" class="translator-close">✕</span>
+        </div>
+        <div class="translator-body">
+            <div class="translator-row">
+                <span class="translator-label">Original Text</span>
+                <div id="writer-source-text" class="translator-input-box"></div>
+            </div>
+            <div class="translator-row">
+                <span class="translator-label">AI Rewritten</span>
+                <div id="writer-output-text" class="translator-output-box">Rewritten text will appear here...</div>
+            </div>
+        </div>
+        <div class="translator-footer">
+            <div class="translator-select-wrapper">
+                <select id="writer-popup-mode" class="translator-select">
+                    <option value="balanced" selected>Balanced</option>
+                    <option value="professional">Professional</option>
+                    <option value="creative">Creative</option>
+                </select>
+            </div>
+            <div class="btn-translate-action">
+                <button id="btn-perform-write" class="btn-translate">Rewrite</button>
+                <button id="btn-implement-write" class="btn-translate secondary" disabled>Implement</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Home Launcher Panel -->
+    <div id="features-home-popup" class="home-features-popup hidden">
+        <div class="features-grid">
+            <div class="quick-launch-tools">
+                <button class="feature-tile" id="quick-panel-bookmarks" type="button" title="Bookmarks" data-tooltip="Bookmarks">
+                    <svg viewBox="0 0 24 24"><path d="M17 3H7c-1.1 0-2 .9-2 2v16l7-3 7 3V5c0-1.1-.9-2-2-2z" fill="currentColor"/></svg>
+                </button>
+                <button class="feature-tile" id="quick-panel-youtube-addon" type="button" title="YouTube Addon" data-tooltip="YouTube Addon">
+                    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M21.58 7.19a2.98 2.98 0 0 0-2.1-2.11C17.65 4.6 12 4.6 12 4.6s-5.65 0-7.48.48a2.98 2.98 0 0 0-2.1 2.11A31.6 31.6 0 0 0 2 12a31.6 31.6 0 0 0 .42 4.81 2.98 2.98 0 0 0 2.1 2.11c1.83.48 7.48.48 7.48.48s5.65 0 7.48-.48a2.98 2.98 0 0 0 2.1-2.11A31.6 31.6 0 0 0 22 12a31.6 31.6 0 0 0-.42-4.81zM10 15.5v-7l6 3.5-6 3.5z"/></svg>
+                </button>
+                <button class="feature-tile" id="quick-panel-duck-ai" type="button" title="Duck AI" data-tooltip="Duck AI">
+                    <svg viewBox="0 0 24 24" fill="none"><path d="M7.5 13.5c0-3.04 2.46-5.5 5.5-5.5 1.7 0 3.22.77 4.23 1.97" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M14.5 5.5c.88-.96 2.11-1.5 3.42-1.5 2.53 0 4.58 2.05 4.58 4.58 0 1.27-.52 2.42-1.35 3.25" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M5.8 18.2c.92 1.14 2.33 1.8 3.8 1.8h4.9c2.76 0 5-2.24 5-5 0-2.42-1.72-4.44-4-4.9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="8.2" cy="11.2" r="1.4" fill="currentColor"/><path d="M3 13.5c0-1.93 1.57-3.5 3.5-3.5.58 0 1.13.14 1.61.39" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+                </button>
+                <button class="feature-tile" id="quick-panel-scraper" type="button" title="Scraper" data-tooltip="Scraper">
+                    <svg viewBox="0 0 24 24" fill="none"><rect x="4" y="5" width="10" height="10" rx="2.5" fill="currentColor" opacity="0.18"/><path d="M7 8h5M7 11h3.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="16.5" cy="16.5" r="3.5" stroke="currentColor" stroke-width="2"/><path d="M19 19l2 2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+                </button>
+                <button class="feature-tile" id="quick-panel-todo-station" type="button" title="To-Do Station" data-tooltip="To-Do">
+                    <svg viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2m-9 14l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" fill="currentColor"/></svg>
+                </button>
+                <button class="feature-tile" id="quick-panel-games" type="button" title="Games" data-tooltip="Games">
+                    <svg viewBox="0 0 24 24"><path d="M21 6H3c-1.1 0-2 .9-2 2v8c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-10 7H8v3H6v-3H3v-2h3V8h2v3h3v2zm4.5 2c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm4-3c-.83 0-1.5-.67-1.5-1.5S18.67 9 19.5 9s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z" fill="currentColor"/></svg>
+                </button>
+                <button class="feature-tile" id="quick-panel-llama-server" type="button" title="Llama Server" data-tooltip="Llama">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v14a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M12 8v8"/><path d="M9 12h6"/><circle cx="12" cy="5" r="1" fill="currentColor" stroke="none"/></svg>
+                </button>
+                <button class="feature-tile" id="quick-panel-mcp-server" type="button" title="MCP Server" data-tooltip="MCP">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="6" rx="2"/><rect x="3" y="14" width="18" height="6" rx="2"/><path d="M7 7h.01M7 17h.01M11 7h6M11 17h6"/></svg>
+                </button>
+                <button class="feature-tile feature-tile-discord" id="quick-panel-discord" type="button" title="Discord" data-tooltip="Discord">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M20.317 4.369a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.078.037c-.212.375-.448.864-.615 1.249a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.624-1.249.077.077 0 0 0-.078-.037 19.736 19.736 0 0 0-4.885 1.515.069.069 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.056 19.9 19.9 0 0 0 5.993 3.03.077.077 0 0 0 .084-.028 14.13 14.13 0 0 0 1.226-1.994.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128c.126-.094.252-.192.372-.291a.074.074 0 0 1 .077-.01c3.927 1.793 8.18 1.793 12.061 0a.074.074 0 0 1 .078.009c.12.099.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.891.076.076 0 0 0-.04.107c.36.698.771 1.364 1.225 1.993a.076.076 0 0 0 .084.028 19.84 19.84 0 0 0 6.002-3.03.077.077 0 0 0 .031-.055c.5-5.177-.838-9.674-3.548-13.66a.061.061 0 0 0-.031-.028ZM8.02 15.331c-1.183 0-2.157-1.085-2.157-2.418 0-1.333.955-2.418 2.157-2.418 1.21 0 2.175 1.094 2.156 2.418 0 1.333-.955 2.418-2.156 2.418Zm7.975 0c-1.183 0-2.157-1.085-2.157-2.418 0-1.333.955-2.418 2.157-2.418 1.21 0 2.175 1.094 2.156 2.418 0 1.333-.946 2.418-2.156 2.418Z"/></svg>
+                </button>
+                <button class="feature-tile" id="quick-panel-navigation" type="button" title="Navigation" data-tooltip="Navigation">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9 7l-5 5 5 5"/><path d="M4 12h9"/><path d="M15 7l5 5-5 5"/><path d="M20 12h-9"/></svg>
+                </button>
+                <button class="feature-tile" id="quick-panel-page-info" type="button" title="Page Info" data-tooltip="Page Info">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M12 10v5"/><circle cx="12" cy="7.5" r="0.8" fill="currentColor" stroke="none"/></svg>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div id="navigation-top-panel" class="bookmark-top-panel navigation-top-panel hidden">
+      <div class="bookmark-top-card navigation-top-card">
+        <button id="btn-top-nav-back" class="navigation-top-btn" type="button" title="Back" aria-label="Back">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/><path d="M9 12h10"/></svg>
+        </button>
+        <button id="btn-top-nav-forward" class="navigation-top-btn" type="button" title="Forward" aria-label="Forward">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/><path d="M5 12h10"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Bookmark Panel -->
+    <div id="bookmark-top-panel" class="bookmark-top-panel hidden">
+      <div class="bookmark-top-card">
+        <div class="bookmark-top-header">
+          <div class="bookmark-top-title">Book_marks</div>
+        </div>
+        <div id="bookmark-top-list" class="bookmark-top-list"></div>
+      </div>
+    </div>
+
+    <div id="bookmark-editor-overlay" class="modal-overlay hidden">
+      <div class="shortcut-modal bookmark-editor-modal">
+        <div class="modal-title">Save Bookmark</div>
+        <div class="bookmark-editor-preview">
+          <img id="bookmark-editor-preview-icon" class="bookmark-editor-preview-icon" src="../../assets/icons/app.ico" alt="">
+          <div id="bookmark-editor-preview-name" class="bookmark-editor-preview-name">New Bookmark</div>
+        </div>
+        <div class="modal-group">
+          <label class="modal-label" for="bookmark-editor-name">Name</label>
+          <input id="bookmark-editor-name" class="modal-input" type="text" placeholder="Bookmark name">
+        </div>
+        <div class="modal-group">
+          <label class="modal-label" for="bookmark-editor-icon">Icon URL</label>
+          <input id="bookmark-editor-icon" class="modal-input" type="text" placeholder="https://example.com/icon.png">
+        </div>
+        <div class="modal-actions">
+          <button id="bookmark-editor-cancel" class="modal-btn secondary" type="button">Cancel</button>
+          <button id="bookmark-editor-save" class="modal-btn primary" type="button">Save</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Image Download Modal -->
+    <div id="image-dl-overlay" class="modal-overlay hidden">
+        <div class="shortcut-modal">
+            <div class="modal-title">Download Image</div>
+            <div class="dl-preview-container">
+                <img id="image-dl-preview" src="">
+            </div>
+            <div class="modal-group">
+                <label class="modal-label">Choose Format</label>
+                <div class="dl-options-grid">
+                    <div class="dl-format-btn" data-format="png">
+                        <span class="ext">PNG</span>
+                        <span class="desc">Lossless Quality</span>
+                    </div>
+                    <div class="dl-format-btn" data-format="jpeg">
+                        <span class="ext">JPG</span>
+                        <span class="desc">Web Standard</span>
+                    </div>
+                    <div class="dl-format-btn" data-format="webp">
+                        <span class="ext">WEBP</span>
+                        <span class="desc">Optimized Size</span>
+                    </div>
+                    <div class="dl-format-btn" data-format="pdf">
+                        <span class="ext">PDF</span>
+                        <span class="desc">Document Pack</span>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button id="btn-image-dl-cancel" class="modal-btn secondary">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- VirusTotal Link Scan Modal -->
+    <div id="vt-link-scan-overlay" class="modal-overlay hidden">
+        <div class="shortcut-modal vt-scan-modal">
+            <div class="vt-scan-header">
+                <div class="modal-title">VirusTotal URL Scan</div>
+                <button id="btn-vt-close-top" class="modal-btn secondary" style="padding: 6px 12px;">Close</button>
+            </div>
+            <div id="vt-scan-target-url" class="vt-scan-target"></div>
+            <div id="vt-scan-status" class="vt-scan-status"></div>
+            <div id="vt-scan-report" class="vt-scan-report hidden"></div>
+            <div class="modal-actions">
+                <button id="btn-vt-open-link" class="modal-btn secondary" disabled>Open Link</button>
+                <button id="btn-vt-close" class="modal-btn primary">Done</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Screenshot Overlay -->
+    <div id="screenshot-layer">
+      <canvas id="screenshot-canvas"></canvas>
+      <div class="screenshot-toolbar">
+         <button id="btn-ss-lens" class="screenshot-btn delay-btn" title="Search selected area in Google Lens">
+           <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M9 3a6 6 0 1 1 0 12A6 6 0 0 1 9 3m0-2a8 8 0 1 0 4.9 14.4l4.85 4.85 1.41-1.41-4.85-4.85A8 8 0 0 0 9 1z"/></svg>
+           Search Lens
+         </button>
+         <button id="btn-ss-full" class="screenshot-btn primary">Full Screen</button>
+      </div>
+      <div id="screenshot-countdown" class="screenshot-countdown hidden">
+        <div class="countdown-label">Taking screenshot in</div>
+        <div id="countdown-number" class="countdown-number">3</div>
+        <button id="btn-ss-delay-cancel" class="countdown-cancel" type="button">Cancel</button>
+      </div>
+    </div>
+    
+    <!-- Window Picker Overlay -->
+    <div id="window-picker-overlay" class="window-picker-overlay hidden">
+      <div class="window-picker-modal">
+        <div class="window-picker-header">
+          <h3>
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="var(--accent-color)"><path d="M20 18c1.1 0 1.99-.9 1.99-2L22 6c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2H0v2h24v-2h-4zM4 6h16v10H4V6z"/></svg>
+            Select Window
+          </h3>
+          <button id="btn-close-window-picker" class="icon-btn small" title="Close">
+            <svg viewBox="0 0 12 12" width="14" height="14"><path d="M1 1l10 10M1 11L11 1" stroke="currentColor" stroke-width="2"/></svg>
+          </button>
+        </div>
+        <div class="window-picker-content">
+          <p class="window-picker-instruction">Click on a window below to capture it:</p>
+          <div id="window-picker-list" class="window-picker-list">
+            <!-- Window items will be injected here -->
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Display Picker Overlay -->
+    <div id="display-picker-overlay" class="display-picker-overlay hidden">
+      <div class="display-picker-modal">
+        <div class="display-picker-header">
+          <h3>
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="var(--accent-color)"><path d="M20 18c1.1 0 1.99-.9 1.99-2L22 6c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2H0v2h24v-2h-4zM4 6h16v10H4V6z"/></svg>
+            Select Display
+          </h3>
+          <button id="btn-close-display-picker" class="icon-btn small" title="Close">
+            <svg viewBox="0 0 12 12" width="14" height="14"><path d="M1 1l10 10M1 11L11 1" stroke="currentColor" stroke-width="2"/></svg>
+          </button>
+        </div>
+        <div class="display-picker-content">
+          <div class="display-picker-visual">
+            <div id="display-visual-map" class="display-visual-map">
+              <!-- Visual map of displays will be rendered here -->
+            </div>
+          </div>
+          <p class="display-picker-instruction">Click on a display below to capture it:</p>
+          <div id="display-picker-list" class="display-picker-list">
+            <!-- Display items will be injected here -->
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Search Overlay (Floating Box) -->
+    <div id="search-overlay" class="search-overlay hidden">
+      <div class="search-box-wrapper">
+        <div class="search-box">
+          <div class="search-icon">
+            <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+          </div>
+          <input type="text" id="overlay-input" placeholder="Search or enter address" autocomplete="off">
+          
+          <button id="btn-refresh-search" class="search-refresh-btn" title="Refresh Search Engine">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
+          </button>
+        </div>
+        <div id="search-suggestions" class="search-suggestions hidden"></div>
+      </div>
+    </div>
+
+    <!-- Tab Context Menu (Tabs) -->
+    <div id="tab-context-menu" class="context-menu hidden">
+      <div class="context-menu-item" id="ctx-bookmark-tab">
+        <svg viewBox="0 0 24 24"><path d="M17 3H7c-1.1 0-1.99.9-1.99 2L5 21l7-3 7 3V5c0-1.1-.9-2-2-2z" fill="currentColor"/></svg>
+        <span>Save as Bookmark</span>
+      </div>
+      <div class="context-menu-item" id="ctx-copy-url">
+        <svg viewBox="0 0 24 24"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z" fill="currentColor"/></svg>
+        <span>Copy URL</span>
+      </div>
+      <div class="context-menu-item" id="ctx-dark-mode">
+        <svg viewBox="0 0 24 24"><path d="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9 9-4.03 9-9c0-.46-.04-.92-.1-1.36-.98 1.37-2.58 2.26-4.4 2.26-3.03 0-5.5-2.47-5.5-5.5 0-1.82.89-3.42 2.26-4.4-.44-.06-.9-.1-1.36-.1z" fill="currentColor"/></svg>
+        <span>Toggle Dark Mode</span>
+      </div>
+    </div>
+
+    <!-- Content Context Menu (Webview) -->
+    <div id="webview-context-menu" class="context-menu hidden">
+       <!-- Populated Dynamically -->
+    </div>
+
+    <!-- Download Toast -->
+    <div id="download-toast" class="download-toast hidden">
+       <div class="dl-toast-icon">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+       </div>
+       <div class="dl-toast-info">
+          <div class="dl-toast-filename">filename.zip</div>
+          <div class="dl-toast-status">Starting...</div>
+          <div class="dl-toast-bar"><div class="dl-toast-fill"></div></div>
+       </div>
+       <button id="btn-download-toast-cancel" class="dl-toast-cancel hidden" type="button">Cancel</button>
+    </div>
+
+    <!-- Site Tool Slide Panels -->
+    <div id="youtube-addon-panel" class="site-tool-panel hidden">
+      <div class="site-tool-card">
+        <div class="site-tool-header">
+          <div class="site-tool-title-group">
+            <div class="site-tool-title">YouTube Addon</div>
+            <div class="site-tool-subtitle">Focused controls for youtube.com</div>
+          </div>
+        </div>
+        <div class="site-tool-list">
+          <label class="site-tool-row">
+            <div class="site-tool-copy">
+              <span class="site-tool-label">Hide Shorts</span>
+              <span class="site-tool-desc">Uses the bundled Shorts Hide extension to remove Shorts on YouTube.</span>
+            </div>
+            <span class="site-tool-switch">
+              <input type="checkbox" id="youtube-addon-toggle-shorts">
+              <span class="site-tool-slider"></span>
+            </span>
+          </label>
+          <label class="site-tool-row">
+            <div class="site-tool-copy">
+              <span class="site-tool-label">Hide Home Suggestions</span>
+              <span class="site-tool-desc">Removes the main recommendation wall.</span>
+            </div>
+            <span class="site-tool-switch">
+              <input type="checkbox" id="youtube-addon-toggle-home">
+              <span class="site-tool-slider"></span>
+            </span>
+          </label>
+          <label class="site-tool-row">
+            <div class="site-tool-copy">
+              <span class="site-tool-label">Blur Thumbnails</span>
+              <span class="site-tool-desc">Softens visual pulls until you click in.</span>
+            </div>
+            <span class="site-tool-switch">
+              <input type="checkbox" id="youtube-addon-toggle-blur">
+              <span class="site-tool-slider"></span>
+            </span>
+          </label>
+          <label class="site-tool-row">
+            <div class="site-tool-copy">
+              <span class="site-tool-label">Hide Chats</span>
+              <span class="site-tool-desc">Keeps live streams and watch pages quieter.</span>
+            </div>
+            <span class="site-tool-switch">
+              <input type="checkbox" id="youtube-addon-toggle-chat">
+              <span class="site-tool-slider"></span>
+            </span>
+          </label>
+          <label class="site-tool-row">
+            <div class="site-tool-copy">
+              <span class="site-tool-label">UI</span>
+              <span class="site-tool-desc">Show or hide the YouTube header UI like the logo, search row, menu controls, and topic chips.</span>
+            </div>
+            <span class="site-tool-switch">
+              <input type="checkbox" id="youtube-addon-toggle-ui">
+              <span class="site-tool-slider"></span>
+            </span>
+          </label>
+          <label class="site-tool-row">
+            <div class="site-tool-copy">
+              <span class="site-tool-label">Black and White Mode</span>
+              <span class="site-tool-desc">Desaturates the page for a calmer look.</span>
+            </div>
+            <span class="site-tool-switch">
+              <input type="checkbox" id="youtube-addon-toggle-bw">
+              <span class="site-tool-slider"></span>
+            </span>
+          </label>
+          <label class="site-tool-row">
+            <div class="site-tool-copy">
+              <span class="site-tool-label">Clean UI</span>
+              <span class="site-tool-desc">Leaves only the centered video on watch pages.</span>
+            </div>
+            <span class="site-tool-switch">
+              <input type="checkbox" id="youtube-addon-toggle-cleanui">
+              <span class="site-tool-slider"></span>
+            </span>
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <div id="duck-ai-panel" class="site-tool-panel hidden">
+      <div class="site-tool-card">
+        <div class="site-tool-header">
+          <div class="site-tool-title-group">
+            <div class="site-tool-title">Duck AI</div>
+            <div class="site-tool-subtitle">Quick layout controls for duck.ai/chat</div>
+          </div>
+        </div>
+        <div class="site-tool-list">
+          <label class="site-tool-row">
+            <div class="site-tool-copy">
+              <span class="site-tool-label">Hide Sidebar</span>
+              <span class="site-tool-desc">Keeps the chat canvas centered and distraction-free.</span>
+            </div>
+            <span class="site-tool-switch">
+              <input type="checkbox" id="duck-ai-toggle-sidebar">
+              <span class="site-tool-slider"></span>
+            </span>
+          </label>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <script type="module" src="../../java/renderer/renderer.js"></script>
+</body>
+</html>
+

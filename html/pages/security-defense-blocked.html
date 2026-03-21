@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Blocked Website</title>
+  <link rel="stylesheet" href="../../css/base/reset.css">
+  <link rel="stylesheet" href="../../css/base/variables.css">
+  <link rel="stylesheet" href="../../css/base/base.css">
+  <link rel="stylesheet" href="../../css/pages/security-defense-blocked.css">
+</head>
+<body>
+  <div class="defense-container">
+    <div class="defense-card">
+      <div class="scanner-orb" aria-hidden="true">
+        <div class="orb-grid"></div>
+        <div class="orb-ring orb-ring-1"></div>
+        <div class="orb-ring orb-ring-2"></div>
+        <div class="orb-ring orb-ring-3"></div>
+        <div class="orb-sweep"></div>
+        <div class="orb-dot-track">
+          <div class="orb-dot"></div>
+        </div>
+        <div class="orb-core"></div>
+      </div>
+
+      <h1 id="defense-title">Website Blocked</h1>
+      <p id="defense-reason" class="reason-text">This website is blocked in your settings block website list.</p>
+
+      <div class="meta-box">
+        <div class="meta-row">
+          <span class="meta-label">THREAT TYPE</span>
+          <span id="threat-type" class="meta-value">CUSTOM BLOCK</span>
+        </div>
+        <div class="meta-row">
+          <span class="meta-label">TARGET</span>
+          <span id="target-url" class="meta-value">...</span>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button id="btn-back" class="action-btn primary">Return to Safety</button>
+        <button id="btn-details" class="action-btn secondary">View Details</button>
+      </div>
+
+      <div id="technical-details" class="technical-details hidden">
+        <p><strong>Defense Protocol:</strong> <span id="detail-protocol">Settings Blocklist</span></p>
+        <p><strong>Timestamp:</strong> <span id="detail-time"></span></p>
+        <p class="disclaimer">This website was blocked locally by your settings and was not opened.</p>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="../../java/renderer/securityDefenseBlockedRenderer.js"></script>
+</body>
+</html>

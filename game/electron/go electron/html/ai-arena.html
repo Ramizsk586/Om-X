@@ -1,0 +1,92 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>Go AI Dojo</title>
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body class="theme-emerald">
+  <div class="main-layout">
+    <div class="board-panel">
+      <div class="board-wrapper">
+        <div class="board-coords coords-top"></div>
+        <div class="board-coords coords-left"></div>
+        <div id="board-container">
+          <!-- Go board here -->
+        </div>
+      </div>
+    </div>
+    <div class="sidebar ai-dojo-sidebar">
+      <div class="sidebar-header">
+        <h2>AI Dojo</h2>
+        <p class="subtitle">Pit two AI engines against each other.</p>
+      </div>
+      <div class="dojo-config">
+        <div class="dojo-agent-card" id="card-black">
+          <div class="agent-header">
+            <div class="agent-avatar"><div class="stone black"></div></div>
+            <h3>Black Agent</h3>
+          </div>
+          <div class="input-wrapper">
+            <label>Select Engine</label>
+            <select id="engine-select-black" class="engine-select" aria-label="Select engine for Black Agent">
+              <!-- Options populated by ai_arena_renderer.js -->
+            </select>
+          </div>
+        </div>
+
+        <div class="vs-divider-dojo">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="23" y1="1" x2="1" y2="23"></line><path d="M13 3.34A10 10 0 1 1 4.34 13"></path><path d="M20.66 11A10 10 0 0 0 11 3.34"></path></svg>
+        </div>
+
+        <div class="dojo-agent-card" id="card-white">
+          <div class="agent-header">
+            <div class="agent-avatar"><div class="stone white"></div></div>
+            <h3>White Agent</h3>
+          </div>
+          <div class="input-wrapper">
+            <label>Select Engine</label>
+             <select id="engine-select-white" class="engine-select" aria-label="Select engine for White Agent">
+              <!-- Options populated by ai_arena_renderer.js -->
+            </select>
+          </div>
+        </div>
+      </div>
+      <div class="controls">
+        <button id="initialize-match-btn" class="btn btn-primary">Initialize Match</button>
+        <div id="dojo-status" style="text-align:center; margin-top: 12px; font-size: 14px; color: var(--text-muted); min-height: 20px;"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="dojo-result-modal" class="modal-backdrop">
+    <div class="modal-content">
+      <h2 id="dojo-result-title">Match Finished</h2>
+      <p id="dojo-result-reason" style="text-align:center; color: var(--text-muted); margin-top: -8px;"></p>
+      <p id="dojo-result-score" style="text-align:center; margin-top: 8px; font-weight: 700;"></p>
+      <div class="modal-actions">
+        <button id="dojo-result-close" class="btn btn-primary">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="../java/board_init.js"></script>
+  <script src="../java/go_brain.js"></script>
+  <script src="../java/ai_arena_renderer.js"></script>
+  <script>
+    console.log("Go AI Arena loaded.");
+    // Apply theme from settings
+    (async function() {
+        try {
+            if (window.electronAPI) {
+                const prefs = await window.electronAPI.getPreferences();
+                document.body.className = prefs.goTheme || 'theme-emerald';
+            }
+        } catch(e) {
+            console.error("Failed to load theme settings.", e);
+        }
+    })();
+  </script>
+</body>
+</html>

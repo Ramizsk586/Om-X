@@ -1,0 +1,235 @@
+
+const express = require('express');
+const http = require('http');
+const { Server } = require('socket.io');
+const os = require('os');
+const path = require('path');
+const crypto = require('crypto');
+
+class LanServer {
+    constructor(mainWindow) {
+        this.mainWindow = mainWindow;
+        this.app = express();
+        this.server = http.createServer(this.app);
+        
+        this.io = new Server(this.server, {
+            cors: { origin: "*", methods: ["GET", "POST"], credentials: true },
+            transports: ['websocket', 'polling']
+        });
+        
+        this.port = 3001;
+        this.isRunning = false;
+        this.hostWindow = null;
+        this.connectedPlayers = []; 
+        this.blockedIDs = new Set();
+        this.maxPlayers = 4;
+        this.joinToken = this.generateJoinToken();
+
+        this.gameState = {
+            fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+            history: []
+        };
+
+        this.setupRoutes();
+        this.setupSocket();
+    }
+
+    generateJoinToken() {
+        return crypto.randomBytes(16).toString('hex');
+    }
+
+    sanitizePlayerName(value) {
+        const raw = String(value || '').replace(/[\r\n\t]/g, ' ').trim();
+        const compact = raw.replace(/\s+/g, ' ').slice(0, 32);
+        return compact || 'Guest';
+    }
+
+    sanitizeAvatar(value) {
+        const avatar = String(value || '').trim();
+        return /^[bw][KQRNBP]\.png$/i.test(avatar) ? avatar : 'bK.png';
+    }
+
+    setupRoutes() {
+        this.app.use('/assets', express.static(path.join(__dirname, '../assets')));
+        this.app.use('/mobile', express.static(path.join(__dirname, '../mobile')));
+        this.app.get('/', (req, res) => res.sendFile(path.join(__dirname, '../html/lan-client.html')));
+        this.app.get('/style.css', (req, res) => res.sendFile(path.join(__dirname, '../html/css/lan-style.css')));
+        this.app.get('/client.js', (req, res) => res.sendFile(path.join(__dirname, '../java/client.js')));
+    }
+
+    setupSocket() {
+        this.io.on('connection', (socket) => {
+            if(this.connectedPlayers.length >= this.maxPlayers) {
+                socket.disconnect();
+                return;
+            }
+            
+            socket.emit('game-state', this.gameState);
+
+            socket.on('client-join', (data) => {
+                const token = String(data?.token || '').trim();
+                if (!token || token !== this.joinToken) {
+                    socket.disconnect();
+                    return;
+                }
+                if(this.blockedIDs.has(socket.id)) {
+                    socket.disconnect();
+                    return;
+                }
+                
+                const player = {
+                    name: this.sanitizePlayerName(data?.name),
+                    id: socket.id,
+                    avatar: this.sanitizeAvatar(data?.avatar)
+                };
+                this.connectedPlayers.push(player);
+                
+                this.notifyHost('lan-player-joined', player);
+            });
+
+            socket.on('client-move', (moveData) => {
+                this.notifyHost('lan-move-received', moveData);
+            });
+
+            socket.on('disconnect', () => {
+                this.connectedPlayers = this.connectedPlayers.filter(p => p.id !== socket.id);
+                this.notifyHost('lan-player-disconnected', socket.id);
+            });
+        });
+    }
+    
+    notifyHost(channel, data) {
+        const hostContents = this.hostWindow?.webContents;
+        if (!hostContents) return;
+        try {
+            if (typeof this.hostWindow?.isDestroyed === 'function' && this.hostWindow.isDestroyed()) return;
+            if (typeof hostContents.isDestroyed === 'function' && hostContents.isDestroyed()) return;
+            hostContents.send(channel, data);
+        } catch (_) {}
+    }
+
+    start() {
+        if (this.isRunning) return this.getServerInfo();
+        return new Promise((resolve, reject) => {
+            this.joinToken = this.generateJoinToken();
+            this.connectedPlayers = [];
+            const onError = (error) => {
+                this.server.off('listening', onListening);
+                reject(error);
+            };
+            const onListening = () => {
+                this.server.off('error', onError);
+                this.isRunning = true;
+                resolve(this.getServerInfo());
+            };
+            this.server.once('error', onError);
+            this.server.once('listening', onListening);
+            this.server.listen(this.port, '0.0.0.0');
+        });
+    }
+
+    stop() {
+        if (!this.isRunning) return;
+        this.server.close();
+        this.isRunning = false;
+        this.connectedPlayers = [];
+    }
+
+    getServerInfo() {
+        const info = this.getLocalIpAddress();
+        const tokenQuery = `token=${encodeURIComponent(this.joinToken)}`;
+        return {
+            ip: info.primary,
+            port: this.port,
+            url: `http://${info.primary}:${this.port}/mobile?${tokenQuery}`,
+            addresses: info.candidates.map((address) => ({
+                ip: address,
+                url: `http://${address}:${this.port}/mobile?${tokenQuery}`
+            }))
+        };
+    }
+
+    getLocalIpAddress() {
+        const interfaces = os.networkInterfaces();
+        const candidates = [];
+        const badInterfaceName = /loopback|virtual|vmware|vbox|hyper-v|wsl|docker|tailscale|zerotier|bluetooth|vethernet|hamachi|radmin|tunne|tun\d/i;
+        const preferredInterfaceName = /wi-?fi|wlan|wireless|ethernet|eth|en/i;
+
+        for (const [name, networkInterface] of Object.entries(interfaces)) {
+            if (!networkInterface) continue;
+            if (badInterfaceName.test(name)) continue;
+            for (const details of networkInterface) {
+                if (details.family !== 'IPv4' || details.internal) continue;
+                const address = details.address;
+                const score = this.scoreLanAddress(address, name, preferredInterfaceName);
+                candidates.push({ address, score });
+            }
+        }
+
+        if (!candidates.length) {
+            return { primary: '127.0.0.1', candidates: ['127.0.0.1'] };
+        }
+
+        candidates.sort((a, b) => b.score - a.score);
+        const uniqueAddresses = [...new Set(candidates.map((item) => item.address))];
+        return { primary: uniqueAddresses[0], candidates: uniqueAddresses };
+    }
+
+    scoreLanAddress(address, interfaceName, preferredInterfaceName) {
+        let score = 0;
+        if (preferredInterfaceName.test(interfaceName)) score += 20;
+        if (address.startsWith('192.168.')) score += 12;
+        if (address.startsWith('10.')) score += 10;
+        if (address.startsWith('172.')) {
+            const secondOctet = Number(address.split('.')[1]);
+            if (secondOctet >= 16 && secondOctet <= 31) score += 8;
+        }
+        return score;
+    }
+    
+    getStatus() {
+        const serverInfo = this.isRunning ? this.getServerInfo() : null;
+        return {
+            isRunning: this.isRunning,
+            players: this.connectedPlayers,
+            maxPlayers: this.maxPlayers,
+            serverInfo
+        };
+    }
+
+    setHostWindow(win) {
+        this.hostWindow = win;
+    }
+    
+    blockPlayer(id) {
+        this.blockedIDs.add(id);
+        const socket = this.io.sockets.sockets.get(id);
+        if(socket) socket.disconnect();
+    }
+    
+    setConfig(cfg) {
+        if(cfg.maxPlayers) this.maxPlayers = cfg.maxPlayers;
+    }
+
+    broadcastMove(moveData, fen) {
+        this.gameState.fen = fen;
+        this.gameState.history.push(moveData);
+        this.io.emit('server-move', { move: moveData, fen: fen });
+    }
+    
+    broadcastGameReset(fen) {
+        this.gameState.fen = fen;
+        this.gameState.history = [];
+        this.io.emit('game-reset', { fen });
+    }
+
+    broadcastGameOver(result, winner) {
+        this.io.emit('game-over', { result, winner });
+    }
+
+    broadcastHostInfo(info) {
+        this.io.emit('host-info', info);
+    }
+}
+
+module.exports = LanServer;

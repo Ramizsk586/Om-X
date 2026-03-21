@@ -1,0 +1,31 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Brain Teaser Puzzles</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="wrap">
+    <div class="topbar">
+      <h1>Brain Teaser <span>Puzzles</span></h1>
+      <div class="meta-wrap">
+        <div class="meta" id="level">Level 36 / 200</div>
+        <div class="meta" id="tier">Tier: ...</div>
+        <div class="meta" id="puzzle-id">Puzzle #?</div>
+        <div class="meta" id="shape">Shape: ...</div>
+        <div class="progress"><div class="progress-fill" id="progress-fill"></div></div>
+      </div>
+    </div>
+    <canvas id="maze" width="940" height="520"></canvas>
+    <div id="status"></div>
+    <div class="help">Controls: Arrow keys or WASD. Press <strong>R</strong> to reset run.</div>
+  </div>
+  <script>
+    window.MAZE_LEVEL = 36;
+    window.MAZE_TOTAL = 200;
+  </script>
+  <script src="maze-core.js"></script>
+</body>
+</html>

@@ -1,0 +1,780 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark" />
+    <title>Om-X Chat - Start</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/css/style.css" />
+    <script src="/client-config.js"></script>
+    <script src="/js/device.js"></script>
+  </head>
+  <body class="landing-page">
+    <main class="auth-card">
+      <div class="brand-mark" aria-hidden="true"><img src="/assets/omx-browser.png" alt="" /></div>
+      <h1 id="landing-title">Sign In To Om Chat</h1>
+      <p id="entry-subtitle" class="subtitle">Create an account or sign in before you can create or join a server.</p>
+
+      <section id="account-summary" class="auth-account-summary hidden" aria-live="polite">
+        <div class="auth-account-copy">
+          <strong id="account-name">Signed in</strong>
+          <span id="account-email"></span>
+        </div>
+        <button id="logout-btn" type="button" class="btn-secondary auth-inline-btn">Log Out</button>
+      </section>
+
+      <section id="auth-panel" class="landing-panel">
+        <div class="auth-mode-switch" role="tablist" aria-label="Authentication mode">
+          <button id="mode-login" type="button" class="auth-mode-btn active" aria-pressed="true">Sign In</button>
+          <button id="mode-register" type="button" class="auth-mode-btn" aria-pressed="false">Create Account</button>
+        </div>
+
+        <label id="register-username-label" for="register-username" class="hidden">Username</label>
+        <input id="register-username" class="hidden" maxlength="24" placeholder="Alice" autocomplete="username" />
+
+        <label id="identifier-label" for="identifier">Email Or Username</label>
+        <input id="identifier" maxlength="120" placeholder="alice@example.com" autocomplete="username" />
+
+        <label id="email-label" for="email" class="hidden">Email</label>
+        <input id="email" class="hidden" maxlength="120" placeholder="alice@example.com" autocomplete="email" />
+
+        <label for="password">Password</label>
+        <input id="password" type="password" maxlength="128" placeholder="Enter your password" autocomplete="current-password" />
+
+        <label id="confirm-password-label" for="confirm-password" class="hidden">Confirm Password</label>
+        <input id="confirm-password" class="hidden" type="password" maxlength="128" placeholder="Repeat your password" autocomplete="new-password" />
+
+        <button id="auth-submit" type="button" class="btn-primary landing-submit">Sign In</button>
+      </section>
+
+      <section id="verify-panel" class="landing-panel hidden" aria-live="polite">
+        <p class="verification-note" id="verification-note">Enter the 6-digit code we sent to your email to finish signing in.</p>
+
+        <label for="verify-email">Email</label>
+        <input id="verify-email" maxlength="120" placeholder="alice@example.com" autocomplete="email" />
+
+        <label for="verify-code">Verification Code</label>
+        <input id="verify-code" class="verify-code-input" maxlength="6" inputmode="numeric" pattern="[0-9]*" placeholder="123456" autocomplete="one-time-code" />
+
+        <button id="verify-submit" type="button" class="btn-primary landing-submit">Verify Email</button>
+
+        <div class="auth-inline-actions">
+          <button id="verify-resend" type="button" class="btn-secondary">Resend Code</button>
+          <button id="verify-back" type="button" class="btn-secondary">Back To Sign In</button>
+        </div>
+      </section>
+
+      <section id="server-panel" class="landing-panel auth-section-divider hidden">
+        <label id="server-id-label" for="server-id">Server ID</label>
+        <input id="server-id" maxlength="30" placeholder="Optional: emerald-tiger-4821" autocomplete="off" />
+
+        <section id="server-recommendation" class="server-recommendation hidden" aria-live="polite">
+          <div class="server-recommendation-title">Jump back into a server</div>
+          <div id="server-recommendation-list" class="server-recommendation-list"></div>
+          <p class="server-recommendation-note">Pick a recent server to fill the ID instantly, or ignore this and create a fresh one.</p>
+        </section>
+
+        <button id="continue-btn" type="button" class="btn-primary landing-submit">Join Server</button>
+        <p id="entry-hint" class="entry-hint">Leave the server ID blank to create your own server.</p>
+      </section>
+
+      <div id="entry-result" class="result-box"></div>
+    </main>
+
+    <script>
+      const output = document.getElementById('entry-result');
+      const landingTitle = document.getElementById('landing-title');
+      const subtitle = document.getElementById('entry-subtitle');
+      const serverIdInput = document.getElementById('server-id');
+      const serverIdLabel = document.getElementById('server-id-label');
+      const entryHint = document.getElementById('entry-hint');
+      const continueButton = document.getElementById('continue-btn');
+      const authSubmitButton = document.getElementById('auth-submit');
+      const verifySubmitButton = document.getElementById('verify-submit');
+      const verifyResendButton = document.getElementById('verify-resend');
+      const verifyBackButton = document.getElementById('verify-back');
+      const recommendationBox = document.getElementById('server-recommendation');
+      const recommendationList = document.getElementById('server-recommendation-list');
+      const accountSummary = document.getElementById('account-summary');
+      const accountName = document.getElementById('account-name');
+      const accountEmail = document.getElementById('account-email');
+      const logoutButton = document.getElementById('logout-btn');
+      const authPanel = document.getElementById('auth-panel');
+      const verifyPanel = document.getElementById('verify-panel');
+      const verificationNote = document.getElementById('verification-note');
+      const serverPanel = document.getElementById('server-panel');
+      const modeLoginButton = document.getElementById('mode-login');
+      const modeRegisterButton = document.getElementById('mode-register');
+      const registerUsernameLabel = document.getElementById('register-username-label');
+      const registerUsernameInput = document.getElementById('register-username');
+      const identifierLabel = document.getElementById('identifier-label');
+      const identifierInput = document.getElementById('identifier');
+      const emailLabel = document.getElementById('email-label');
+      const emailInput = document.getElementById('email');
+      const passwordInput = document.getElementById('password');
+      const confirmPasswordLabel = document.getElementById('confirm-password-label');
+      const confirmPasswordInput = document.getElementById('confirm-password');
+      const verifyEmailInput = document.getElementById('verify-email');
+      const verifyCodeInput = document.getElementById('verify-code');
+      const authCard = document.querySelector('.auth-card');
+      const entryQuery = new URLSearchParams(window.location.search);
+      const lockedServerId = (entryQuery.get('server') || '').trim();
+
+      const state = {
+        authMode: 'login',
+        user: null,
+        hideTimer: null,
+        servers: typeof window.getCachedServers === 'function' ? window.getCachedServers() : [],
+        pendingVerificationEmail: ''
+      };
+
+      function escapeHtml(value) {
+        return String(value || '').replace(/[&<>"']/g, (char) => ({
+          '&': '&amp;',
+          '<': '&lt;',
+          '>': '&gt;',
+          '"': '&quot;',
+          "'": '&#39;'
+        }[char] || char));
+      }
+
+      function isLikelyEmail(value) {
+        return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim());
+      }
+
+      function mapError(code, data = null) {
+        const key = String(code || '').trim();
+        const fallbackMessages = {
+          conflict: 'That account already exists. Try signing in instead.',
+          email_taken: 'That email address is already in use.',
+          username_taken: 'That username is already in use.',
+          invalid_credentials: 'Invalid email, username, or password.',
+          invalid_refresh_token: 'Your session has expired. Please sign in again.',
+          invalid_request: 'Please check the form and try again.',
+          invalid_input: 'Please check the code and email, then try again.',
+          invalid_code: 'Incorrect code. Try again.',
+          otp_expired: 'That code expired. Request a new one.',
+          otp_not_found: 'No active verification code. Request a new one.',
+          too_many_attempts: 'Too many incorrect codes. Request a new one.',
+          resend_too_soon: 'Please wait before requesting a new code.',
+          email_send_failed: 'Unable to send verification code right now.',
+          email_unavailable: 'Email verification is not available right now.',
+          already_verified: 'That account is already verified. Please sign in.',
+          user_not_found: 'We could not find that account.',
+          rate_limited: 'Too many attempts. Please wait and try again.',
+          unauthorized: 'Please sign in before continuing.',
+          server_not_found: 'That server could not be found.',
+          banned_from_server: 'You are banned from that server.',
+          email_not_verified: 'Please verify your email before signing in.'
+        };
+
+        const message = String(data?.message || '').trim();
+        if (message) {
+          if (key === 'resend_too_soon' && Number(data?.retryAfterSeconds) > 0) {
+            return `${message} Try again in ${data.retryAfterSeconds}s.`;
+          }
+          return message;
+        }
+
+        return fallbackMessages[key] || key || 'Something went wrong. Please try again.';
+      }
+
+      function getCachedServersSafe() {
+        return typeof window.getCachedServers === 'function' ? window.getCachedServers() : state.servers;
+      }
+
+      function setRecommendedServers(servers) {
+        state.servers = Array.isArray(servers) ? servers : [];
+        renderRecommendations();
+      }
+
+      function mergeRecommendedServer(server) {
+        const next = [...getCachedServersSafe(), server];
+        if (typeof window.cacheServers === 'function') {
+          window.cacheServers(next);
+          state.servers = window.getCachedServers();
+        } else {
+          state.servers = next;
+        }
+        renderRecommendations();
+      }
+
+      function clearRecommendedServers() {
+        state.servers = [];
+        if (typeof window.cacheServers === 'function') {
+          window.cacheServers([]);
+        }
+        renderRecommendations();
+      }
+
+      function setVerificationContext(email = '') {
+        state.pendingVerificationEmail = String(email || '').trim().toLowerCase();
+        verifyEmailInput.value = state.pendingVerificationEmail;
+      }
+
+      function openVerificationMode({ email = '', message = '' } = {}) {
+        setVerificationContext(email);
+        verifyCodeInput.value = '';
+        setAuthMode('verify');
+        output.textContent = message || (state.pendingVerificationEmail
+          ? `Enter the 6-digit code we sent to ${state.pendingVerificationEmail}.`
+          : 'Enter your email and the 6-digit verification code we sent you.');
+      }
+
+      function showRecommendations() {
+        if (!state.user || lockedServerId || !state.servers.length) return;
+        recommendationBox.classList.remove('hidden');
+      }
+
+      function hideRecommendations() {
+        recommendationBox.classList.add('hidden');
+      }
+
+      function scheduleHideRecommendations() {
+        window.clearTimeout(state.hideTimer);
+        state.hideTimer = window.setTimeout(hideRecommendations, 140);
+      }
+
+      function cancelHideRecommendations() {
+        window.clearTimeout(state.hideTimer);
+      }
+
+      function setAuthMode(mode) {
+        state.authMode = mode === 'register' ? 'register' : mode === 'verify' ? 'verify' : 'login';
+        const isRegister = state.authMode === 'register';
+        const isVerify = state.authMode === 'verify';
+
+        modeLoginButton.classList.toggle('active', !isRegister && !isVerify);
+        modeRegisterButton.classList.toggle('active', isRegister);
+        modeLoginButton.setAttribute('aria-pressed', String(!isRegister && !isVerify));
+        modeRegisterButton.setAttribute('aria-pressed', String(isRegister));
+
+        registerUsernameLabel.classList.toggle('hidden', !isRegister);
+        registerUsernameInput.classList.toggle('hidden', !isRegister);
+        emailLabel.classList.toggle('hidden', !isRegister);
+        emailInput.classList.toggle('hidden', !isRegister);
+        confirmPasswordLabel.classList.toggle('hidden', !isRegister);
+        confirmPasswordInput.classList.toggle('hidden', !isRegister);
+        identifierLabel.classList.toggle('hidden', isRegister);
+        identifierInput.classList.toggle('hidden', isRegister);
+
+        passwordInput.setAttribute('autocomplete', isRegister ? 'new-password' : 'current-password');
+        authSubmitButton.textContent = isRegister ? 'Create Account' : 'Sign In';
+        renderView();
+      }
+
+      function renderView() {
+        const isAuthenticated = Boolean(state.user && state.user.id);
+        const isRegister = state.authMode === 'register';
+        const isVerify = state.authMode === 'verify';
+
+        authPanel.classList.toggle('hidden', isAuthenticated || isVerify);
+        verifyPanel.classList.toggle('hidden', isAuthenticated || !isVerify);
+        serverPanel.classList.toggle('hidden', !isAuthenticated);
+        accountSummary.classList.toggle('hidden', !isAuthenticated);
+
+        if (isAuthenticated) {
+          landingTitle.textContent = `Welcome, ${state.user.username || 'User'}`;
+          subtitle.textContent = lockedServerId
+            ? `Your account is ready. Join ${lockedServerId} when you are ready.`
+            : 'Create a fresh server or join one you already know using its server ID.';
+          accountName.textContent = state.user.username || 'Signed in';
+          accountEmail.textContent = state.user.email || 'Authenticated account';
+        } else if (isVerify) {
+          landingTitle.textContent = 'Verify Your Email';
+          const verifyText = state.pendingVerificationEmail
+            ? `Enter the 6-digit code we sent to ${state.pendingVerificationEmail}.`
+            : 'Enter your email and the 6-digit code we sent you to finish creating your account.';
+          subtitle.textContent = lockedServerId
+            ? `${verifyText} Once verified, you can join ${lockedServerId}.`
+            : verifyText;
+          verificationNote.textContent = state.pendingVerificationEmail
+            ? `We emailed a one-time code to ${state.pendingVerificationEmail}.`
+            : 'Use the code from your email to verify your Om Chat account.';
+          accountName.textContent = 'Signed in';
+          accountEmail.textContent = '';
+        } else {
+          landingTitle.textContent = isRegister ? 'Create Your Om Chat Account' : 'Sign In To Om Chat';
+          subtitle.textContent = lockedServerId
+            ? `Sign in or create an account before you join ${lockedServerId}.`
+            : 'Create an account or sign in before you can create or join a server.';
+          accountName.textContent = 'Signed in';
+          accountEmail.textContent = '';
+        }
+
+        if (lockedServerId) {
+          serverIdInput.value = lockedServerId;
+          serverIdInput.readOnly = true;
+          serverIdInput.classList.add('hidden');
+          serverIdLabel.classList.add('hidden');
+          recommendationBox.classList.add('hidden');
+          entryHint.textContent = isAuthenticated
+            ? 'This invite already contains the server. Click below to join it.'
+            : 'You will be able to join this server after signing in.';
+          continueButton.textContent = 'Join This Server';
+          return;
+        }
+
+        serverIdInput.readOnly = false;
+        serverIdInput.classList.remove('hidden');
+        serverIdLabel.classList.remove('hidden');
+        entryHint.textContent = isAuthenticated
+          ? 'Leave the server ID blank to create your own server.'
+          : 'Sign in first, then you can create a new server or join an existing one.';
+        continueButton.textContent = 'Continue To Server';
+        renderRecommendations();
+      }
+
+      function getCsrfToken() {
+        const runtime = typeof window.getOmChatRuntime === 'function'
+          ? window.getOmChatRuntime()
+          : (window.__OMCHAT_RUNTIME__ || {});
+        return String(runtime?.csrfToken || '').trim();
+      }
+
+      async function refreshCsrfToken() {
+        const response = await fetch('/api/runtime', {
+          method: 'GET',
+          credentials: 'same-origin',
+          cache: 'no-store'
+        });
+        const data = await response.json().catch(() => null);
+        const token = String(data?.runtime?.csrfToken || '').trim();
+        if (!token) return '';
+
+        if (!window.__OMCHAT_RUNTIME__ || typeof window.__OMCHAT_RUNTIME__ !== 'object') {
+          window.__OMCHAT_RUNTIME__ = {};
+        }
+        window.__OMCHAT_RUNTIME__.csrfToken = token;
+        return token;
+      }
+
+      async function requestJson(url, options = {}, allowRetry = true) {
+        const isWrite = String(options?.method || 'GET').toUpperCase() !== 'GET';
+        const headers = new Headers(options.headers || {});
+        const csrfToken = getCsrfToken();
+        if (isWrite && csrfToken && !headers.has('x-csrf-token')) {
+          headers.set('x-csrf-token', csrfToken);
+        }
+
+        const response = await fetch(url, {
+          ...options,
+          headers,
+          credentials: options.credentials || 'same-origin'
+        });
+        const data = await response.json().catch(() => null);
+
+        if (
+          allowRetry
+          && isWrite
+          && response.status === 403
+          && String(data?.error || '').trim() === 'csrf_invalid'
+        ) {
+          const freshToken = await refreshCsrfToken();
+          if (freshToken) {
+            const retryHeaders = new Headers(options.headers || {});
+            retryHeaders.set('x-csrf-token', freshToken);
+            return requestJson(url, {
+              ...options,
+              headers: retryHeaders,
+              credentials: options.credentials || 'same-origin'
+            }, false);
+          }
+        }
+
+        return { response, data };
+      }
+
+      async function loadSession() {
+        const { response, data } = await requestJson('/api/auth/me');
+        state.user = response.ok && data?.user ? data.user : null;
+
+        if (state.user?.id) {
+          setVerificationContext('');
+        }
+
+        renderView();
+
+        if (!state.user) {
+          clearRecommendedServers();
+          return;
+        }
+
+        await loadRecommendations();
+      }
+
+      async function loadRecommendations() {
+        if (!state.user?.id) {
+          clearRecommendedServers();
+          return;
+        }
+
+        try {
+          const { response, data } = await requestJson('/api/servers/mine');
+          const servers = response.ok && Array.isArray(data?.servers) ? data.servers : [];
+
+          if (typeof window.cacheServers === 'function') {
+            window.cacheServers(servers);
+            setRecommendedServers(window.getCachedServers());
+            return;
+          }
+
+          setRecommendedServers(servers);
+        } catch (_) {
+          clearRecommendedServers();
+        }
+      }
+
+      async function submitAuthForm() {
+        output.textContent = '';
+        authSubmitButton.disabled = true;
+
+        try {
+          if (state.authMode === 'register') {
+            const username = registerUsernameInput.value.trim();
+            const email = emailInput.value.trim();
+            const password = passwordInput.value;
+            const confirmPassword = confirmPasswordInput.value;
+
+            if (!username || !email || !password) {
+              output.textContent = 'Username, email, and password are required.';
+              return;
+            }
+
+            if (password !== confirmPassword) {
+              output.textContent = 'Your passwords do not match.';
+              return;
+            }
+
+            const registerResult = await requestJson('/api/register', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ username, email, password })
+            });
+
+            if (!registerResult.response.ok) {
+              output.textContent = mapError(registerResult.data?.error, registerResult.data);
+              return;
+            }
+
+            const registerMessage = String(registerResult.data?.message || '').trim();
+            if (/check your email/i.test(registerMessage)) {
+              passwordInput.value = '';
+              confirmPasswordInput.value = '';
+              openVerificationMode({
+                email,
+                message: `We sent a 6-digit code to ${email}. Enter it below to verify your account.`
+              });
+              return;
+            }
+
+            const loginResult = await requestJson('/api/login', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ identifier: email, password })
+            });
+
+            if (!loginResult.response.ok) {
+              output.textContent = mapError(loginResult.data?.error, loginResult.data) || 'Your account was created, but automatic sign-in failed.';
+              return;
+            }
+
+            output.textContent = 'Account created successfully.';
+          } else {
+            const identifier = identifierInput.value.trim();
+            const password = passwordInput.value;
+
+            if (!identifier || !password) {
+              output.textContent = 'Email or username and password are required.';
+              return;
+            }
+
+            const loginResult = await requestJson('/api/login', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ identifier, password })
+            });
+
+            if (!loginResult.response.ok) {
+              if (loginResult.data?.error === 'email_not_verified') {
+                passwordInput.value = '';
+                openVerificationMode({
+                  email: String(loginResult.data?.email || '').trim() || (isLikelyEmail(identifier) ? identifier : ''),
+                  message: mapError(loginResult.data?.error, loginResult.data)
+                });
+                return;
+              }
+
+              output.textContent = mapError(loginResult.data?.error, loginResult.data);
+              return;
+            }
+
+            output.textContent = 'Signed in successfully.';
+          }
+
+          passwordInput.value = '';
+          confirmPasswordInput.value = '';
+          await loadSession();
+        } finally {
+          authSubmitButton.disabled = false;
+        }
+      }
+
+      async function submitOtpVerification() {
+        output.textContent = '';
+        verifySubmitButton.disabled = true;
+        verifyResendButton.disabled = true;
+        verifyBackButton.disabled = true;
+
+        try {
+          const email = verifyEmailInput.value.trim().toLowerCase();
+          const code = verifyCodeInput.value.trim();
+
+          if (!email || !code) {
+            output.textContent = 'Email and 6-digit verification code are required.';
+            return;
+          }
+
+          const verifyResult = await requestJson('/api/auth/verify-otp', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, code })
+          });
+
+          if (!verifyResult.response.ok) {
+            output.textContent = mapError(verifyResult.data?.error, verifyResult.data);
+            return;
+          }
+
+          verifyCodeInput.value = '';
+          output.textContent = 'Email verified successfully.';
+          await loadSession();
+        } finally {
+          verifySubmitButton.disabled = false;
+          verifyResendButton.disabled = false;
+          verifyBackButton.disabled = false;
+        }
+      }
+
+      async function resendOtpCode() {
+        output.textContent = '';
+        verifyResendButton.disabled = true;
+        verifySubmitButton.disabled = true;
+
+        try {
+          const email = verifyEmailInput.value.trim().toLowerCase();
+          if (!email) {
+            output.textContent = 'Enter your email first so we know where to resend the code.';
+            return;
+          }
+
+          const resendResult = await requestJson('/api/auth/resend-otp', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email })
+          });
+
+          if (!resendResult.response.ok) {
+            output.textContent = mapError(resendResult.data?.error, resendResult.data);
+            return;
+          }
+
+          setVerificationContext(email);
+          output.textContent = String(resendResult.data?.message || `Verification code sent to ${email}.`).trim();
+        } finally {
+          verifyResendButton.disabled = false;
+          verifySubmitButton.disabled = false;
+        }
+      }
+
+      async function continueToApp() {
+        output.textContent = '';
+
+        if (!state.user?.id) {
+          output.textContent = 'Please sign in before continuing.';
+          return;
+        }
+
+        continueButton.disabled = true;
+
+        try {
+          const serverId = serverIdInput.value.trim();
+          if (!serverId) {
+            const serverName = `${state.user.username}'s Server`;
+            const { response, data } = await requestJson('/api/servers/create', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ serverName, icon: 'OX' })
+            });
+
+            if (!response.ok) {
+              output.textContent = mapError(data?.error, data) || 'Unable to create your server.';
+              return;
+            }
+
+            if (data.server) {
+              mergeRecommendedServer(data.server);
+            }
+
+            window.location.href = `/app.html?server=${encodeURIComponent(data.serverId)}`;
+            return;
+          }
+
+          const { response, data } = await requestJson('/api/servers/join', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ serverId })
+          });
+
+          if (!response.ok) {
+            output.textContent = mapError(data?.error, data) || 'Unable to join that server.';
+            return;
+          }
+
+          if (data.server) {
+            mergeRecommendedServer(data.server);
+          }
+
+          window.location.href = `/app.html?server=${encodeURIComponent(data.id || data.serverId || serverId)}`;
+        } finally {
+          continueButton.disabled = false;
+        }
+      }
+
+      async function logout() {
+        logoutButton.disabled = true;
+
+        try {
+          await requestJson('/api/logout', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({})
+          });
+        } finally {
+          state.user = null;
+          setVerificationContext('');
+          registerUsernameInput.value = '';
+          identifierInput.value = '';
+          emailInput.value = '';
+          passwordInput.value = '';
+          confirmPasswordInput.value = '';
+          verifyCodeInput.value = '';
+          clearRecommendedServers();
+          output.textContent = 'Signed out successfully.';
+          window.clearDeviceIdentity?.();
+          setAuthMode('login');
+          renderView();
+          logoutButton.disabled = false;
+        }
+      }
+
+      function useRecommendedServer(server) {
+        serverIdInput.value = server.id || '';
+        serverIdInput.dispatchEvent(new Event('input', { bubbles: true }));
+        output.textContent = `Connecting to ${server.name || server.id}...`;
+        hideRecommendations();
+        window.setTimeout(() => continueToApp(), 90);
+      }
+
+      function renderRecommendations() {
+        recommendationList.innerHTML = '';
+
+        if (!state.user?.id || lockedServerId || !state.servers.length) {
+          hideRecommendations();
+          return;
+        }
+
+        showRecommendations();
+
+        for (const server of state.servers) {
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'server-suggestion-item';
+          button.innerHTML = `
+            <span class="server-suggestion-leading">
+              <span class="server-suggestion-icon">${escapeHtml((server.icon || server.name || 'O').slice(0, 2))}</span>
+              <span>
+                <span class="server-suggestion-name">${escapeHtml(server.name || 'Your server')}</span>
+                <span class="server-suggestion-meta">${escapeHtml(server.id || '')}</span>
+              </span>
+            </span>
+          `;
+          button.addEventListener('mousedown', (event) => {
+            event.preventDefault();
+            useRecommendedServer(server);
+          });
+          recommendationList.appendChild(button);
+        }
+      }
+
+      function handleVerifyBack() {
+        verifyCodeInput.value = '';
+        setAuthMode('login');
+        output.textContent = 'Sign in after you verify your email.';
+      }
+
+      authSubmitButton.addEventListener('click', submitAuthForm);
+      verifySubmitButton.addEventListener('click', submitOtpVerification);
+      verifyResendButton.addEventListener('click', resendOtpCode);
+      verifyBackButton.addEventListener('click', handleVerifyBack);
+      continueButton.addEventListener('click', continueToApp);
+      logoutButton.addEventListener('click', logout);
+      modeLoginButton.addEventListener('click', () => setAuthMode('login'));
+      modeRegisterButton.addEventListener('click', () => setAuthMode('register'));
+
+      [identifierInput, emailInput, passwordInput, confirmPasswordInput, registerUsernameInput].forEach((input) => {
+        input.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter' && !state.user) {
+            submitAuthForm();
+          }
+        });
+      });
+
+      [verifyEmailInput, verifyCodeInput].forEach((input) => {
+        input.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter' && !state.user) {
+            submitOtpVerification();
+          }
+        });
+      });
+
+      verifyCodeInput.addEventListener('input', () => {
+        verifyCodeInput.value = verifyCodeInput.value.replace(/\D/g, '').slice(0, 6);
+      });
+
+      serverIdInput.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' && state.user) {
+          continueToApp();
+        }
+      });
+
+      [serverIdInput].forEach((input) => {
+        input.addEventListener('focus', () => {
+          cancelHideRecommendations();
+          showRecommendations();
+        });
+        input.addEventListener('blur', scheduleHideRecommendations);
+      });
+
+      recommendationBox.addEventListener('mouseenter', cancelHideRecommendations);
+      recommendationBox.addEventListener('mouseleave', scheduleHideRecommendations);
+      recommendationBox.addEventListener('mousedown', cancelHideRecommendations);
+
+      document.addEventListener('click', (event) => {
+        if (!authCard.contains(event.target)) {
+          hideRecommendations();
+        }
+      });
+
+      setAuthMode('login');
+      loadSession().catch((error) => {
+        console.warn('[Om Chat] Failed to load session state:', error);
+        renderView();
+      });
+    </script>
+  </body>
+</html>
+

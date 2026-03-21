@@ -1,0 +1,51 @@
+/* Sidebar and nav */
+ytd-guide-entry-renderer:has(a[href^="/shorts"]),
+ytd-mini-guide-entry-renderer:has(a[href^="/shorts"]),
+ytd-guide-entry-renderer:has(a[title="Shorts"]),
+ytd-mini-guide-entry-renderer:has(a[title="Shorts"]),
+ytd-pivot-bar-item-renderer:has(a[href^="/shorts"]),
+yt-tab-shape:has(a[href^="/shorts"]),
+tp-yt-paper-tab:has(a[href^="/shorts"]),
+[tab-title="Shorts"] {
+  display: none !important;
+}
+
+/* Shorts shelves and sections */
+ytd-reel-shelf-renderer,
+ytd-rich-shelf-renderer[is-shorts],
+ytd-rich-shelf-renderer[shorts],
+ytd-rich-section-renderer:has(ytd-reel-shelf-renderer),
+ytd-rich-section-renderer:has(ytd-rich-shelf-renderer[is-shorts]),
+ytd-rich-section-renderer:has(ytd-rich-shelf-renderer[shorts]),
+ytd-rich-section-renderer:has(ytd-rich-grid-slim-media[is-short]),
+grid-shelf-view-model:has(a[href^="/shorts/"]) {
+  display: none !important;
+}
+
+/* Shorts cards across home, subscriptions, search, watch, history */
+ytd-rich-item-renderer:has(a[href^="/shorts/"]),
+ytd-rich-item-renderer:has(ytd-thumbnail-overlay-time-status-renderer[overlay-style="SHORTS"]),
+ytd-rich-item-renderer:has(span.ytd-thumbnail-overlay-time-status-renderer[aria-label="Shorts"]),
+ytd-grid-video-renderer:has(a[href^="/shorts/"]),
+ytd-grid-video-renderer:has(ytd-thumbnail-overlay-time-status-renderer[overlay-style="SHORTS"]),
+ytd-grid-video-renderer:has(span.ytd-thumbnail-overlay-time-status-renderer[aria-label="Shorts"]),
+ytd-video-renderer:has(a[href^="/shorts/"]),
+ytd-video-renderer:has(ytd-thumbnail-overlay-time-status-renderer[overlay-style="SHORTS"]),
+ytd-video-renderer:has(span.ytd-thumbnail-overlay-time-status-renderer[aria-label="Shorts"]),
+ytd-compact-video-renderer:has(a[href^="/shorts/"]),
+ytd-compact-video-renderer:has(ytd-thumbnail-overlay-time-status-renderer[overlay-style="SHORTS"]),
+ytd-playlist-panel-video-renderer:has(a[href^="/shorts/"]),
+ytd-shelf-renderer:has(a[href^="/shorts/"]),
+ytd-reel-item-renderer,
+ytd-shorts-lockup-view-model,
+ytd-rich-grid-slim-media[is-short] {
+  display: none !important;
+}
+
+/* Search and history filters/chips */
+ytd-search-filter-renderer:has(a[href^="/shorts"]),
+yt-chip-cloud-chip-renderer:has(a[href^="/shorts"]),
+yt-chip-cloud-filter-chip-renderer:has(a[href^="/shorts"]),
+[class*="ytChipBarViewModelChipWrapper"]:has([aria-label="Shorts"]) {
+  display: none !important;
+}

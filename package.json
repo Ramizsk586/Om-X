@@ -1,0 +1,159 @@
+{
+  "name": "om-x",
+  "productName": "Om-X",
+  "version": "2.5.0",
+  "description": "Om-X - AI Browser with Minecraft Server Integration",
+  "main": "main.js",
+  "author": "Sk Abdul Ramiz",
+  "license": "SEE LICENSE IN LICENSE",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Ramizsk586/Om-X.git"
+  },
+  "scripts": {
+    "start": "npm run rebuild:native:electron && electron .",
+    "dev": "npm run rebuild:native:electron && electron . --dev",
+    "build": "powershell -Command \"if (Test-Path .\\bin\\ngrok.exe) { Unblock-File .\\bin\\ngrok.exe }\" && electron-builder",
+    "omchat:start": "npm run rebuild:native:node && node Om-chat/server/index.js",
+    "omchat:ngrok": "npm run rebuild:native:node && node Om-chat/scripts/run-with-ngrok.js",
+    "omchat:local": "npm run rebuild:native:node && node Om-chat/server/index.js",
+    "omchat:public": "npm run rebuild:native:node && node Om-chat/scripts/run-with-ngrok.js",
+    "rebuild:native:electron": "electron-rebuild -f -o better-sqlite3",
+    "rebuild:native:node": "npm rebuild better-sqlite3"
+  },
+  "workspaces": [
+    "tools/ddg",
+    "tools/wiki"
+  ],
+  "dependencies": {
+    "@google/genai": "^1.44.0",
+    "@lmstudio/sdk": "^1.5.0",
+    "@modelcontextprotocol/sdk": "^1.27.1",
+    "@tavily/core": "^0.5.14",
+    "bcryptjs": "^3.0.2",
+    "better-sqlite3": "^12.8.0",
+    "cookie-session": "^2.0.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "electron-updater": "^6.8.3",
+    "express": "^5.2.1",
+    "groq-sdk": "^0.37.0",
+    "helmet": "^7.1.0",
+    "jsonwebtoken": "^9.0.3",
+    "jspdf": "^4.2.0",
+    "lowdb": "^3.0.0",
+    "mongoose": "^9.3.1",
+    "multer": "^1.4.5-lts.1",
+    "nanoid": "^5.0.7",
+    "nodemailer": "^8.0.3",
+    "resend": "^6.9.4",
+    "sarvamai": "^1.1.4",
+    "socket.io": "^4.8.3",
+    "zod": "4.3.6"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^4.0.3",
+    "@eslint/compat": "^1.2.4",
+    "@eslint/js": "^9.17.0",
+    "@eslint/json": "^0.13.1",
+    "@types/node": "^20.14.8",
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8",
+    "eslint": "^9.34.0",
+    "eslint-formatter-compact": "^8.40.0",
+    "globals": "^15.14.0"
+  },
+  "build": {
+    "appId": "com.omx.browser",
+    "productName": "Om-X.browser",
+    "protocols": [
+      {
+        "name": "HTTP Protocol",
+        "schemes": [
+          "http",
+          "https"
+        ]
+      }
+    ],
+    "fileAssociations": [
+      {
+        "ext": [
+          "html",
+          "htm",
+          "shtml",
+          "xhtml"
+        ],
+        "name": "HTML Document",
+        "role": "Viewer",
+        "mimeType": "text/html"
+      }
+    ],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "Ramizsk586",
+        "repo": "Om-X"
+      }
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "**/*",
+      "!dist/*",
+      "!**/*.ts",
+      "!**/*.map"
+    ],
+    "asarUnpack": [
+      "java/extension/**",
+      "bin/**"
+    ],
+    "extraResources": [
+      {
+        "from": "bin/ngrok.exe",
+        "to": "bin/ngrok.exe"
+      }
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icons/app.ico",
+      "signAndEditExecutable": false,
+      "legalTrademarks": "Om-X"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Om-X",
+      "deleteAppDataOnUninstall": false,
+      "perMachine": false
+    },
+    "mac": {
+      "target": "dmg",
+      "icon": "assets/icons/app.icns",
+      "category": "public.app-category.productivity",
+      "extendInfo": {
+        "CFBundleURLTypes": [
+          {
+            "CFBundleURLName": "Web URL",
+            "CFBundleURLSchemes": [
+              "http",
+              "https"
+            ]
+          }
+        ]
+      }
+    },
+    "linux": {
+      "target": "AppImage",
+      "icon": "assets/icons/icon.png",
+      "category": "WebBrowser",
+      "mimeTypes": [
+        "text/html",
+        "x-scheme-handler/http",
+        "x-scheme-handler/https"
+      ]
+    }
+  }
+}
