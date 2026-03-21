@@ -5,6 +5,33 @@
  */
 import { isBlocked } from './block.js';
 
+const GOOGLE_SUGGEST_URL = 'https://suggestqueries.google.com/complete/search?client=firefox&q=%s';
+const SUGGESTION_TIMEOUT_MS = 4000;
+const SUGGESTION_CACHE_SIZE = 50;
+const MIN_SUGGESTION_LENGTH = 2;
+const SEARCH_HISTORY_KEY = 'omx-search-history';
+const SEARCH_HISTORY_LIMIT = 30;
+const HISTORY_SUGGESTION_LIMIT = 5;
+
+const safeParseHistory = (value) => {
+    try {
+        const parsed = value ? JSON.parse(value) : [];
+        return Array.isArray(parsed) ? parsed.filter(item => typeof item === 'string') : [];
+    } catch (_) {
+        return [];
+    }
+};
+
+const loadSearchHistory = () => safeParseHistory(localStorage?.getItem?.(SEARCH_HISTORY_KEY));
+
+const persistSearchHistory = (history) => {
+    try {
+        localStorage?.setItem?.(SEARCH_HISTORY_KEY, JSON.stringify(history));
+    } catch (_) {
+        // ignore serialization issues
+    }
+};
+
 export function initSearchSystem({ tabManager, settingsAPI, HOME_URL }) {
     // Elements
     const searchOverlay = document.getElementById('search-overlay');
@@ -19,6 +46,8 @@ export function initSearchSystem({ tabManager, settingsAPI, HOME_URL }) {
     let selectedSuggestionIndex = -1;
     let suggestionAbortController = null;
     let focusRepairTimer = null;
+    const suggestionCache = new Map();
+    let searchHistory = loadSearchHistory();
     const DEFAULT_SEARCH_URL = 'https://www.google.com/search?q=%s';
 
     const isOverlayVisible = () => searchOverlay && !searchOverlay.classList.contains('hidden');
@@ -119,6 +148,49 @@ export function initSearchSystem({ tabManager, settingsAPI, HOME_URL }) {
         searchIconContainer.appendChild(img);
     };
 
+    const hideSuggestions = () => {
+        if (!suggestionsEl) return;
+        suggestionsEl.classList.add('hidden');
+        suggestionsEl.innerHTML = '';
+        selectedSuggestionIndex = -1;
+    };
+
+    const recordSearchHistory = (value) => {
+        const trimmed = String(value || '').trim();
+        if (!trimmed) return;
+        searchHistory = [trimmed, ...searchHistory.filter(item => item !== trimmed)].slice(0, SEARCH_HISTORY_LIMIT);
+        persistSearchHistory(searchHistory);
+    };
+
+    const getHistoryMatches = (value = '') => {
+        if (!value) return searchHistory.slice(0, HISTORY_SUGGESTION_LIMIT);
+        const needle = value.toLowerCase();
+        return searchHistory
+            .filter(item => item.toLowerCase().includes(needle))
+            .slice(0, HISTORY_SUGGESTION_LIMIT);
+    };
+
+    const showHistorySuggestions = (value) => {
+        const matches = getHistoryMatches(value);
+        if (!matches.length) return false;
+        renderSuggestions(matches, {
+            sourceLabel: navigator.onLine ? 'Recent searches' : 'Offline history',
+            forceDefaultEngine: true
+        });
+        return true;
+    };
+
+    const updateOnlineState = () => {
+        if (!overlayInput) return;
+        if (navigator.onLine) {
+            overlayInput.title = '';
+            overlayInput.classList.remove('search-offline');
+        } else {
+            overlayInput.title = 'Offline: only saved searches are available';
+            overlayInput.classList.add('search-offline');
+        }
+    };
+
     const debounce = (func, wait) => {
         let timeout;
         return function executedFunction(...args) {
@@ -146,8 +218,7 @@ export function initSearchSystem({ tabManager, settingsAPI, HOME_URL }) {
             searchOverlay.classList.remove('hidden');
             overlayInput.value = '';
             selectedSuggestionIndex = -1;
-            suggestionsEl.classList.add('hidden');
-            suggestionsEl.innerHTML = '';
+            hideSuggestions();
 
             ensureOverlayInputReady({ attempts: 6, delayMs: 70 });
 
@@ -170,11 +241,14 @@ export function initSearchSystem({ tabManager, settingsAPI, HOME_URL }) {
             searchIconContainer.innerHTML = DEFAULT_ICON_HTML;
             overlayInput.placeholder = def ? `Search ${def.name} or type address` : 'Search or enter address';
         }
+        updateOnlineState();
     };
 
     const handleSearchSubmit = () => {
         let query = overlayInput.value.trim();
         if (!query) return;
+
+        recordSearchHistory(query);
 
         const engine = activeSearchEngine;
         showOverlay(false);
@@ -232,9 +306,10 @@ export function initSearchSystem({ tabManager, settingsAPI, HOME_URL }) {
 
     const updateKeywordSuggestions = (val) => {
         if (!val.startsWith('@')) {
-            suggestionsEl.classList.add('hidden');
+            hideSuggestions();
             return false;
         }
+        if (!suggestionsEl) return false;
         
         const term = val.substring(1).toLowerCase().split(' ')[0];
         const matches = (cachedSettings?.searchEngines || []).filter(e => e.keyword && e.keyword.startsWith(term));
@@ -272,31 +347,91 @@ export function initSearchSystem({ tabManager, settingsAPI, HOME_URL }) {
     };
 
     const getSuggestions = debounce(async (q) => {
-        if (!q || q.startsWith('@')) return;
+        const value = String(q || '').trim();
+        if (!suggestionsEl || !isOverlayVisible()) return;
 
-        if (suggestionAbortController) suggestionAbortController.abort();
+        if (!value) {
+            if (searchHistory.length) {
+                renderSuggestions(searchHistory.slice(0, HISTORY_SUGGESTION_LIMIT), {
+                    sourceLabel: 'Recent searches',
+                    forceDefaultEngine: true
+                });
+            } else {
+                hideSuggestions();
+            }
+            return;
+        }
+
+        if (value.startsWith('@') || value.length < MIN_SUGGESTION_LENGTH) {
+            hideSuggestions();
+            return;
+        }
+
+        if (!navigator.onLine) {
+            if (!showHistorySuggestions(value)) hideSuggestions();
+            return;
+        }
+
+        if (suggestionCache.has(value)) {
+            renderSuggestions(suggestionCache.get(value));
+            return;
+        }
+
+        if (suggestionAbortController) {
+            suggestionAbortController.abort();
+        }
         suggestionAbortController = new AbortController();
+        const timeoutId = setTimeout(() => suggestionAbortController?.abort(), SUGGESTION_TIMEOUT_MS);
 
         try {
-            const res = await fetch(`https://suggestqueries.google.com/complete/search?client=firefox&q=${encodeURIComponent(q)}`, {
-                signal: suggestionAbortController.signal
+            const res = await fetch(GOOGLE_SUGGEST_URL.replace('%s', encodeURIComponent(value)), {
+                signal: suggestionAbortController.signal,
+                headers: { 'Accept': 'application/json' }
             });
+            if (!res.ok) throw new Error(`Suggestion failed (${res.status})`);
             const data = await res.json();
-            const suggestions = data[1] || [];
-            renderSuggestions(suggestions);
-        } catch (e) {
-            if (e.name !== 'AbortError') console.warn("Suggestions fetch failed", e);
+            const suggestions = Array.isArray(data[1]) ? data[1].slice(0, HISTORY_SUGGESTION_LIMIT) : [];
+            if (suggestions.length) {
+                suggestionCache.set(value, suggestions);
+                if (suggestionCache.size > SUGGESTION_CACHE_SIZE) {
+                    const oldestKey = suggestionCache.keys().next().value;
+                    suggestionCache.delete(oldestKey);
+                }
+                renderSuggestions(suggestions);
+            } else if (!showHistorySuggestions(value)) {
+                hideSuggestions();
+            }
+        } catch (error) {
+            if (error.name !== 'AbortError') {
+                console.warn('Suggestions fetch failed', error);
+            }
+            if (!showHistorySuggestions(value)) {
+                hideSuggestions();
+            }
+        } finally {
+            clearTimeout(timeoutId);
+            suggestionAbortController = null;
         }
     }, 160);
 
-    const renderSuggestions = (list) => {
-        if (list.length === 0) {
-            suggestionsEl.classList.add('hidden');
+    const renderSuggestions = (list, { sourceLabel, forceDefaultEngine = false } = {}) => {
+        if (!suggestionsEl) return;
+        if (!Array.isArray(list) || list.length === 0) {
+            hideSuggestions();
             return;
         }
-        
+
         suggestionsEl.innerHTML = '';
-        list.slice(0, 6).forEach((text, index) => {
+        if (sourceLabel) {
+            const label = document.createElement('div');
+            label.className = 'suggestion-source-label';
+            label.textContent = sourceLabel;
+            label.style.cssText = 'font-size:11px; opacity:0.6; padding:6px 12px; border-bottom:1px solid rgba(255,255,255,0.08);';
+            suggestionsEl.appendChild(label);
+        }
+
+        const trimmed = list.slice(0, HISTORY_SUGGESTION_LIMIT);
+        trimmed.forEach((text, index) => {
             const div = document.createElement('div');
             div.className = 'suggestion-item';
             const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -310,6 +445,9 @@ export function initSearchSystem({ tabManager, settingsAPI, HOME_URL }) {
             div.appendChild(icon);
             div.appendChild(label);
             div.onclick = () => {
+                if (forceDefaultEngine) {
+                    setActiveEngine(null);
+                }
                 overlayInput.value = text;
                 handleSearchSubmit();
             };
@@ -327,9 +465,8 @@ export function initSearchSystem({ tabManager, settingsAPI, HOME_URL }) {
         }
         setActiveEngine(null);
         if (suggestionAbortController) suggestionAbortController.abort();
-        suggestionsEl.classList.add('hidden');
-        suggestionsEl.innerHTML = '';
-        selectedSuggestionIndex = -1;
+        suggestionCache.clear();
+        hideSuggestions();
         overlayInput.value = '';
         ensureOverlayInputReady({ attempts: 5, delayMs: 60 });
     };
@@ -344,6 +481,13 @@ export function initSearchSystem({ tabManager, settingsAPI, HOME_URL }) {
             return;
         }
         getSuggestions(val.trim());
+    });
+
+    overlayInput.addEventListener('focus', () => {
+        const val = overlayInput.value.trim();
+        if (!val && !showHistorySuggestions('')) {
+            hideSuggestions();
+        }
     });
     
     overlayInput.addEventListener('keydown', (e) => {
@@ -404,6 +548,9 @@ export function initSearchSystem({ tabManager, settingsAPI, HOME_URL }) {
         if (!document.hidden && isOverlayVisible()) ensureOverlayInputReady({ attempts: 6, delayMs: 70 });
     });
 
+    window.addEventListener('online', updateOnlineState);
+    window.addEventListener('offline', updateOnlineState);
+
     document.addEventListener('keydown', (event) => {
         if (!isOverlayVisible() || !overlayInput) return;
         if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
@@ -426,6 +573,7 @@ export function initSearchSystem({ tabManager, settingsAPI, HOME_URL }) {
     window.browserAPI.onSettingsUpdated((s) => { cachedSettings = s; });
 
     settingsAPI.get().then(s => { cachedSettings = s; });
+    updateOnlineState();
 
     return {
         show: (engine) => showOverlay(true, engine),

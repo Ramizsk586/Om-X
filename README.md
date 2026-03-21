@@ -73,6 +73,25 @@ A built-in enhancement addon for YouTube that provides content filtering, UI cus
 - MutationObserver for dynamic content filtering
 - requestAnimationFrame for performance-optimized DOM updates
 
+### YT Ad Blocker
+
+The project also includes a dedicated Chrome extension at `java/extension/yt-adblocker` focused specifically on YouTube ad removal.
+
+### YT Ad Blocker Features
+- **Network-level blocking**: Uses Manifest V3 declarative net request rules to block ad media, ad tracking requests, and common Google ad delivery domains
+- **DOM cleanup**: Removes overlays, promoted cards, masthead ads, in-feed ad renderers, and other injected ad containers from the page
+- **Auto-skip behavior**: Clicks visible skip buttons and fast-forwards unskippable in-stream ads when YouTube marks the player as ad-serving
+- **Strict mode**: Optionally removes additional promo/banner renderers for more aggressive filtering
+- **Live stats**: Tracks blocked elements and skipped ads through extension storage and shows them in the popup UI
+- **Popup controls**: Lets users enable/disable protection, reset counters, toggle strict mode, and enable debug logs
+
+### YT Ad Blocker Architecture
+- `manifest.json`: Registers the MV3 extension, YouTube host permissions, popup, service worker, and ruleset
+- `rules.json`: Defines declarative blocking rules for `googlevideo`, `doubleclick`, `googlesyndication`, and related ad endpoints
+- `content.js`: Watches YouTube with `MutationObserver`, removes ad nodes, clicks skip buttons, and handles in-player ad fast-forwarding
+- `background.js`: Stores extension state, validates trusted YouTube senders, updates ruleset state, and aggregates stats for the popup
+- `popup/popup.html`: Provides the small control panel for status, counters, strict mode, debug logging, and reset actions
+
 ---
 
 ## Mouse & Keyboard Interactions

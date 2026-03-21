@@ -88,6 +88,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   const youtubeAddonToggleUi = document.getElementById('youtube-addon-toggle-ui');
   const youtubeAddonToggleBw = document.getElementById('youtube-addon-toggle-bw');
   const youtubeAddonToggleCleanUi = document.getElementById('youtube-addon-toggle-cleanui');
+  const youtubeAddonOpenAdblocker = document.getElementById('youtube-addon-open-adblocker');
+  const youtubeAddonCloseAdblocker = document.getElementById('youtube-addon-close-adblocker');
+  const youtubeAddonAdblockerPopupWrap = document.getElementById('youtube-addon-adblocker-popup-wrap');
   const duckAiPanel = document.getElementById('duck-ai-panel');
   const duckAiToggleSidebar = document.getElementById('duck-ai-toggle-sidebar');
   
@@ -1469,6 +1472,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   const setYouTubeAddonVisible = (visible) => {
       if (!youtubeAddonPanel) return;
       youtubeAddonPanel.classList.toggle('hidden', !visible);
+      if (!visible && youtubeAddonAdblockerPopupWrap) {
+          youtubeAddonPanel.classList.remove('adblocker-popup-open');
+          youtubeAddonAdblockerPopupWrap.classList.remove('is-open');
+          youtubeAddonAdblockerPopupWrap.setAttribute('aria-hidden', 'true');
+      }
   };
 
   const setDuckAiPanelVisible = (visible) => {
@@ -1566,7 +1574,14 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (!youtubeAddonPanel) return;
       const yt = getYouTubeAddonSettings(cachedSettings);
       const canStayOpen = yt.enabled && isYouTubeUrl(getActiveTabUrl());
-      if (!canStayOpen) youtubeAddonPanel.classList.add('hidden');
+      if (!canStayOpen) {
+          youtubeAddonPanel.classList.add('hidden');
+          if (youtubeAddonAdblockerPopupWrap) {
+              youtubeAddonPanel.classList.remove('adblocker-popup-open');
+              youtubeAddonAdblockerPopupWrap.classList.remove('is-open');
+              youtubeAddonAdblockerPopupWrap.setAttribute('aria-hidden', 'true');
+          }
+      }
       if (youtubeAddonToggleShorts) youtubeAddonToggleShorts.checked = !!yt.hideShorts;
       if (youtubeAddonToggleHome) youtubeAddonToggleHome.checked = !!yt.hideHomeSuggestions;
       if (youtubeAddonToggleBlur) youtubeAddonToggleBlur.checked = !!yt.blurThumbnails;
@@ -1649,6 +1664,13 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (!youtubeAddonPanel || youtubeAddonPanel.dataset.bound === '1') return;
       youtubeAddonPanel.dataset.bound = '1';
 
+      const setInlineAdblockerPopupVisible = (visible) => {
+          if (!youtubeAddonAdblockerPopupWrap || !youtubeAddonPanel) return;
+          youtubeAddonPanel.classList.toggle('adblocker-popup-open', visible);
+          youtubeAddonAdblockerPopupWrap.classList.toggle('is-open', visible);
+          youtubeAddonAdblockerPopupWrap.setAttribute('aria-hidden', visible ? 'false' : 'true');
+      };
+
       youtubeAddonToggleShorts?.addEventListener('change', () => {
           persistYouTubeAddonPreferences({ hideShorts: youtubeAddonToggleShorts.checked });
       });
@@ -1672,6 +1694,19 @@ document.addEventListener('DOMContentLoaded', async () => {
               { cleanUi: youtubeAddonToggleCleanUi.checked },
               { reloadOnEnable: true }
           );
+      });
+
+      youtubeAddonOpenAdblocker?.addEventListener('click', (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          const isOpen = youtubeAddonAdblockerPopupWrap?.classList.contains('is-open') === true;
+          setInlineAdblockerPopupVisible(!isOpen);
+      });
+
+      youtubeAddonCloseAdblocker?.addEventListener('click', (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          setInlineAdblockerPopupVisible(false);
       });
   };
   setupYouTubeAddonEvents();

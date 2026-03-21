@@ -9,6 +9,9 @@ export class SidePanel {
     this.isCollapsed = false; // Default state: expanded
     this.isHidden = false; // New state: completely hidden
 
+    this.browserRoot = document.querySelector('.browser');
+    this.sidebarResizeObserver = null;
+
     this.dragState = {
       isDragging: false,
       hasMoved: false,
@@ -124,6 +127,14 @@ export class SidePanel {
         }));
         e.preventDefault();
       });
+
+      if (typeof ResizeObserver !== 'undefined') {
+        this.sidebarResizeObserver = new ResizeObserver((entries) => {
+          if (!entries.length) return;
+          this.applySidebarWidthVariable(entries[0].contentRect.width);
+        });
+        this.sidebarResizeObserver.observe(this.panel);
+      }
     }
 
     // Connect the Toggle Button
@@ -282,6 +293,8 @@ export class SidePanel {
         this.floatingToggle.classList.add('hidden');
       }
     }
+
+    this.applySidebarWidthVariable();
   }
 
   toggle(forceCollapsed) {
@@ -344,4 +357,18 @@ export class SidePanel {
     this.isHidden = false;
     this.isCollapsed = false;
     this.updatePanelState();
-  }}
+  }
+
+  applySidebarWidthVariable(overrideWidth) {
+    const browserRoot = this.browserRoot || document.querySelector('.browser');
+    if (!browserRoot || !this.panel) return;
+
+    const computedWidth = typeof overrideWidth === 'number'
+      ? overrideWidth
+      : parseFloat(window.getComputedStyle(this.panel).width) || 0;
+
+    browserRoot.style.setProperty('--sidebar-width', `${computedWidth}px`);
+    browserRoot.classList.toggle('sidebar-collapsed', this.isCollapsed && !this.isHidden);
+    browserRoot.classList.toggle('sidebar-hidden', this.isHidden);
+  }
+}

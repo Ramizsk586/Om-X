@@ -1076,6 +1076,35 @@
             <div class="site-tool-title">YouTube Addon</div>
             <div class="site-tool-subtitle">Focused controls for youtube.com</div>
           </div>
+          <div class="site-tool-header-actions">
+            <button
+              id="youtube-addon-open-adblocker"
+              class="site-tool-icon-btn"
+              type="button"
+              title="Open YT Ad Blocker Pro"
+              aria-label="Open YT Ad Blocker Pro"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="3" y="6" width="18" height="12" rx="3"></rect>
+                <polygon points="11,9.8 15.6,12 11,14.2 11,9.8" fill="currentColor" stroke="none"></polygon>
+                <line x1="6" y1="18" x2="18" y2="6"></line>
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div id="youtube-addon-adblocker-popup-wrap" class="site-tool-inline-panel" aria-hidden="true">
+          <div class="site-tool-inline-header">
+            <span class="site-tool-inline-title">YT Ad Blocker Pro</span>
+            <button id="youtube-addon-close-adblocker" class="site-tool-inline-close" type="button" aria-label="Close Ad Blocker Popup">Close</button>
+          </div>
+          <iframe
+            id="youtube-addon-adblocker-popup"
+            class="site-tool-inline-frame"
+            src="../../java/extension/yt-adblocker/popup/popup.html"
+            title="YT Ad Blocker Pro Popup"
+            loading="lazy"
+            referrerpolicy="no-referrer"
+          ></iframe>
         </div>
         <div class="site-tool-list">
           <label class="site-tool-row">

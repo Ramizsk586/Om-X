@@ -298,6 +298,14 @@ html[${cleanAttr}="1"] #columns {
 }
 html[${cleanAttr}="1"] body {
   overflow: hidden !important;
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+html[${cleanAttr}="1"]::-webkit-scrollbar,
+html[${cleanAttr}="1"] body::-webkit-scrollbar {
+  width: 0 !important;
+  height: 0 !important;
+  display: none !important;
 }
 html[${cleanAttr}="1"] ytd-masthead,
 html[${cleanAttr}="1"] #guide,
@@ -465,6 +473,51 @@ body {
     }
   }
 
+  _getYouTubeCleanUiRow() {
+    if (this._youtubeCleanUiRow) return this._youtubeCleanUiRow;
+    const toggle = document.getElementById('youtube-addon-toggle-cleanui');
+    this._youtubeCleanUiRow = toggle ? toggle.closest('.site-tool-row') : null;
+    return this._youtubeCleanUiRow;
+  }
+
+  _setYouTubeCleanUiToggleVisible(visible) {
+    const row = this._getYouTubeCleanUiRow();
+    if (!row) return;
+    row.classList.toggle('hidden', !visible);
+  }
+
+  async syncYouTubeCleanUiToggleVisibility(webview = null) {
+    const row = this._getYouTubeCleanUiRow();
+    if (!row) return;
+
+    const activeWebview = webview || this.getActiveWebview();
+    if (!activeWebview || !activeWebview.getURL) {
+      this._setYouTubeCleanUiToggleVisible(false);
+      return;
+    }
+
+    const url = activeWebview.getURL() || '';
+    if (!this.isYouTubeUrl(url)) {
+      this._setYouTubeCleanUiToggleVisible(false);
+      return;
+    }
+
+    let isFullscreen = false;
+    try {
+      isFullscreen = !!(await activeWebview.executeJavaScript(`
+        (function() {
+          try {
+            return !!(document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement);
+          } catch (e) {
+            return false;
+          }
+        })();
+      `, true));
+    } catch (e) {}
+
+    this._setYouTubeCleanUiToggleVisible(isFullscreen);
+  }
+
   getDuckAiChatConfig() {
     const cfg = this.settings?.aiChat || {};
     return {
@@ -559,12 +612,26 @@ body {
           updateHomeAttr();
           state.homeTimer = setInterval(updateHomeAttr, 750);
 
+                    const isFullscreenOrMaximized = () => {
+            return document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement || window.innerWidth === screen.width || window.innerHeight === screen.height;
+          };
+
           const updateCleanUiAttr = () => {
-            const shouldCleanUi = ${cfg.cleanUi} && isWatchPath();
+            const shouldCleanUi = ${cfg.cleanUi} && isWatchPath() && isFullscreenOrMaximized();
             root.setAttribute(cleanAttr, shouldCleanUi ? '1' : '0');
           };
           updateCleanUiAttr();
           state.cleanTimer = setInterval(updateCleanUiAttr, 750);
+
+          // Add event listeners for window state changes
+          const handleWindowStateChange = () => {
+            updateCleanUiAttr();
+          };
+          window.addEventListener('resize', handleWindowStateChange);
+          document.addEventListener('fullscreenchange', handleWindowStateChange);
+          document.addEventListener('webkitfullscreenchange', handleWindowStateChange);
+          document.addEventListener('mozfullscreenchange', handleWindowStateChange);
+          document.addEventListener('MSFullscreenChange', handleWindowStateChange);
 
           if (!style) {
             style = document.createElement('style');
@@ -1340,6 +1407,9 @@ body {
         try {
             await this.applyGlobalWebsiteCss(webview);
             await this.applyYouTubeAddon(webview);
+            if (this.activeTabId === tabState.id) {
+              this.syncYouTubeCleanUiToggleVisibility(webview);
+            }
             const currentUrl = webview.getURL ? webview.getURL() : '';
             if (this.isDuckAiChatUrl(currentUrl)) {
                 await this.applyDuckAiSidebarPreference(webview);
@@ -1582,6 +1652,9 @@ body {
       }
       window.dispatchEvent(new CustomEvent('website-visited', { detail: { id: tabState.id, url: e.url } }));
       if (this.activeTabId === tabState.id) this.onTabStateChange(e.url, false);
+      if (this.activeTabId === tabState.id) {
+        this.syncYouTubeCleanUiToggleVisibility(webview);
+      }
       setTimeout(() => {
         this.applyGlobalWebsiteCss(webview);
         this.applyYouTubeAddon(webview);
@@ -1600,6 +1673,9 @@ body {
     webview.addEventListener('did-navigate-in-page', (e) => {
       tabState.url = e.url;
       if (this.activeTabId === tabState.id) this.onTabStateChange(e.url, false);
+      if (this.activeTabId === tabState.id) {
+        this.syncYouTubeCleanUiToggleVisibility(webview);
+      }
       setTimeout(() => {
         this.applyGlobalWebsiteCss(webview);
         this.applyYouTubeAddon(webview);
@@ -1668,6 +1744,19 @@ body {
       const sourceId = String(event?.sourceId || '');
       if (level >= 2 || /renderer|home\.html|system\.html|server-operator\.html/i.test(sourceId)) {
         console.log('[Webview]', sourceId || 'unknown', `line ${event?.line || 0}:`, event?.message || '');
+      }
+    });
+
+    webview.addEventListener('enter-html-full-screen', () => {
+      if (this.activeTabId === tabState.id) {
+        const url = webview.getURL ? webview.getURL() : '';
+        this._setYouTubeCleanUiToggleVisible(this.isYouTubeUrl(url));
+      }
+    });
+
+    webview.addEventListener('leave-html-full-screen', () => {
+      if (this.activeTabId === tabState.id) {
+        this._setYouTubeCleanUiToggleVisible(false);
       }
     });
   }
@@ -1894,6 +1983,7 @@ body {
         }
         t.tabItem.classList.add('active');
         window.dispatchEvent(new CustomEvent('tab-activated', { detail: { id } }));
+        this.syncYouTubeCleanUiToggleVisibility(t.webview);
       } else {
         if (t.webview) { t.webview.classList.add('hidden'); t.webview.blur(); }
         this.scheduleSuspension(t);

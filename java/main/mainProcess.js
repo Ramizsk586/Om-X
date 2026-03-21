@@ -53,6 +53,107 @@ process.emitWarning = (warning, ...args) => {
 const TRUSTED_RENDERER_PROTOCOLS = new Set(['file:', 'http:', 'https:']);
 const TRUSTED_LOOPBACK_HOSTNAMES = new Set(['localhost', '127.0.0.1', '::1']);
 
+const GLOBAL_WEBPAGE_SCROLLBAR_CSS = `
+  :root, html, body, * {
+    scrollbar-width: thin !important;
+    scrollbar-color: rgba(255, 255, 255, 0.08) transparent !important;
+  }
+  ::-webkit-scrollbar {
+    width: 4px !important;
+    height: 4px !important;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent !important;
+    margin: 4px !important;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.08) !important;
+    border-radius: 100px !important;
+    opacity: 0 !important;
+    transition: opacity 0.25s ease, transform 0.25s ease !important;
+  }
+  ::-webkit-scrollbar-thumb:hover,
+  :hover::-webkit-scrollbar-thumb {
+    opacity: 1 !important;
+    transform: scaleY(1.05) !important;
+    background: rgba(255, 255, 255, 0.3) !important;
+  }
+  ::-webkit-scrollbar-corner {
+    background: transparent !important;
+  }
+`;
+
+const globalScrollbarObservedContents = new Set();
+const globalScrollbarCssKeys = new Map();
+const globalScrollbarPendingSyncs = new Map();
+
+function shouldApplyGlobalScrollbarToContents(contents) {
+  if (!contents || contents.isDestroyed?.()) return false;
+  if (mainWindow && contents.id === mainWindow.webContents.id) return false;
+  const type = String(contents.getType?.() || '').toLowerCase();
+  if (type === 'devtools' || type === 'backgroundpage' || type === 'utility') return false;
+  return typeof contents.insertCSS === 'function';
+}
+
+async function removeGlobalScrollbarCss(contents) {
+  if (!contents || contents.isDestroyed?.()) return;
+  const cssKey = globalScrollbarCssKeys.get(contents.id);
+  if (!cssKey || typeof contents.removeInsertedCSS !== 'function') return;
+  try {
+    await contents.removeInsertedCSS(cssKey);
+  } catch (_) {}
+  globalScrollbarCssKeys.delete(contents.id);
+}
+
+async function syncGlobalScrollbarForContents(contents) {
+  if (!shouldApplyGlobalScrollbarToContents(contents)) {
+    await removeGlobalScrollbarCss(contents);
+    return;
+  }
+
+  if (globalScrollbarCssKeys.has(contents.id)) {
+    return;
+  }
+
+  try {
+    const cssKey = await contents.insertCSS(GLOBAL_WEBPAGE_SCROLLBAR_CSS, { cssOrigin: 'user' });
+    globalScrollbarCssKeys.set(contents.id, cssKey);
+  } catch (error) {
+    console.warn('[Scrollbar Sync] CSS injection failed:', error?.message || error);
+  }
+}
+
+function attachGlobalScrollbarToContents(contents) {
+  if (!contents || contents.isDestroyed?.()) return;
+  if (globalScrollbarObservedContents.has(contents.id)) return;
+  globalScrollbarObservedContents.add(contents.id);
+
+  const scheduleSync = () => {
+    if (globalScrollbarPendingSyncs.has(contents.id)) return;
+    const timer = setImmediate(() => {
+      globalScrollbarPendingSyncs.delete(contents.id);
+      syncGlobalScrollbarForContents(contents).catch((error) => {
+        console.warn('[Scrollbar Sync] Sync failed:', error?.message || error);
+      });
+    });
+    globalScrollbarPendingSyncs.set(contents.id, timer);
+  };
+
+  contents.on('dom-ready', scheduleSync);
+  contents.on('did-navigate', scheduleSync);
+  contents.on('did-navigate-in-page', scheduleSync);
+  contents.on('did-frame-finish-load', scheduleSync);
+  contents.on('destroyed', () => {
+    const timer = globalScrollbarPendingSyncs.get(contents.id);
+    if (timer) clearImmediate(timer);
+    globalScrollbarPendingSyncs.delete(contents.id);
+    globalScrollbarObservedContents.delete(contents.id);
+    globalScrollbarCssKeys.delete(contents.id);
+  });
+
+  scheduleSync();
+}
+
 function resolveTrustedRendererFileRoots() {
   const roots = [];
   try { roots.push(path.resolve(app.getAppPath())); } catch (_) {}
@@ -85,9 +186,14 @@ function isTrustedLoopbackRendererUrl(urlObj) {
 
 const BUILTIN_EXTENSION_POLICIES = Object.freeze({
   'ad block': Object.freeze({
-    enabledByDefault: false,
+    enabledByDefault: true,
     runtimeCandidates: Object.freeze(['.']),
     allowedManifestVersions: new Set([2, 3])
+  }),
+  'yt-adblocker': Object.freeze({
+    enabledByDefault: false,
+    runtimeCandidates: Object.freeze(['.']),
+    allowedManifestVersions: new Set([3])
   })
 });
 
@@ -154,7 +260,11 @@ const OMX_ALLOWED_SCRIPT_ENTRY_EXTENSIONS = new Set(['.js', '.cjs', '.mjs']);
 const OMX_ALLOWED_RENDERER_ENTRY_EXTENSIONS = new Set(['.html', '.htm']);
 const OMX_ALLOW_UNSAFE_STANDALONE_ENTRY = String(process.env.OMX_ALLOW_UNSAFE_STANDALONE_ENTRY || '').trim() === '1';
 const PDF_VIEWER_REDIRECT_TTL_MS = 15000;
+const SERVER_STATUS_CACHE_TTL_MS = 1200;
+const GPU_INFO_CACHE_TTL_MS = 10000;
 const recentPdfViewerRedirects = new Map();
+const serverStatusCache = new Map();
+let gpuInfoCache = null;
 
 function normalizeHeaderValue(value) {
     if (Array.isArray(value)) return value.join('; ');
@@ -206,6 +316,49 @@ function shouldOpenPdfInViewer({ url, mimeType, filename, contentDisposition, ex
     if (isPdfMimeType(mimeType)) return true;
     if (String(path.extname(String(filename || '')).toLowerCase()) === '.pdf') return true;
     return isPdfUrl(url);
+}
+
+function invalidateServerStatusCache(name) {
+    if (name) {
+        serverStatusCache.delete(String(name).trim().toLowerCase());
+        return;
+    }
+    serverStatusCache.clear();
+}
+
+async function getCachedServerStatus(name, producer) {
+    const key = String(name || '').trim().toLowerCase();
+    const now = Date.now();
+    const cached = serverStatusCache.get(key);
+    if (cached && (now - cached.timestamp) < SERVER_STATUS_CACHE_TTL_MS) {
+        return cached.value;
+    }
+    const value = await producer();
+    serverStatusCache.set(key, { value, timestamp: now });
+    return value;
+}
+
+async function getCachedGpuInfoPayload() {
+    const now = Date.now();
+    if (gpuInfoCache && (now - gpuInfoCache.timestamp) < GPU_INFO_CACHE_TTL_MS) {
+        return { ...gpuInfoCache.value };
+    }
+
+    if (!app.isReady()) await app.whenReady();
+    let availableMemory = 0;
+    let source = 'fallback';
+    try {
+        const info = await app.getGPUInfo('complete');
+        availableMemory = extractGpuMemoryMB(info);
+        if (availableMemory > 0) source = 'electron';
+    } catch (_) {
+        // ignore and fall back
+    }
+    if (!availableMemory) availableMemory = 8000;
+
+    const value = { availableMemory, source };
+    gpuInfoCache = { value, timestamp: now };
+    return { ...value };
 }
 
 function isBrowserOpenableLocalFile(filePath) {
@@ -641,6 +794,7 @@ function syncLanRuntimeState() {
 }
 
 async function startLanServerInternal() {
+  invalidateServerStatusCache('lan');
   const LanServer = loadLanServerClass();
   if (!(lanServerInstance instanceof LanServer)) {
     lanServerInstance = global.omxLanServer instanceof LanServer
@@ -661,6 +815,7 @@ async function startLanServerInternal() {
 }
 
 async function stopLanServerInternal() {
+  invalidateServerStatusCache('lan');
   if (!lanServerInstance?.getStatus?.().isRunning) {
     syncLanRuntimeState();
     return false;
@@ -1061,6 +1216,7 @@ function getLanStatusPayload() {
 }
 
 async function startOmChatServerInternal(config = {}) {
+  invalidateServerStatusCache('omchat');
   const existingConfig = serverConfigs.omchat || {};
   const port = Number(config.port || existingConfig.port || OMX_OMCHAT_DEFAULT_PORT);
   const host = String(config.host || existingConfig.host || '0.0.0.0').trim() || '0.0.0.0';
@@ -1144,6 +1300,7 @@ async function startOmChatServerInternal(config = {}) {
 }
 
 async function stopOmChatServerInternal() {
+  invalidateServerStatusCache('omchat');
   if (!isServerProcessActive(omChatServerProcess)) {
     await stopOmChatNgrokTunnelInternal().catch(() => {});
     return { success: false, error: 'Om Chat server is not running.' };
@@ -1668,6 +1825,9 @@ const DEFAULT_SETTINGS = {
   },
   extensions: {
     'ad block': {
+      enabled: true
+    },
+    'yt-adblocker': {
       enabled: false
     }
   },
@@ -1910,9 +2070,75 @@ async function safeWriteJson(filePath, data) {
     }
 }
 
-const getStoredHistory = () => { try { return JSON.parse(fs.readFileSync(historyPath, 'utf8')); } catch(e) { return []; } };
-const getStoredBookmarks = () => { try { return JSON.parse(fs.readFileSync(bookmarksPath, 'utf8')); } catch(e) { return []; } };
-const getStoredDownloads = () => { try { return JSON.parse(fs.readFileSync(downloadsPath, 'utf8')); } catch(e) { return []; } };
+function readJsonArraySync(filePath) {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+function createCachedJsonListStore(filePath, maxItems) {
+  let loaded = false;
+  let items = [];
+  let flushTimer = null;
+  let flushPromise = Promise.resolve(true);
+
+  function cloneCurrentItems() {
+    return items.slice();
+  }
+
+  function ensureLoaded() {
+    if (loaded) return;
+    items = readJsonArraySync(filePath);
+    loaded = true;
+  }
+
+  function get() {
+    ensureLoaded();
+    return cloneCurrentItems();
+  }
+
+  function set(nextItems) {
+    ensureLoaded();
+    items = Array.isArray(nextItems) ? nextItems.slice(0, maxItems) : [];
+    return cloneCurrentItems();
+  }
+
+  async function flush() {
+    ensureLoaded();
+    const snapshot = cloneCurrentItems();
+    flushPromise = flushPromise
+      .catch(() => true)
+      .then(() => safeWriteJson(filePath, snapshot));
+    return flushPromise;
+  }
+
+  function scheduleFlush(delayMs = 150) {
+    ensureLoaded();
+    if (flushTimer) clearTimeout(flushTimer);
+    flushTimer = setTimeout(() => {
+      flushTimer = null;
+      void flush();
+    }, delayMs);
+  }
+
+  return {
+    get,
+    set,
+    scheduleFlush,
+    flush
+  };
+}
+
+const historyStore = createCachedJsonListStore(historyPath, 5000);
+const bookmarksStore = createCachedJsonListStore(bookmarksPath, 500);
+const downloadsStore = createCachedJsonListStore(downloadsPath, 100);
+
+const getStoredHistory = () => historyStore.get();
+const getStoredBookmarks = () => bookmarksStore.get();
+const getStoredDownloads = () => downloadsStore.get();
 
 function normalizeSiteSafetyUrl(rawUrl = '') {
   try {
@@ -2400,13 +2626,15 @@ ipcMain.handle('bookmarks-add', async (_event, bookmark = {}) => {
   } else {
     list.unshift(base);
   }
-  await safeWriteJson(bookmarksPath, list.slice(0, 500));
-  return list;
+  const nextList = bookmarksStore.set(list);
+  bookmarksStore.scheduleFlush();
+  return nextList;
 });
 ipcMain.handle('bookmarks-delete', async (_event, id) => {
   const list = getStoredBookmarks().filter((item) => item.id !== id);
-  await safeWriteJson(bookmarksPath, list.slice(0, 500));
-  return list;
+  const nextList = bookmarksStore.set(list);
+  bookmarksStore.scheduleFlush();
+  return nextList;
 });
 
 ipcMain.handle('history-get', () => getStoredHistory());
@@ -2422,17 +2650,20 @@ ipcMain.handle('history-push', async (_event, item = {}) => {
     timestamp: Number(item.timestamp || Date.now())
   };
   list.unshift(entry);
-  await safeWriteJson(historyPath, list.slice(0, 5000));
-  return list;
+  const nextList = historyStore.set(list);
+  historyStore.scheduleFlush();
+  return nextList;
 });
 ipcMain.handle('history-delete', async (_event, timestamp) => {
   const ts = Number(timestamp);
   const list = getStoredHistory().filter((item) => Number(item.timestamp) !== ts);
-  await safeWriteJson(historyPath, list.slice(0, 5000));
-  return list;
+  const nextList = historyStore.set(list);
+  historyStore.scheduleFlush();
+  return nextList;
 });
 ipcMain.handle('history-clear', async () => {
-  await safeWriteJson(historyPath, []);
+  historyStore.set([]);
+  await historyStore.flush();
   return true;
 });
 
@@ -2453,7 +2684,8 @@ const resolveDownloadPath = (id) => {
 ipcMain.handle('downloads-get', () => getStoredDownloads());
 
 ipcMain.handle('downloads-clear', async () => {
-  await safeWriteJson(downloadsPath, []);
+  downloadsStore.set([]);
+  await downloadsStore.flush();
   return true;
 });
 
@@ -2532,18 +2764,7 @@ ipcMain.handle('downloads-start', async (event, url, options = {}) => {
 });
 
 ipcMain.handle('llama:get-gpu-info', async () => {
-  if (!app.isReady()) await app.whenReady();
-  let availableMemory = 0;
-  let source = 'fallback';
-  try {
-    const info = await app.getGPUInfo('complete');
-    availableMemory = extractGpuMemoryMB(info);
-    if (availableMemory > 0) source = 'electron';
-  } catch (_) {
-    // ignore and fall back
-  }
-  if (!availableMemory) availableMemory = 8000;
-  return { availableMemory, source };
+  return getCachedGpuInfoPayload();
 });
 
 ipcMain.handle('mcp:start-server', async (_event, config = {}) => {
@@ -2633,24 +2854,26 @@ ipcMain.handle('omchat:stop-server', async (event) => {
 ipcMain.handle('server:get-status', async (_event, name) => {
   const serverName = String(name || '').trim().toLowerCase();
   if (serverName === 'lan') {
-    return getLanStatusPayload();
+    return getCachedServerStatus('lan', async () => getLanStatusPayload());
   }
   if (serverName === 'omchat') {
-    return getOmChatStatusPayload();
+    return getCachedServerStatus('omchat', () => getOmChatStatusPayload());
   }
   if (serverName === 'llama') {
-    const status = await getLlamaStatusPayload();
+    const status = await getCachedServerStatus('llama', () => getLlamaStatusPayload());
     return { success: true, status };
   }
   if (!serverLogs[serverName]) {
     return { success: false, error: 'Unknown server.' };
   }
-  const status = getServerStatusPayload(serverName);
-  const readinessHost = status.config?.launchHost || status.config?.localHost || status.config?.host;
-  const ready = readinessHost && status.config?.port
-    ? await checkTcpPort(readinessHost, status.config.port)
-    : false;
-  return { success: true, status: { ...status, running: status.running && ready, ready } };
+  return getCachedServerStatus(serverName, async () => {
+    const status = getServerStatusPayload(serverName);
+    const readinessHost = status.config?.launchHost || status.config?.localHost || status.config?.host;
+    const ready = readinessHost && status.config?.port
+      ? await checkTcpPort(readinessHost, status.config.port)
+      : false;
+    return { success: true, status: { ...status, running: status.running && ready, ready } };
+  });
 });
 
 ipcMain.handle('server:get-logs', async (_event, name) => {
@@ -2662,6 +2885,7 @@ ipcMain.handle('server:get-logs', async (_event, name) => {
 });
 
 ipcMain.handle('llama:start-server', async (_event, config = {}) => {
+  invalidateServerStatusCache('llama');
   const existingConfig = serverConfigs.llama || {};
   const executable = String(config.executable || existingConfig.executable || '').trim();
   const model = String(config.model || '').trim();
@@ -2751,6 +2975,7 @@ ipcMain.handle('llama:start-server', async (_event, config = {}) => {
       mainWindow?.webContents?.send('llama-server-output', { type: 'error', data: err?.message || String(err) });
     });
     llamaServerProcess.on('exit', (code, signal) => {
+      invalidateServerStatusCache('llama');
       clearLlamaMemoryGuard();
       serverStarts.llama = null;
       mainWindow?.webContents?.send('llama-server-exit', { code, signal });
@@ -2880,6 +3105,7 @@ ipcMain.handle('llama:start-server', async (_event, config = {}) => {
 });
 
 ipcMain.handle('llama:stop-server', async () => {
+  invalidateServerStatusCache('llama');
   const wasRunning = isServerProcessActive(llamaServerProcess);
   if (!wasRunning && !isServerProcessActive(llamaNgrokProcess)) {
     return { success: false, error: 'Llama server is not running.' };
@@ -2926,12 +3152,7 @@ ipcMain.handle('llama:check-model-size', async (_event, modelsPath, modelName) =
     const stat = await fs.promises.stat(modelPath);
     const sizeMB = Math.max(1, Math.round(stat.size / (1024 * 1024)));
 
-    let availableMemory = 0;
-    try {
-      const info = await app.getGPUInfo('complete');
-      availableMemory = extractGpuMemoryMB(info);
-    } catch (_) {}
-    if (!availableMemory) availableMemory = 8000;
+    const { availableMemory } = await getCachedGpuInfoPayload();
 
     const canLoad = sizeMB <= (availableMemory * 0.95);
     return { size: sizeMB, canLoad, availableMemory };
@@ -3756,6 +3977,8 @@ function getExtensionsBaseDir() {
 
 const shortsHideCssKeys = new Map();
 const shortsHideObservedContents = new Set();
+const shortsHidePendingSyncs = new Map();
+const shortsHideAppliedSignatures = new Map();
 let shortsHideCssTextCache = null;
 let shortsHideCssCacheMtimeMs = 0;
 let shortsHideWebContentsHookBound = false;
@@ -3802,6 +4025,7 @@ async function removeShortsHideCss(contents) {
         await contents.removeInsertedCSS(cssKey);
     } catch (_) {}
     shortsHideCssKeys.delete(contents.id);
+    shortsHideAppliedSignatures.delete(contents.id);
 }
 
 async function syncShortsHideForContents(contents, settings = cachedSettings) {
@@ -3820,11 +4044,17 @@ async function syncShortsHideForContents(contents, settings = cachedSettings) {
         return;
     }
 
+    const signature = `${currentUrl}|${shortsHideCssCacheMtimeMs}`;
+    if (shortsHideCssKeys.has(contents.id) && shortsHideAppliedSignatures.get(contents.id) === signature) {
+        return;
+    }
+
     await removeShortsHideCss(contents);
 
     try {
         const cssKey = await contents.insertCSS(cssText);
         shortsHideCssKeys.set(contents.id, cssKey);
+        shortsHideAppliedSignatures.set(contents.id, signature);
     } catch (error) {
         console.warn('[Shorts Hide] CSS injection failed:', error?.message || error);
     }
@@ -3836,19 +4066,26 @@ function attachShortsHideToContents(contents) {
     shortsHideObservedContents.add(contents.id);
 
     const scheduleSync = () => {
-        setImmediate(() => {
+        if (shortsHidePendingSyncs.has(contents.id)) return;
+        const timer = setImmediate(() => {
+            shortsHidePendingSyncs.delete(contents.id);
             syncShortsHideForContents(contents).catch((error) => {
                 console.warn('[Shorts Hide] Sync failed:', error?.message || error);
             });
         });
+        shortsHidePendingSyncs.set(contents.id, timer);
     };
 
     contents.on('dom-ready', scheduleSync);
     contents.on('did-navigate', scheduleSync);
     contents.on('did-navigate-in-page', scheduleSync);
     contents.on('destroyed', () => {
+        const timer = shortsHidePendingSyncs.get(contents.id);
+        if (timer) clearImmediate(timer);
+        shortsHidePendingSyncs.delete(contents.id);
         shortsHideObservedContents.delete(contents.id);
         shortsHideCssKeys.delete(contents.id);
+        shortsHideAppliedSignatures.delete(contents.id);
     });
 
     scheduleSync();
@@ -4233,6 +4470,7 @@ function createMainWindow() {
     shortsHideWebContentsHookBound = true;
     app.on('web-contents-created', (_event, contents) => {
       attachShortsHideToContents(contents);
+      attachGlobalScrollbarToContents(contents);
     });
   }
   mainWindow.webContents.on('will-attach-webview', (_event, webPreferences) => {
@@ -4374,7 +4612,8 @@ function createMainWindow() {
           activeDownloadItems.delete(id);
           const list = getStoredDownloads();
           list.unshift(data);
-          safeWriteJson(downloadsPath, list.slice(0, 100));
+          downloadsStore.set(list);
+          downloadsStore.scheduleFlush();
           broadcast('download-update', data);
       };
 
@@ -4484,7 +4723,8 @@ function createMainWindow() {
           }
 
           const list = getStoredDownloads(); list.unshift(data);
-          safeWriteJson(downloadsPath, list.slice(0, 100));
+          downloadsStore.set(list);
+          downloadsStore.scheduleFlush();
           broadcast('download-update', data);
       });
   });
@@ -5863,7 +6103,12 @@ app.on('before-quit', (event) => {
     return;
   }
   event.preventDefault();
-  shutdownManagedServers()
+  Promise.allSettled([
+    bookmarksStore.flush(),
+    historyStore.flush(),
+    downloadsStore.flush()
+  ])
+    .then(() => shutdownManagedServers())
     .catch((error) => {
       console.error('[Shutdown] Failed to stop managed servers cleanly:', error);
     })
