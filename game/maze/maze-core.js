@@ -1,8 +1,8 @@
 (function () {
-  const TOTAL = 200;
-  const TIER_SIZE = 50;
-  const ORDER_KEY = "omx_maze_order_v2";
-  const SOLVED_KEY = "omx_maze_solved_v2";
+  const TOTAL = 220;
+  const TIER_SIZE = 55;
+  const ORDER_KEY = "omx_maze_order_v3";
+  const SOLVED_KEY = "omx_maze_solved_v3";
 
   const campaignLevel = Math.max(1, Number(window.MAZE_LEVEL || 1));
 
@@ -80,16 +80,19 @@
   const level = Math.min(TOTAL, campaignLevel);
   const puzzleId = order[level - 1];
   const tierIndex = Math.floor((level - 1) / TIER_SIZE);
-  const tierName = ["Low Tier", "Mid Tier", "Upper Tier", "Top Tier"][tierIndex] || "Top Tier";
+  const tierName = ["Novice", "Adept", "Expert", "Master"][tierIndex] || "Master";
 
   levelEl.textContent = `Level ${level} / ${TOTAL}`;
   puzzleEl.textContent = `Puzzle #${puzzleId}`;
   if (tierEl) tierEl.textContent = tierName;
   progressEl.style.width = `${Math.max(0, Math.min(100, ((level - 1) / TOTAL) * 100))}%`;
 
+  // Increase maze dimensionality for higher difficulty
   const difficultyT = (level - 1) / Math.max(1, TOTAL - 1);
-  const cols = Math.min(44, 18 + Math.floor(difficultyT * 26));
-  const rows = Math.min(30, 12 + Math.floor(difficultyT * 18));
+  const MAX_COLS = 60;
+  const MAX_ROWS = 40;
+  const cols = Math.min(MAX_COLS, 18 + Math.floor(difficultyT * 52));
+  const rows = Math.min(MAX_ROWS, 14 + Math.floor(difficultyT * 32));
 
   const margin = 22;
   const cell = Math.floor(
@@ -116,8 +119,12 @@
     "crescent",
     "doublecore",
     "chamber",
+    "labyrinth",
+    "fortress",
+    "spiral",
+    "maze",
   ];
-  const shapeMode = shapeModes[(puzzleId + tierIndex * 3) % shapeModes.length];
+  const shapeMode = shapeModes[(puzzleId + tierIndex * 5) % shapeModes.length];
   const shapeLabel = {
     rect: "Classic Grid",
     diamond: "Diamond",
@@ -133,6 +140,10 @@
     crescent: "Crescent",
     doublecore: "Twin Core",
     chamber: "Chamber",
+    labyrinth: "Labyrinth",
+    fortress: "Fortress",
+    spiral: "Spiral",
+    maze: "Multi-Path Maze",
   };
   shapeEl.textContent = "Shape: " + shapeLabel[shapeMode];
 
@@ -142,54 +153,252 @@
     const ax = Math.abs(x);
     const ay = Math.abs(y);
     if (mode === "rect") return true;
-    if (mode === "diamond") return ax + ay <= 1.03;
-    if (mode === "circle") return x * x + y * y <= 1.03;
-    if (mode === "cross") return ax < 0.24 || ay < 0.24 || x * x + y * y < 0.27;
-    if (mode === "hourglass") return ay <= 0.9 - ax * 0.8 || x * x + y * y < 0.2;
+    if (mode === "diamond") return ax + ay <= 1.05;
+    if (mode === "circle") return x * x + y * y <= 1.05;
+    if (mode === "cross") return ax < 0.28 || ay < 0.28 || x * x + y * y < 0.3;
+    if (mode === "hourglass") return ay <= 0.88 - ax * 0.75 || x * x + y * y < 0.18;
     if (mode === "split") {
-      if (x * x + y * y > 1.02) return false;
-      const gate = Math.floor((puzzleId * 13) % rows);
-      return !(Math.abs(x) < 0.09 && r !== gate && r !== Math.min(rows - 1, gate + 1));
+      if (x * x + y * y > 1.04) return false;
+      const gate1 = Math.floor((puzzleId * 13) % rows);
+      const gate2 = Math.floor((puzzleId * 17) % rows);
+      return !(Math.abs(x) < 0.08 && r !== gate1 && r !== gate2 && r !== Math.min(rows - 1, gate1 + 1) && r !== Math.min(rows - 1, gate2 + 1));
     }
     if (mode === "ring") {
       const d = x * x + y * y;
-      return d < 1.05 && d > 0.23;
+      return d < 1.08 && d > 0.2;
     }
     if (mode === "triangle") {
-      return y > -0.92 && y < 0.95 && ay < 0.98 - ax * 1.08;
+      return y > -0.94 && y < 0.97 && ay < 0.96 - ax * 1.05;
     }
     if (mode === "kite") {
-      return ax + ay * 0.72 < 0.92 && ay < 0.96;
+      return ax + ay * 0.68 < 0.9 && ay < 0.98;
     }
     if (mode === "peanut") {
-      const d1 = (x + 0.34) * (x + 0.34) + y * y;
-      const d2 = (x - 0.34) * (x - 0.34) + y * y;
-      return d1 < 0.63 || d2 < 0.63;
+      const d1 = (x + 0.32) * (x + 0.32) + y * y;
+      const d2 = (x - 0.32) * (x - 0.32) + y * y;
+      return d1 < 0.65 || d2 < 0.65;
     }
     if (mode === "waves") {
-      if (x * x + y * y > 1.02) return false;
-      const band = Math.sin((x + 1) * 7 + puzzleId * 0.09) * 0.18;
-      return Math.abs(y) < 0.92 - band;
+      if (x * x + y * y > 1.04) return false;
+      const band = Math.sin((x + 1) * 8 + puzzleId * 0.1) * 0.2;
+      return Math.abs(y) < 0.9 - band;
     }
     if (mode === "crescent") {
-      const outer = x * x + y * y < 1.02;
-      const inner = (x + 0.26) * (x + 0.26) + y * y < 0.63;
+      const outer = x * x + y * y < 1.04;
+      const inner = (x + 0.24) * (x + 0.24) + y * y < 0.65;
       return outer && !inner;
     }
     if (mode === "doublecore") {
-      const c1 = (x + 0.44) * (x + 0.44) + (y * 1.12) * (y * 1.12) < 0.56;
-      const c2 = (x - 0.44) * (x - 0.44) + (y * 1.12) * (y * 1.12) < 0.56;
-      const bridge = ax < 0.22 && ay < 0.28;
+      const c1 = (x + 0.42) * (x + 0.42) + (y * 1.1) * (y * 1.1) < 0.58;
+      const c2 = (x - 0.42) * (x - 0.42) + (y * 1.1) * (y * 1.1) < 0.58;
+      const bridge = ax < 0.24 && ay < 0.26;
       return c1 || c2 || bridge;
     }
     if (mode === "chamber") {
-      if (!(x * x + y * y < 1.04)) return false;
-      const hole1 = (x + 0.3) * (x + 0.3) + (y + 0.25) * (y + 0.25) < 0.09;
-      const hole2 = (x - 0.28) * (x - 0.28) + (y - 0.24) * (y - 0.24) < 0.09;
-      const hole3 = x * x + (y - 0.02) * (y - 0.02) < 0.06;
-      return !(hole1 || hole2 || hole3);
+      if (!(x * x + y * y < 1.06)) return false;
+      const hole1 = (x + 0.28) * (x + 0.28) + (y + 0.22) * (y + 0.22) < 0.1;
+      const hole2 = (x - 0.26) * (x - 0.26) + (y - 0.22) * (y - 0.22) < 0.1;
+      const hole3 = x * x + (y - 0.04) * (y - 0.04) < 0.07;
+      const hole4 = (x + 0.1) * (x + 0.1) + (y + 0.35) * (y + 0.35) < 0.05;
+      return !(hole1 || hole2 || hole3 || hole4);
     }
+    if (mode === "labyrinth") {
+      if (ax > 0.95 || ay > 0.95) return false;
+      const cx = Math.sin(x * 3 + puzzleId * 0.5) * 0.15;
+      const cy = Math.cos(y * 3 + puzzleId * 0.3) * 0.15;
+      return ax + ay * 0.8 < 1.0 + cx && ay + ax * 0.8 < 1.0 + cy;
+    }
+    if (mode === "fortress") {
+      const inWall = (r + c) % 5 === 0 && rand() > 0.5;
+      const cx = Math.abs(x) < 0.15 && ay < 0.4;
+      const cy = Math.abs(y) < 0.15 && ax < 0.4;
+      return !inWall && !cx && !cy;
+    }
+    if (mode === "spiral") {
+      const angle = Math.atan2(y, x);
+      const dist = Math.sqrt(x * x + y * y);
+      const spiral = Math.sin(angle * 3 + dist * 8 + puzzleId) > 0.3;
+      return dist < 1.0 && !spiral;
+    }
+    if (mode === "maze") return true;
     return true;
+  }
+
+function addMultiplePaths(grid, rand, extraPathChance) {
+   const pathOpenChance = 0.22 + difficultyT * 0.28;
+   // Increase path opening chance for early levels (1-10)
+   const pathChanceMultiplier = 0.4 + (extraPathChance || 0);
+  const loopsAdded = [];
+  for (let r = 1; r < rows - 1; r++) {
+    for (let c = 1; c < cols - 1; c++) {
+      const cell = grid[idx(r, c)];
+      if (!cell) continue;
+      if (rand() < pathOpenChance * pathChanceMultiplier) {
+        const dir = Math.floor(rand() * 4);
+        const walls = cell.w;
+        const dr = [-1, 0, 1, 0][dir];
+        const dc = [0, 1, 0, -1][dir];
+        const nr = r + dr, nc = c + dc;
+        if (nr >= 0 && nr < rows && nc >= 0 && nc < cols) {
+          const neighbor = grid[idx(nr, nc)];
+          if (neighbor && walls[dir] === 1) {
+            const opposite = (dir + 2) % 4;
+            if (neighbor.w[opposite] === 1) {
+              cell.w[dir] = 0;
+              neighbor.w[opposite] = 0;
+              loopsAdded.push({ r, c, nr, nc });
+            }
+          }
+        }
+      }
+    }
+  }
+  return loopsAdded;
+}
+
+  function removeDeadEnds(grid, rand) {
+    let removed = 0;
+    const maxPasses = 3 + Math.floor(difficultyT * 5);
+    for (let pass = 0; pass < maxPasses; pass++) {
+      let changed = true;
+      while (changed) {
+        changed = false;
+        for (let r = 0; r < rows; r++) {
+          for (let c = 0; c < cols; c++) {
+            const cell = grid[idx(r, c)];
+            if (!cell) continue;
+            const wallCount = cell.w.filter(w => w === 1).length;
+            if (wallCount === 3) {
+              const passages = cell.w.map((w, i) => w === 0 ? i : -1).filter(i => i >= 0);
+              if (passages.length === 1) {
+                for (const dir of passages) {
+                  const dr = [-1, 0, 1, 0][dir];
+                  const dc = [0, 1, 0, -1][dir];
+                  const nr = r + dr, nc = c + dc;
+                  if (nr >= 0 && nr < rows && nc >= 0 && nc < cols) {
+                    const neighbor = grid[idx(nr, nc)];
+                    if (neighbor) {
+                      const opposite = (dir + 2) % 4;
+                      if (neighbor.w[opposite] === 1 && rand() > 0.4) {
+                        cell.w[dir] = 0;
+                        neighbor.w[opposite] = 0;
+                        changed = true;
+                        removed++;
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    return removed;
+  }
+
+  function addShortcuts(grid, rand) {
+    const shortcutChance = 0.08 + difficultyT * 0.12;
+    let added = 0;
+    for (let r = 2; r < rows - 2; r++) {
+      for (let c = Math.floor(cols * 0.3); c < Math.floor(cols * 0.7); c++) {
+        if (rand() < shortcutChance) {
+          const cell = grid[idx(r, c)];
+          if (!cell) continue;
+          if (rand() > 0.5 && c + 2 < cols - 1) {
+            const nextCell = grid[idx(r, c + 1)];
+            const nextNextCell = grid[idx(r, c + 2)];
+            if (nextCell && nextNextCell && cell.w[1] === 1 && nextNextCell.w[3] === 1) {
+              if (rand() > 0.6) {
+                cell.w[1] = 0;
+                nextNextCell.w[3] = 0;
+                added++;
+              }
+            }
+          }
+          if (rand() > 0.5 && r + 2 < rows - 1) {
+            const nextCell = grid[idx(r + 1, c)];
+            const nextNextCell = grid[idx(r + 2, c)];
+            if (nextCell && nextNextCell && cell.w[2] === 1 && nextNextCell.w[0] === 1) {
+              if (rand() > 0.6) {
+                cell.w[2] = 0;
+                nextNextCell.w[0] = 0;
+                added++;
+              }
+            }
+          }
+        }
+      }
+    }
+    return added;
+  }
+
+  function createLoopPassages(grid, rand) {
+    const loopChance = 0.1 + difficultyT * 0.15;
+    let loops = 0;
+    for (let r = 1; r < rows - 1; r++) {
+      for (let c = 1; c < cols - 1; c++) {
+        const cell = grid[idx(r, c)];
+        if (!cell) continue;
+        if (rand() < loopChance) {
+          const horizOpen = cell.w[1] === 0 && cell.w[3] === 0;
+          const vertOpen = cell.w[0] === 0 && cell.w[2] === 0;
+          if (horizOpen && rand() > 0.5 && r > 0 && r < rows - 1) {
+            const top = grid[idx(r - 1, c)];
+            const bottom = grid[idx(r + 1, c)];
+            if (top && bottom && top.w[2] === 1 && bottom.w[0] === 1) {
+              if (rand() > 0.4) {
+                top.w[2] = 0;
+                bottom.w[0] = 0;
+                loops++;
+              }
+            }
+          }
+          if (vertOpen && rand() > 0.5 && c > 0 && c < cols - 1) {
+            const left = grid[idx(r, c - 1)];
+            const right = grid[idx(r, c + 1)];
+            if (left && right && left.w[1] === 1 && right.w[3] === 1) {
+              if (rand() > 0.4) {
+                left.w[1] = 0;
+                right.w[3] = 0;
+                loops++;
+              }
+            }
+          }
+        }
+      }
+    }
+    return loops;
+  }
+
+  function addSecretPassages(grid, rand) {
+    const secretChance = 0.05 + difficultyT * 0.1;
+    let secrets = 0;
+    for (let r = 1; r < rows - 1; r++) {
+      for (let c = 1; c < cols - 1; c++) {
+        if (rand() < secretChance) {
+          const cell = grid[idx(r, c)];
+          if (!cell) continue;
+          const options = [];
+          if (cell.w[1] === 1 && c + 1 < cols) { const n = grid[idx(r, c + 1)]; if (n) options.push([1, 3]); }
+          if (cell.w[3] === 1 && c - 1 >= 0) { const n = grid[idx(r, c - 1)]; if (n) options.push([3, 1]); }
+          if (cell.w[2] === 1 && r + 1 < rows) { const n = grid[idx(r + 1, c)]; if (n) options.push([2, 0]); }
+          if (cell.w[0] === 1 && r - 1 >= 0) { const n = grid[idx(r - 1, c)]; if (n) options.push([0, 2]); }
+          if (options.length > 0 && rand() > 0.5) {
+            const [dir, opp] = options[Math.floor(rand() * options.length)];
+            const dr = [-1, 0, 1, 0][dir];
+            const dc = [0, 1, 0, -1][dir];
+            const neighbor = grid[idx(r + dr, c + dc)];
+            if (neighbor && neighbor.w[opp] === 1) {
+              cell.w[dir] = 0;
+              neighbor.w[opp] = 0;
+              secrets++;
+            }
+          }
+        }
+      }
+    }
+    return secrets;
   }
 
   function generateMaze(mode, seedOffset) {
@@ -240,6 +449,25 @@
     grid[idx(start.r, start.c)].w[3] = 0;
     grid[idx(end.r, end.c)].w[1] = 0;
 
+    const useAdvancedFeatures = level <= 10;
+    const extraPathChance = useAdvancedFeatures ? 0.35 : (tierIndex >= 1 ? 0.15 : 0);
+    
+    if (tierIndex >= 0 || useAdvancedFeatures) {
+      const shortcuts = addShortcuts(grid, rand);
+    }
+    if (tierIndex >= 0 || useAdvancedFeatures) {
+      const loops = createLoopPassages(grid, rand);
+    }
+    if (tierIndex >= 1 || useAdvancedFeatures) {
+      const deadEnds = removeDeadEnds(grid, rand);
+    }
+    if (tierIndex >= 1 || useAdvancedFeatures) {
+      const secrets = addSecretPassages(grid, rand);
+    }
+    if (tierIndex >= 1 || useAdvancedFeatures) {
+       const multiPaths = addMultiplePaths(grid, rand, extraPathChance);
+     }
+
     const parent = new Map();
     const q = [[start.r, start.c]];
     const seen = new Set([`${start.r},${start.c}`]);
@@ -285,7 +513,7 @@
   }
 
   let mazeData = null;
-  for (let i = 0; i < 8; i++) {
+  for (let i = 0; i < 12; i++) {
     mazeData = generateMaze(shapeMode, i * 211);
     if (mazeData) break;
   }
@@ -306,8 +534,15 @@
 
   function drawBackdrop() {
     const g = ctx.createLinearGradient(0, 0, 0, canvas.height);
-    g.addColorStop(0, "#0b1020");
-    g.addColorStop(1, "#070a14");
+    const colors = [
+      ["#0b1020", "#070a14"],
+      ["#0a1020", "#0c0818"],
+      ["#100a18", "#0c0814"],
+      ["#08080f", "#0a0a1a"],
+    ];
+    const colorSet = colors[tierIndex] || colors[0];
+    g.addColorStop(0, colorSet[0]);
+    g.addColorStop(1, colorSet[1]);
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
@@ -402,7 +637,7 @@
       statusEl.textContent = `Clear! Loading Level ${level + 1}...`;
       setTimeout(() => { window.location.href = `level${level + 1}.html`; }, 600);
     } else {
-      statusEl.textContent = `All ${TOTAL} puzzles solved. Press R to start a new randomized run.`;
+      statusEl.textContent = `All ${TOTAL} puzzles solved! Press R to start a new run.`;
     }
   }
 
@@ -420,7 +655,7 @@
       progressEl.style.width = `${Math.max(0, Math.min(100, (solved.size / TOTAL) * 100))}%`;
       goNext();
     } else {
-      statusEl.textContent = `Find the exit node on the right edge.`;
+      statusEl.textContent = `Find the exit! Multiple paths available.`;
     }
     draw();
   }
@@ -441,9 +676,9 @@
   });
 
   if (solved.has(puzzleId)) {
-    statusEl.textContent = `This puzzle was already solved in this run. Move to continue progression.`;
+    statusEl.textContent = `Already solved! Continue or press R for new maze.`;
   } else {
-    statusEl.textContent = `Find the exit node on the right edge.`;
+    statusEl.textContent = `Navigate to the exit! Use arrow keys or WASD.`;
   }
   progressEl.style.width = `${Math.max(0, Math.min(100, (solved.size / TOTAL) * 100))}%`;
   draw();
