@@ -1147,3 +1147,5 @@ input:checked + .slider:before { transform: translateX(14px); background-color: 
   background: rgba(239, 68, 68, 0.12);
   border-color: rgba(239, 68, 68, 0.35);
 }
+
+

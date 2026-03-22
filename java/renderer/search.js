@@ -318,7 +318,8 @@ export function initSearchSystem({ tabManager, settingsAPI, HOME_URL }) {
             suggestionsEl.innerHTML = '';
             matches.forEach(m => {
                 const div = document.createElement('div');
-                div.className = 'suggestion-item';
+                div.className = 'suggestion-item keyword-suggestion';
+                div.setAttribute('data-keyword', String(m.keyword || ''));
                 const icon = document.createElement('img');
                 icon.src = sanitizeImageSrc(m.icon);
                 icon.style.width = '16px';
@@ -330,12 +331,6 @@ export function initSearchSystem({ tabManager, settingsAPI, HOME_URL }) {
                 label.textContent = `@${String(m.keyword || '')} (${String(m.name || '')})`;
                 div.appendChild(icon);
                 div.appendChild(label);
-                div.onclick = () => {
-                    setActiveEngine(m);
-                    overlayInput.value = '';
-                    overlayInput.focus();
-                    suggestionsEl.classList.add('hidden');
-                };
                 suggestionsEl.appendChild(div);
             });
             suggestionsEl.classList.remove('hidden');
@@ -434,6 +429,7 @@ export function initSearchSystem({ tabManager, settingsAPI, HOME_URL }) {
         trimmed.forEach((text, index) => {
             const div = document.createElement('div');
             div.className = 'suggestion-item';
+            div.setAttribute('data-suggestion-text', text);
             const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
             icon.setAttribute('viewBox', '0 0 24 24');
             icon.setAttribute('fill', 'currentColor');
@@ -444,13 +440,6 @@ export function initSearchSystem({ tabManager, settingsAPI, HOME_URL }) {
             label.textContent = String(text || '');
             div.appendChild(icon);
             div.appendChild(label);
-            div.onclick = () => {
-                if (forceDefaultEngine) {
-                    setActiveEngine(null);
-                }
-                overlayInput.value = text;
-                handleSearchSubmit();
-            };
             suggestionsEl.appendChild(div);
         });
         
@@ -481,6 +470,39 @@ export function initSearchSystem({ tabManager, settingsAPI, HOME_URL }) {
             return;
         }
         getSuggestions(val.trim());
+    });
+
+    // Event delegation for suggestion clicks — catches all clicks reliably
+    suggestionsEl.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+    });
+
+    suggestionsEl.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const item = e.target.closest('.suggestion-item');
+        if (!item) return;
+        
+        // Handle keyword suggestions
+        if (item.classList.contains('keyword-suggestion')) {
+            const keyword = item.getAttribute('data-keyword') || '';
+            const engine = cachedSettings?.searchEngines?.find(e => e.keyword === keyword);
+            if (engine) {
+                setActiveEngine(engine);
+                overlayInput.value = '';
+                overlayInput.focus();
+            }
+            suggestionsEl.classList.add('hidden');
+            return;
+        }
+        
+        // Handle regular search suggestions
+        const text = item.getAttribute('data-suggestion-text') || 
+                     (item.querySelector('span') ? item.querySelector('span').textContent : '');
+        if (!text) return;
+        
+        overlayInput.value = text;
+        handleSearchSubmit();
     });
 
     overlayInput.addEventListener('focus', () => {

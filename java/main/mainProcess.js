@@ -1785,12 +1785,12 @@ const DEFAULT_SETTINGS = {
   defaultSearchEngineId: 'google',
   theme: 'noir',
   downloadPath: app.getPath('downloads'),
-  features: { 
-    enableHistory: true, 
-    enableAntivirus: true, 
+  features: {
+    enableHistory: true,
+    enableAntivirus: true,
     enableFirewall: true,
     enableVirusTotal: false,
-    showLoadingAnimation: true
+    showLoadingAnimation: false
   },
   security: {
     virusTotal: {
@@ -4013,8 +4013,8 @@ async function syncShortsHideForContents(contents, settings = cachedSettings) {
     if (!contents || contents.isDestroyed?.()) return;
 
     const currentUrl = String(contents.getURL?.() || '').trim();
-    const shouldApply = settings?.youtubeAddon?.hideShorts !== false && isYouTubeGuestUrl(currentUrl);
-    if (!shouldApply) {
+    // Shorts are always hidden on YouTube - no toggle needed
+    if (!isYouTubeGuestUrl(currentUrl)) {
         await removeShortsHideCss(contents);
         return;
     }

@@ -563,7 +563,7 @@ const applyThemeClass = (theme) => {
       
       const s = currentSettings;
       
-      if (els.featLoadingAnim) els.featLoadingAnim.checked = s.features?.showLoadingAnimation ?? true;
+      if (els.featLoadingAnim) els.featLoadingAnim.checked = s.features?.showLoadingAnimation ?? false;
 
       if (els.featFirewall) els.featFirewall.checked = s.features?.enableFirewall ?? true;
       if (els.featAntivirus) els.featAntivirus.checked = s.features?.enableAntivirus ?? true;
@@ -602,7 +602,7 @@ const applyThemeClass = (theme) => {
         features: { 
             ...window.omniSettings.features, 
             enableHistory: true,
-            showLoadingAnimation: els.featLoadingAnim?.checked ?? true,
+            showLoadingAnimation: els.featLoadingAnim?.checked ?? false,
             enableFirewall: true, 
             enableAntivirus: true,
             enableVirusTotal: els.featVirusTotal?.checked ?? false

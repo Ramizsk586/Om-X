@@ -245,13 +245,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     const dlFill                        = downloadToast?.querySelector('.dl-toast-fill');
     const dlCancelBtn                   = document.getElementById('btn-download-toast-cancel');
     const youtubeAddonPanel             = document.getElementById('youtube-addon-panel') || document.getElementById('youtube-addon-popup');
-    const youtubeAddonToggleShorts      = document.getElementById('youtube-addon-toggle-shorts');
     const youtubeAddonToggleHome        = document.getElementById('youtube-addon-toggle-home');
     const youtubeAddonToggleBlur        = document.getElementById('youtube-addon-toggle-blur');
     const youtubeAddonToggleChat        = document.getElementById('youtube-addon-toggle-chat');
-    const youtubeAddonToggleUi          = document.getElementById('youtube-addon-toggle-ui');
     const youtubeAddonToggleBw          = document.getElementById('youtube-addon-toggle-bw');
-    const youtubeAddonToggleCleanUi     = document.getElementById('youtube-addon-toggle-cleanui');
+    const youtubeAddonToggleAdSkipper   = document.getElementById('youtube-addon-toggle-adskipper');
     const duckAiPanel                   = document.getElementById('duck-ai-panel');
     const duckAiToggleSidebar           = document.getElementById('duck-ai-toggle-sidebar');
     const webviewContextMenu            = document.getElementById('webview-context-menu');
@@ -1021,14 +1019,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     const getYouTubeAddonSettings = (settings = cachedSettings) => {
         const yt = settings?.youtubeAddon || {};
         return {
-            enabled:              yt.enabled !== false,
-            hideShorts:           yt.hideShorts !== false,
-            hideHomeSuggestions:  yt.hideHomeSuggestions !== false,
+            enabled:              yt.enabled === true,
+            cleanUi:              yt.cleanUi === true,
             blurThumbnails:       yt.blurThumbnails === true,
             hideChats:            yt.hideChats === true,
-            hideHeaderControls:   yt.hideHeaderControls !== false,
             blackAndWhiteMode:    yt.blackAndWhiteMode === true,
-            cleanUi:              yt.cleanUi === true,
+            adSkipper:            yt.adSkipper === true,
             hideAddonIcon:        yt.hideAddonIcon === true
         };
     };
@@ -1071,13 +1067,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!(yt.enabled && isYouTubeUrl(getActiveTabUrl()))) {
             youtubeAddonPanel.classList.add('hidden');
         }
-        if (youtubeAddonToggleShorts)   youtubeAddonToggleShorts.checked   = !!yt.hideShorts;
-        if (youtubeAddonToggleHome)     youtubeAddonToggleHome.checked      = !!yt.hideHomeSuggestions;
+        if (youtubeAddonToggleHome)     youtubeAddonToggleHome.checked      = !!yt.cleanUi;
         if (youtubeAddonToggleBlur)     youtubeAddonToggleBlur.checked      = !!yt.blurThumbnails;
         if (youtubeAddonToggleChat)     youtubeAddonToggleChat.checked      = !!yt.hideChats;
-        if (youtubeAddonToggleUi)       youtubeAddonToggleUi.checked        = !!yt.hideHeaderControls;
         if (youtubeAddonToggleBw)       youtubeAddonToggleBw.checked        = !!yt.blackAndWhiteMode;
-        if (youtubeAddonToggleCleanUi)  youtubeAddonToggleCleanUi.checked   = !!yt.cleanUi;
+        if (youtubeAddonToggleAdSkipper) youtubeAddonToggleAdSkipper.checked = !!yt.adSkipper;
     };
 
     const syncDuckAiPanel = () => {
@@ -1295,13 +1289,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!youtubeAddonPanel || youtubeAddonPanel.dataset.bound === '1') return;
         youtubeAddonPanel.dataset.bound = '1';
 
-        youtubeAddonToggleShorts?.addEventListener('change',  () => persistYouTubeAddonPreferences({ hideShorts:          youtubeAddonToggleShorts.checked  }));
-        youtubeAddonToggleHome?.addEventListener('change',    () => persistYouTubeAddonPreferences({ hideHomeSuggestions: youtubeAddonToggleHome.checked     }));
-        youtubeAddonToggleBlur?.addEventListener('change',    () => persistYouTubeAddonPreferences({ blurThumbnails:      youtubeAddonToggleBlur.checked     }));
-        youtubeAddonToggleChat?.addEventListener('change',    () => persistYouTubeAddonPreferences({ hideChats:           youtubeAddonToggleChat.checked     }));
-        youtubeAddonToggleUi?.addEventListener('change',      () => persistYouTubeAddonPreferences({ hideHeaderControls:  youtubeAddonToggleUi.checked       }));
-        youtubeAddonToggleBw?.addEventListener('change',      () => persistYouTubeAddonPreferences({ blackAndWhiteMode:   youtubeAddonToggleBw.checked       }));
-        youtubeAddonToggleCleanUi?.addEventListener('change', () => persistYouTubeAddonPreferences({ cleanUi:             youtubeAddonToggleCleanUi.checked  }, { reloadOnEnable: true }));
+        youtubeAddonToggleHome?.addEventListener('change',      () => persistYouTubeAddonPreferences({ cleanUi: youtubeAddonToggleHome.checked }));
+        youtubeAddonToggleBlur?.addEventListener('change',      () => persistYouTubeAddonPreferences({ blurThumbnails: youtubeAddonToggleBlur.checked }));
+        youtubeAddonToggleChat?.addEventListener('change',      () => persistYouTubeAddonPreferences({ hideChats: youtubeAddonToggleChat.checked }));
+        youtubeAddonToggleBw?.addEventListener('change',        () => persistYouTubeAddonPreferences({ blackAndWhiteMode: youtubeAddonToggleBw.checked }));
+        youtubeAddonToggleAdSkipper?.addEventListener('change',  () => persistYouTubeAddonPreferences({ adSkipper: youtubeAddonToggleAdSkipper.checked }));
     };
 
     const setupDuckAiPanelEvents = () => {
