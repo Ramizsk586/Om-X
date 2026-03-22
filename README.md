@@ -73,25 +73,6 @@ A built-in enhancement addon for YouTube that provides content filtering, UI cus
 - MutationObserver for dynamic content filtering
 - requestAnimationFrame for performance-optimized DOM updates
 
-### YT Ad Blocker
-
-The project also includes a dedicated Chrome extension at `java/extension/yt-adblocker` focused specifically on YouTube ad removal.
-
-### YT Ad Blocker Features
-- **Network-level blocking**: Uses Manifest V3 declarative net request rules to block ad media, ad tracking requests, and common Google ad delivery domains
-- **DOM cleanup**: Removes overlays, promoted cards, masthead ads, in-feed ad renderers, and other injected ad containers from the page
-- **Auto-skip behavior**: Clicks visible skip buttons and fast-forwards unskippable in-stream ads when YouTube marks the player as ad-serving
-- **Strict mode**: Optionally removes additional promo/banner renderers for more aggressive filtering
-- **Live stats**: Tracks blocked elements and skipped ads through extension storage and shows them in the popup UI
-- **Popup controls**: Lets users enable/disable protection, reset counters, toggle strict mode, and enable debug logs
-
-### YT Ad Blocker Architecture
-- `manifest.json`: Registers the MV3 extension, YouTube host permissions, popup, service worker, and ruleset
-- `rules.json`: Defines declarative blocking rules for `googlevideo`, `doubleclick`, `googlesyndication`, and related ad endpoints
-- `content.js`: Watches YouTube with `MutationObserver`, removes ad nodes, clicks skip buttons, and handles in-player ad fast-forwarding
-- `background.js`: Stores extension state, validates trusted YouTube senders, updates ruleset state, and aggregates stats for the popup
-- `popup/popup.html`: Provides the small control panel for status, counters, strict mode, debug logging, and reset actions
-
 ---
 
 ## Mouse & Keyboard Interactions
@@ -356,29 +337,6 @@ A powerful quick-launch panel with customizable search engines and keyboard shor
 - **Request Header Stripping**: Removes cookies from third-party requests
 - **Response Header Filtering**: Blocks Set-Cookie from third-party domains
 
-#### Ad Blocker
-Browser extension-based ad blocking system that removes ads, trackers, and malicious scripts.
-
-**Features:**
-- Content script injection for real-time ad blocking
-- Custom blocklist management
-- Blocked sites logging
-- Enable/disable toggle per session
-- Stealth mode (undetectable by websites)
-
-**Blocked Content:**
-- Pop-ups and pop-unders
-- Banner ads and display advertising
-- Video ads (pre-roll, mid-roll)
-- Tracking scripts and analytics
-- Malicious redirects
-
-**File Locations:**
-- Extension: `java/extension/ad block/`
-- Manifest: `java/extension/ad block/manifest.json`
-- Blocklist: `java/extension/ad block/blockedsites.js`
-- Content Script: `java/extension/ad block/script.js`
-
 #### Popup Blocker
 - Automatically blocks unwanted popups and new windows
 - Configurable via settings
@@ -620,7 +578,6 @@ Click **USAGE** button to view:
 - **Electron Games**: Native desktop game experiences
 
 ### Security & Privacy
-- **Ad Blocker**: Browser extension-based ad blocking with stealth mode
 - **VirusTotal Integration**: Real-time URL and file scanning against 70+ AV engines
 - **HTTPS Enforcement**: Secure connections by default
 - **Third-Party Cookie Blocking**: Enhanced privacy protection
@@ -682,7 +639,6 @@ Click **USAGE** button to view:
 ```
 
 ### Security Config (`config/security.config.json`)
-- Ad Blocker: Enabled
 - Malware Protection: Enabled
 - HTTPS Only: Enabled
 - Third-Party Cookies: Blocked
@@ -759,7 +715,6 @@ Om-X/
 │   │       └── grammarTranslate.js
 │   │
 │   ├── extension/                # Browser extensions
-│   │   ├── ad block/             # Ad blocker extension
 │   │   └── shorts hide/          # YouTube shorts hider
 │   │
 │   ├── utils/                    # Utilities
@@ -976,12 +931,6 @@ Storm-flight survival mini game.
 - **Dangerous Extension Warnings**: Alerts for .exe, .scr, .bat, .cmd, .vbs, .js, .msi
 - **Trusted Source Bypass**: Auto-allows safe downloads from verified sources
 
-### Ad Blocking
-- **Browser Extension**: Content script injection for real-time ad blocking
-- **Custom Blocklists**: User-managed domain blocking
-- **Stealth Mode**: Undetectable by websites
-- **Blocked Site Logging**: Track blocked content
-
 ### Privacy Controls
 - **Third-Party Cookie Blocking**: Prevents cross-site tracking
 - **HTTPS Enforcement**: Default to secure connections
@@ -1024,7 +973,6 @@ All AI features are configurable through the AI Settings page.
 - Minecraft Server Integration
 - Local AI Model Controller
 - Security & Blocking System
-- Ad Blocker Module
 
 ## 🐛 Troubleshooting
 

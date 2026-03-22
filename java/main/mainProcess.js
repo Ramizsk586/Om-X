@@ -184,18 +184,7 @@ function isTrustedLoopbackRendererUrl(urlObj) {
   }
 }
 
-const BUILTIN_EXTENSION_POLICIES = Object.freeze({
-  'ad block': Object.freeze({
-    enabledByDefault: true,
-    runtimeCandidates: Object.freeze(['.']),
-    allowedManifestVersions: new Set([2, 3])
-  }),
-  'yt-adblocker': Object.freeze({
-    enabledByDefault: false,
-    runtimeCandidates: Object.freeze(['.']),
-    allowedManifestVersions: new Set([3])
-  })
-});
+const BUILTIN_EXTENSION_POLICIES = Object.freeze({});
 
 function getIpcSenderUrl(event) {
   try {
@@ -1822,14 +1811,6 @@ const DEFAULT_SETTINGS = {
   blocklist: [],
   screenshot: {
     delaySeconds: 0
-  },
-  extensions: {
-    'ad block': {
-      enabled: true
-    },
-    'yt-adblocker': {
-      enabled: false
-    }
   },
   translator: { 
       protocol: 'chromium',

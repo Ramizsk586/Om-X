@@ -55,7 +55,6 @@ const applyThemeClass = (theme) => {
     // System Panel
     // Features
     featLoadingAnim: document.getElementById('feat-loading-anim'),
-    featAdBlocker: document.getElementById('feat-ad-blocker'),
     // Shared LLM
     llmOperatorCards: document.querySelectorAll('.llm-operator-card'),
     // Security Panel
@@ -565,7 +564,6 @@ const applyThemeClass = (theme) => {
       const s = currentSettings;
       
       if (els.featLoadingAnim) els.featLoadingAnim.checked = s.features?.showLoadingAnimation ?? true;
-      if (els.featAdBlocker) els.featAdBlocker.checked = s.extensions?.['ad block']?.enabled === true;
 
       if (els.featFirewall) els.featFirewall.checked = s.features?.enableFirewall ?? true;
       if (els.featAntivirus) els.featAntivirus.checked = s.features?.enableAntivirus ?? true;
@@ -632,13 +630,6 @@ const applyThemeClass = (theme) => {
         theme: selectedTheme,
         llm: {
             provider: selectedLlmProvider || 'google'
-        },
-        extensions: {
-            ...(window.omniSettings.extensions || {}),
-            'ad block': {
-                ...(window.omniSettings.extensions?.['ad block'] || {}),
-                enabled: els.featAdBlocker?.checked === true
-            }
         },
         shortcuts: newShortcuts,
         blocklist: currentSettings.blocklist || [],
