@@ -1790,6 +1790,7 @@ const DEFAULT_SETTINGS = {
     enableAntivirus: true,
     enableFirewall: true,
     enableVirusTotal: false,
+    enableAdultContentBlock: true,
     showLoadingAnimation: false
   },
   security: {
@@ -1833,12 +1834,14 @@ const DEFAULT_SETTINGS = {
     enabled: true,
     hideShorts: true,
     hideHomeSuggestions: true,
+    hideSuggestions: false,
     blurThumbnails: false,
     hideChats: false,
     hideHeaderControls: true,
     blackAndWhiteMode: false,
     cleanUi: false,
-    hideAddonIcon: false
+    hideAddonIcon: false,
+    fastForwardAds: true
   },
   shortcuts: { 
     'new-tab': 'Ctrl+T',
@@ -1861,12 +1864,14 @@ function normalizeYouTubeAddonSettings(youtubeAddon = {}) {
     enabled: nextYoutubeAddon.enabled ?? DEFAULT_SETTINGS.youtubeAddon.enabled,
     hideShorts: nextYoutubeAddon.hideShorts ?? DEFAULT_SETTINGS.youtubeAddon.hideShorts,
     hideHomeSuggestions: nextYoutubeAddon.hideHomeSuggestions ?? DEFAULT_SETTINGS.youtubeAddon.hideHomeSuggestions,
+    hideSuggestions: nextYoutubeAddon.hideSuggestions ?? DEFAULT_SETTINGS.youtubeAddon.hideSuggestions,
     blurThumbnails: nextYoutubeAddon.blurThumbnails ?? DEFAULT_SETTINGS.youtubeAddon.blurThumbnails,
     hideChats: nextYoutubeAddon.hideChats ?? DEFAULT_SETTINGS.youtubeAddon.hideChats,
     hideHeaderControls: nextYoutubeAddon.hideHeaderControls ?? DEFAULT_SETTINGS.youtubeAddon.hideHeaderControls,
     blackAndWhiteMode: nextYoutubeAddon.blackAndWhiteMode ?? DEFAULT_SETTINGS.youtubeAddon.blackAndWhiteMode,
     cleanUi: nextYoutubeAddon.cleanUi ?? DEFAULT_SETTINGS.youtubeAddon.cleanUi,
-    hideAddonIcon: nextYoutubeAddon.hideAddonIcon ?? DEFAULT_SETTINGS.youtubeAddon.hideAddonIcon
+    hideAddonIcon: nextYoutubeAddon.hideAddonIcon ?? DEFAULT_SETTINGS.youtubeAddon.hideAddonIcon,
+    fastForwardAds: nextYoutubeAddon.fastForwardAds ?? DEFAULT_SETTINGS.youtubeAddon.fastForwardAds
   };
 }
 

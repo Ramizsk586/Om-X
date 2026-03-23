@@ -328,9 +328,84 @@ document.addEventListener('DOMContentLoaded', async () => {
       </div>`;
     document.body.appendChild(siteInfoOverlay);
 
+    // ── MP4 LINKS POPUP OVERLAY ──────────────────────────────────────────────
+    const mp4LinksOverlay = document.createElement('div');
+    mp4LinksOverlay.id        = 'mp4-links-overlay';
+    mp4LinksOverlay.className = 'modal-overlay hidden';
+    mp4LinksOverlay.innerHTML = `
+      <div class="shortcut-modal" style="max-width:min(600px,calc(100vw - 40px));max-height:min(500px,70vh);display:flex;flex-direction:column;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+          <div class="modal-title" style="margin:0;">MP4 Links Found</div>
+          <button id="btn-close-mp4-links" class="modal-btn secondary" style="padding:6px 12px;">Close</button>
+        </div>
+        <div id="mp4-links-count" style="font-size:12px;color:rgba(255,255,255,0.6);margin-bottom:8px;"></div>
+        <div id="mp4-links-list" style="
+            flex:1;overflow-y:auto;border-radius:10px;
+            background:rgba(0,0,0,0.25);border:1px solid rgba(255,255,255,0.08);
+            padding:8px;min-height:100px;"></div>
+        <div class="modal-actions" style="margin-top:12px;">
+          <button id="btn-copy-mp4-links" class="modal-btn secondary">Copy All Links</button>
+          <button id="btn-mp4-links-done" class="modal-btn primary">Done</button>
+        </div>
+      </div>`;
+    document.body.appendChild(mp4LinksOverlay);
+
     const siteInfoPanel = document.getElementById('site-info-panel');
     const siteInfoGrid  = document.getElementById('site-info-grid');
+    const mp4LinksList  = document.getElementById('mp4-links-list');
+    const mp4LinksCount = document.getElementById('mp4-links-count');
     let siteInfoRefreshToken = 0;
+    
+    // MP4 Links popup handlers
+    const showMp4LinksPopup = (links) => {
+        if (!mp4LinksOverlay || !mp4LinksList || !mp4LinksCount) return;
+        mp4LinksCount.textContent = `Found ${links.length} .mp4 link${links.length !== 1 ? 's' : ''}:`;
+        
+        if (links.length === 0) {
+            mp4LinksList.innerHTML = '<div style="text-align:center;padding:20px;color:rgba(255,255,255,0.5);">No .mp4 links found on this page.</div>';
+        } else {
+            mp4LinksList.innerHTML = links.map((link, index) => `
+                <div style="
+                    padding:8px 10px;margin-bottom:4px;border-radius:8px;
+                    background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);
+                    font-size:11px;word-break:break-all;color:rgba(255,255,255,0.85);
+                    display:flex;align-items:center;gap:8px;">
+                    <span style="color:rgba(255,255,255,0.3);min-width:20px;">${index + 1}.</span>
+                    <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(link)}">${escapeHtml(link)}</span>
+                    <button onclick="navigator.clipboard.writeText('${escapeHtml(link).replace(/'/g, "\\'")}').then(() => this.textContent='Copied!').catch(() => this.textContent='Error'); setTimeout(() => this.textContent='Copy', 1500);" 
+                            style="background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.1);
+                                   color:rgba(255,255,255,0.8);padding:4px 8px;border-radius:6px;cursor:pointer;font-size:10px;">Copy</button>
+                </div>
+            `).join('');
+        }
+        mp4LinksOverlay.classList.remove('hidden');
+    };
+    
+    const hideMp4LinksPopup = () => {
+        if (mp4LinksOverlay) mp4LinksOverlay.classList.add('hidden');
+    };
+    
+    // Close handlers for MP4 links popup
+    document.getElementById('btn-close-mp4-links')?.addEventListener('click', hideMp4LinksPopup);
+    document.getElementById('btn-mp4-links-done')?.addEventListener('click', hideMp4LinksPopup);
+    document.getElementById('btn-copy-mp4-links')?.addEventListener('click', () => {
+        if (foundMp4Links.length > 0) {
+            navigator.clipboard.writeText(foundMp4Links.join('\n')).then(() => {
+                document.getElementById('btn-copy-mp4-links').textContent = 'Copied!';
+                setTimeout(() => {
+                    document.getElementById('btn-copy-mp4-links').textContent = 'Copy All Links';
+                }, 1500);
+            }).catch(() => {
+                document.getElementById('btn-copy-mp4-links').textContent = 'Error';
+                setTimeout(() => {
+                    document.getElementById('btn-copy-mp4-links').textContent = 'Copy All Links';
+                }, 1500);
+            });
+        }
+    });
+    mp4LinksOverlay?.addEventListener('click', (e) => {
+        if (e.target === mp4LinksOverlay) hideMp4LinksPopup();
+    });
 
     // ── HELPERS ───────────────────────────────────────────────────────────────
     const hideFeaturesHomePopup = () => featuresHomePopup?.classList.add('hidden');
@@ -445,7 +520,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const renderSiteInfoRows = (rows = []) => {
         if (!siteInfoGrid) return;
-        siteInfoGrid.innerHTML = rows.map(({ label = '', value }) => {
+        siteInfoGrid.innerHTML = rows.map(({ label = '', value, clickable = false }) => {
             const lbl = String(label);
             const val = String(value ?? 'N/A');
             let tone  = 'neutral';
@@ -455,14 +530,90 @@ document.addEventListener('DOMContentLoaded', async () => {
                 else if (/^suspicious$/i.test(val))                            tone = 'warn';
                 else if (/^checking/i.test(val))                               tone = 'info';
             }
+            const valueClass = clickable ? 'site-info-value site-info-value-clickable' : 'site-info-value';
+            const clickAttr = clickable ? 'data-clickable="true" style="cursor:pointer;"' : '';
             return `<div class="site-info-label">${escapeHtml(lbl)}</div>`
-                 + `<div class="site-info-value" data-tone="${escapeHtml(tone)}">${escapeHtml(val)}</div>`;
+                 + `<div class="${valueClass}" data-tone="${escapeHtml(tone)}" ${clickAttr}>${escapeHtml(val)}</div>`;
         }).join('');
     };
 
+    let foundMp4Links = [];
+    
+    const scanForMp4Links = async (webview) => {
+        if (!webview?.executeJavaScript) return [];
+        try {
+            const result = await webview.executeJavaScript(`
+                (() => {
+                    const links = new Set();
+                    // Check all elements with src attribute
+                    const allElements = document.querySelectorAll('*[src]');
+                    allElements.forEach(el => {
+                        const src = el.getAttribute('src');
+                        if (src && src.toLowerCase().includes('.mp4')) {
+                            links.add(src);
+                        }
+                    });
+                    // Check all anchor tags with href attribute
+                    const anchors = document.querySelectorAll('a[href]');
+                    anchors.forEach(a => {
+                        const href = a.getAttribute('href');
+                        if (href && href.toLowerCase().includes('.mp4')) {
+                            try {
+                                links.add(new URL(href, document.baseURI).href);
+                            } catch (e) {
+                                links.add(href);
+                            }
+                        }
+                    });
+                    // Check all source tags
+                    const sources = document.querySelectorAll('source[src]');
+                    sources.forEach(source => {
+                        const src = source.getAttribute('src');
+                        if (src && src.toLowerCase().includes('.mp4')) {
+                            links.add(src);
+                        }
+                    });
+                    // Check for inline onclick with .mp4
+                    const onclickElements = document.querySelectorAll('[onclick]');
+                    onclickElements.forEach(el => {
+                        const onclick = el.getAttribute('onclick');
+                        if (onclick) {
+                            const matches = onclick.match(/https?:\\/\\/[^"'\\s]+\\.mp4/gi);
+                            if (matches) {
+                                matches.forEach(m => links.add(m));
+                            }
+                        }
+                    });
+                    // Check for data attributes with .mp4
+                    const dataElements = document.querySelectorAll('[data-src], [data-url], [data-video]');
+                    dataElements.forEach(el => {
+                        ['data-src', 'data-url', 'data-video'].forEach(attr => {
+                            const val = el.getAttribute(attr);
+                            if (val && val.toLowerCase().includes('.mp4')) {
+                                links.add(val);
+                            }
+                        });
+                    });
+                    // Also check innerHTML for video URLs
+                    const bodyHtml = document.body.innerHTML;
+                    const urlMatches = bodyHtml.match(/https?:\\/\\/[^"'\\s<>]+\\.mp4/gi);
+                    if (urlMatches) {
+                        urlMatches.forEach(url => links.add(url));
+                    }
+                    return Array.from(links);
+                })()
+            `);
+            return Array.isArray(result) ? result : [];
+        } catch (e) {
+            console.warn('Failed to scan for .mp4 links:', e);
+            return [];
+        }
+    };
+    
     const buildSiteInfoRows = (data) => ([
         { label: 'URL',    value: data.url    || 'N/A' },
-        { label: 'Safety', value: data.safety || 'Not scanned' }
+        { label: 'Safety', value: data.safety || 'Not scanned' },
+        { label: 'LINKS',  value: data.links  || '0', clickable: data.linksClickable || false }
     ]);
 
     const resolveSiteSafetyLabel = (result = null, rawUrl = '') => {
@@ -531,27 +682,42 @@ document.addEventListener('DOMContentLoaded', async () => {
         const token        = ++siteInfoRefreshToken;
 
         if (!activeTab && !activeWebview) {
-            renderSiteInfoRows(buildSiteInfoRows({ url: 'No active website', safety: 'Not scanned' }));
+            renderSiteInfoRows(buildSiteInfoRows({ url: 'No active website', safety: 'Not scanned', links: '0' }));
             return;
         }
 
         const currentUrl = String(activeTab?.url || activeWebview?.getURL?.() || '').trim();
         renderSiteInfoRows(buildSiteInfoRows({
             url:    currentUrl || 'N/A',
-            safety: isHttpWebsiteUrl(currentUrl) ? 'Checking safety...' : 'Not available for this page'
+            safety: isHttpWebsiteUrl(currentUrl) ? 'Checking safety...' : 'Not available for this page',
+            links: 'Scanning...',
+            linksClickable: false
         }));
 
         let siteSafety = null;
+        let mp4Links = [];
+        
         if (isHttpWebsiteUrl(currentUrl)) {
             try {
                 siteSafety = await window.browserAPI?.security?.getSiteSafetyStatus?.({ url: currentUrl, allowScan: true });
             } catch (_) {}
         }
+        
+        // Scan for .mp4 links
+        if (activeWebview) {
+            try {
+                mp4Links = await scanForMp4Links(activeWebview);
+                foundMp4Links = mp4Links;
+            } catch (_) {}
+        }
+        
         if (token !== siteInfoRefreshToken) return;
 
         renderSiteInfoRows(buildSiteInfoRows({
             url:    currentUrl || 'N/A',
-            safety: resolveSiteSafetyLabel(siteSafety, currentUrl)
+            safety: resolveSiteSafetyLabel(siteSafety, currentUrl),
+            links: mp4Links.length > 0 ? String(mp4Links.length) : '0',
+            linksClickable: mp4Links.length > 0
         }));
     };
 
@@ -568,6 +734,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     siteInfoPanel?.addEventListener('mousedown', e => e.stopPropagation());
+    
+    // Click handler for links row
+    siteInfoGrid?.addEventListener('click', (e) => {
+        const valueEl = e.target.closest('.site-info-value-clickable');
+        if (valueEl && foundMp4Links.length > 0) {
+            showMp4LinksPopup(foundMp4Links);
+        }
+    });
 
     // ── SESSIONGUARD HELPERS ──────────────────────────────────────────────────
     const setSessionGuardVisible = (visible) => {

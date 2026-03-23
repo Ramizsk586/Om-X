@@ -1,5 +1,6 @@
 const { app, webContents } = require('electron');
 const WebFirewall = require('./firewall/WebFirewall');
+const { checkAdultContent } = require('./Adult_block/AdultContentBlocker');
 const path = require('path');
 const fs = require('fs');
 const { pathToFileURL } = require('url');
@@ -550,6 +551,12 @@ class SecurityManager {
     this.applyNetworkFilters();
   }
 
+  getAdultContentBlockerConfig() {
+    return {
+      enabled: this.settings?.features?.enableAdultContentBlock === true
+    };
+  }
+
   init() {
     this.applyNetworkFilters();
     this.setupPopupBlocking();
@@ -696,6 +703,23 @@ class SecurityManager {
        // 0. AD BLOCKER: Cancel all ad/tracker/analytics requests at network level
        if (!isMainFrame && isAdUrl(url)) {
            return callback({ cancel: true });
+       }
+
+       // 0b. ADULT CONTENT BLOCKER
+       if (this.getAdultContentBlockerConfig().enabled) {
+           const adultCheck = checkAdultContent(url);
+           if (adultCheck.blocked) {
+               if (isMainFrame) {
+                   const lockUrl = this.getLockScreenUrl(url, 'adult_content', adultCheck.reason);
+                   try {
+                       const targetWc = webContents.fromId(details.webContentsId);
+                       if (targetWc && !targetWc.isDestroyed()) {
+                           setImmediate(() => targetWc.loadURL(lockUrl).catch(() => {}));
+                       }
+                   } catch (_) {}
+               }
+               return callback({ cancel: true });
+           }
        }
 
        // 1. SYSTEM BYPASS: Prevent infinite loops on system pages
