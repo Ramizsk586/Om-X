@@ -316,6 +316,146 @@
       </div>
     </div>
 
+    <!-- DM Key Exchange Modal -->
+    <div id="dm-key-exchange-modal" class="modal hidden">
+      <div class="modal-inner" style="max-width: 440px; text-align: center;">
+        <div style="font-size: 48px; margin-bottom: 16px;">&#128273;</div>
+        <h3 style="margin-bottom: 8px;">Secure Your Conversation</h3>
+        <p style="color: var(--text-muted, #9ca3af); font-size: 13px; margin-bottom: 24px; line-height: 1.5;">
+          Generate an encryption key to secure your direct messages with <strong id="dm-exchange-partner">this user</strong>.<br>
+          Both users must share their keys to decrypt messages.
+        </p>
+
+        <!-- Step 1: Generate your key -->
+        <div id="dm-key-step1" class="dm-key-step">
+          <button id="dm-generate-key-btn" class="btn-primary" type="button" style="width: 100%; margin-bottom: 16px;">
+            Generate My Key
+          </button>
+        </div>
+
+        <!-- Step 2: Show generated key and get partner's key -->
+        <div id="dm-key-step2" class="dm-key-step hidden">
+          <div style="margin-bottom: 16px;">
+            <label style="display: block; font-size: 12px; font-weight: 600; color: var(--text-muted, #9ca3af); margin-bottom: 6px; text-align: left;">YOUR KEY (share this):</label>
+            <div id="dm-my-key-display" style="background: var(--bg-card, #1a1a22); border: 1px solid var(--border, #333); border-radius: 8px; padding: 12px; font-family: monospace; font-size: 13px; color: var(--accent, #6366f1); word-break: break-all; cursor: pointer;" title="Click to copy">
+            </div>
+          </div>
+
+          <div style="margin-bottom: 20px;">
+            <label style="display: block; font-size: 12px; font-weight: 600; color: var(--text-muted, #9ca3af); margin-bottom: 6px; text-align: left;">PARTNER'S KEY:</label>
+            <input id="dm-partner-key-input" type="text" placeholder="Paste your partner's key here..."
+              style="width: 100%; background: var(--bg-card, #1a1a22); border: 1px solid var(--border, #333); border-radius: 8px; padding: 12px; font-family: monospace; font-size: 13px; color: var(--text, #fff); box-sizing: border-box;" />
+          </div>
+
+          <button id="dm-merge-keys-btn" class="btn-primary" type="button" style="width: 100%;" disabled>
+            Generate Shared Key
+          </button>
+        </div>
+
+        <!-- Step 3: Show merged key -->
+        <div id="dm-key-step3" class="dm-key-step hidden">
+          <div style="margin-bottom: 8px; font-size: 13px; color: var(--text-muted, #9ca3af);">Shared Encryption Key:</div>
+          <div id="dm-shared-key-display" style="background: var(--bg-card, #1a1a22); border: 1px solid var(--success, #22c55e); border-radius: 8px; padding: 14px; font-family: monospace; font-size: 13px; color: var(--success, #22c55e); word-break: break-all; margin-bottom: 16px;">
+          </div>
+          <button id="dm-open-encrypted-btn" class="btn-primary" type="button" style="width: 100%; background: var(--success, #22c55e); border-color: var(--success, #22c55e);">
+            &#128274; Open Encrypted Chat
+          </button>
+        </div>
+
+        <!-- Skip option -->
+        <div style="margin-top: 16px;">
+          <button id="dm-skip-encryption-btn" class="btn-secondary" type="button" style="background: transparent; border: none; font-size: 12px; color: var(--text-muted, #9ca3af);">
+            Skip encryption
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- DM Key Prompt Modal -->
+    <div id="dm-key-prompt-modal" class="modal hidden">
+      <div class="modal-inner" style="max-width: 400px; text-align: center;">
+        <div style="font-size: 48px; margin-bottom: 16px;">&#128274;</div>
+        <h3 style="margin-bottom: 8px;">Secure Your Direct Message</h3>
+        <p style="color: var(--text-muted, #9ca3af); font-size: 13px; margin-bottom: 24px; line-height: 1.5;">
+          Would you like to create an encryption key for your conversation with <strong id="dm-key-prompt-partner">this user</strong>?
+        </p>
+        <div style="display: flex; gap: 12px;">
+          <button id="dm-key-prompt-no" class="btn-secondary" type="button" style="flex: 1;">
+            No, Thanks
+          </button>
+          <button id="dm-key-prompt-yes" class="btn-primary" type="button" style="flex: 1;">
+            Yes, Create Key
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- DM Dual Key Generation Modal -->
+    <div id="dm-dual-key-modal" class="modal hidden">
+      <div class="modal-inner" style="max-width: 480px; text-align: center;">
+        <div style="font-size: 48px; margin-bottom: 16px;">&#128272;</div>
+        <h3 style="margin-bottom: 8px;">Generating Encryption Key</h3>
+        <p style="color: var(--text-muted, #9ca3af); font-size: 13px; margin-bottom: 20px; line-height: 1.5;">
+          Creating secure key for <strong id="dm-dual-key-partner">this user</strong>
+        </p>
+
+        <!-- Step 1: Generating Keys -->
+        <div id="dm-dual-key-step1" class="dm-dual-key-step">
+          <div style="background: var(--bg-card, #1a1a22); border: 1px solid var(--border, #333); border-radius: 8px; padding: 16px; margin-bottom: 16px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+              <span style="font-size: 12px; color: var(--text-muted, #9ca3af);">KEY 1</span>
+              <span id="dm-key1-status" style="font-size: 11px; color: #f59e0b;">Generating...</span>
+            </div>
+            <div id="dm-key1-display" style="font-family: monospace; font-size: 12px; color: var(--accent, #6366f1); word-break: break-all; min-height: 20px;">
+            </div>
+          </div>
+          <div style="background: var(--bg-card, #1a1a22); border: 1px solid var(--border, #333); border-radius: 8px; padding: 16px; margin-bottom: 16px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+              <span style="font-size: 12px; color: var(--text-muted, #9ca3af);">KEY 2</span>
+              <span id="dm-key2-status" style="font-size: 11px; color: #f59e0b;">Generating...</span>
+            </div>
+            <div id="dm-key2-display" style="font-family: monospace; font-size: 12px; color: var(--accent, #6366f1); word-break: break-all; min-height: 20px;">
+            </div>
+          </div>
+          <div style="background: var(--bg-card, #1a1a22); border: 1px solid var(--border, #333); border-radius: 8px; padding: 16px; margin-bottom: 16px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+              <span style="font-size: 12px; color: var(--text-muted, #9ca3af);">MERGED KEY</span>
+              <span id="dm-merged-status" style="font-size: 11px; color: #f59e0b;">Merging...</span>
+            </div>
+            <div id="dm-merged-display" style="font-family: monospace; font-size: 12px; color: #f59e0b; word-break: break-all; min-height: 20px;">
+            </div>
+          </div>
+          <div id="dm-dual-progress" style="margin-bottom: 16px;">
+            <div style="height: 6px; background: var(--bg-card, #1a1a22); border-radius: 3px; overflow: hidden;">
+              <div id="dm-dual-progress-bar" style="height: 100%; width: 0%; background: linear-gradient(90deg, var(--accent, #6366f1), #818cf8); transition: width 0.3s;"></div>
+            </div>
+            <div style="font-size: 12px; color: var(--text-muted, #9ca3af); margin-top: 8px;" id="dm-dual-progress-text">Initializing...</div>
+          </div>
+        </div>
+
+        <!-- Step 2: Final Key -->
+        <div id="dm-dual-key-step2" class="dm-dual-key-step hidden">
+          <div style="background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); border: 1px solid var(--success, #22c55e); border-radius: 8px; padding: 20px; margin-bottom: 20px;">
+            <div style="font-size: 12px; color: var(--success, #22c55e); margin-bottom: 8px;">&#128273; YOUR FINAL ENCRYPTION KEY</div>
+            <div id="dm-final-key-display" style="font-family: 'JetBrains Mono', monospace; font-size: 14px; color: #fff; word-break: break-all; line-height: 1.6; cursor: pointer;" title="Click to copy">
+            </div>
+          </div>
+          <div style="background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 8px; padding: 12px; margin-bottom: 16px; text-align: left;">
+            <div style="font-size: 12px; color: #f59e0b; margin-bottom: 4px;">&#9888; Important</div>
+            <div style="font-size: 12px; color: var(--text-muted, #9ca3af); line-height: 1.5;">
+              Share this key with <strong id="dm-final-key-partner">your contact</strong> via phone or in person. Do not send it through Om Chat.
+            </div>
+          </div>
+          <button id="dm-final-key-copy" class="btn-secondary" type="button" style="width: 100%; margin-bottom: 10px;">
+            &#128203; Copy Key
+          </button>
+          <button id="dm-final-key-continue" class="btn-primary" type="button" style="width: 100%;">
+            Done
+          </button>
+        </div>
+      </div>
+    </div>
+
     <script src="/js/app.js" type="module"></script>
   </body>
 </html>

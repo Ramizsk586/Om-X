@@ -1,8 +1,10 @@
 const express = require('express');
-const { Types } = require('mongoose');
 const UploadBlob = require('../models/UploadBlob.model');
+const { getModel, isLocalMode } = require('../db/getModel');
 
 const router = express.Router();
+
+function getUploadBlobCollection() { return getModel('uploadBlobs', UploadBlob); }
 
 function toNodeBuffer(value) {
   if (!value) return null;
@@ -14,13 +16,26 @@ function toNodeBuffer(value) {
   return null;
 }
 
+function isValidObjectId(id) {
+  if (isLocalMode()) return typeof id === 'string' && id.length > 0;
+  try {
+    const { Types } = require('mongoose');
+    return Types.ObjectId.isValid(id);
+  } catch (_) { return typeof id === 'string' && id.length > 0; }
+}
+
 router.get('/:id', async (req, res) => {
   const id = String(req.params.id || '').trim();
-  if (!Types.ObjectId.isValid(id)) {
+  if (!isValidObjectId(id)) {
     return res.status(404).end();
   }
 
-  const file = await UploadBlob.findById(id).lean();
+  let file;
+  if (isLocalMode()) {
+    file = await getUploadBlobCollection().findOne({ _id: id }).lean();
+  } else {
+    file = await getUploadBlobCollection().findById(id).lean();
+  }
   const body = toNodeBuffer(file?.data);
   if (!file || !body) {
     return res.status(404).end();

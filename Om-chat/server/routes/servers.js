@@ -21,6 +21,7 @@ const {
   updateServerIcon,
   userMembers
 } = require('../db');
+const { updateServer } = require('../db/serverRepo');
 const {
   ensureServerId,
   validateInvitePayload,
@@ -360,6 +361,30 @@ router.post('/:id/messages/clear', async (req, res, next) => {
     }
 
     return res.json({ removed });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.get('/:id/e2e-status', async (req, res, next) => {
+  try {
+    const serverId = ensureServerId(req.params.id, 'id');
+    const server = await getServerById(serverId);
+    if (!server) return res.status(404).json({ error: 'server_not_found' });
+    return res.json({ e2eShown: Boolean(server.e2eShown) });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.post('/:id/e2e-shown', async (req, res, next) => {
+  try {
+    const serverId = ensureServerId(req.params.id, 'id');
+    const server = await getServerById(serverId);
+    if (!server) return res.status(404).json({ error: 'server_not_found' });
+    if (server.ownerId !== req.session.userId) return res.status(403).json({ error: 'unauthorized' });
+    await updateServer(serverId, { e2eShown: true });
+    return res.json({ success: true });
   } catch (error) {
     return next(error);
   }

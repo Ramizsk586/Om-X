@@ -27,6 +27,114 @@
     .btn-matrix-default:hover:not(.is-default) {
       color: #fff;
     }
+
+    /* OmChat DB Mode Buttons */
+    .omchat-db-mode-group {
+      display: flex;
+      gap: 4px;
+      background: #27272a;
+      border-radius: 8px;
+      padding: 3px;
+    }
+    .omchat-db-mode-btn {
+      padding: 6px 16px;
+      border: none;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      background: transparent;
+      color: #a1a1aa;
+      transition: all 0.2s;
+    }
+    .omchat-db-mode-btn.active {
+      background: #6366f1;
+      color: #fff;
+    }
+    .omchat-db-mode-btn:hover:not(.active) {
+      color: #fff;
+      background: rgba(255,255,255,0.06);
+    }
+    .omchat-db-section {
+      padding: 16px 0 8px;
+    }
+    .omchat-db-field {
+      margin-bottom: 16px;
+    }
+    .omchat-db-label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      color: #e4e4e7;
+      margin-bottom: 4px;
+    }
+    .omchat-db-desc {
+      font-size: 12px;
+      color: #71717a;
+      margin: 0 0 10px;
+      line-height: 1.5;
+    }
+    .omchat-db-path-row {
+      display: flex;
+      gap: 8px;
+    }
+    .omchat-db-input {
+      flex: 1;
+      padding: 8px 12px;
+      background: #18181b;
+      border: 1px solid #3f3f46;
+      border-radius: 6px;
+      color: #e4e4e7;
+      font-size: 13px;
+      font-family: 'JetBrains Mono', monospace;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .omchat-db-input:focus {
+      border-color: #6366f1;
+    }
+    .omchat-db-input::placeholder {
+      color: #52525b;
+    }
+    .omchat-db-browse-btn {
+      padding: 8px 16px;
+      background: #27272a;
+      border: 1px solid #3f3f46;
+      border-radius: 6px;
+      color: #e4e4e7;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      white-space: nowrap;
+    }
+    .omchat-db-browse-btn:hover {
+      background: #6366f1;
+      border-color: #6366f1;
+      color: #fff;
+    }
+    .omchat-db-info-card {
+      display: flex;
+      gap: 12px;
+      padding: 14px 16px;
+      background: rgba(99, 102, 241, 0.06);
+      border: 1px solid rgba(99, 102, 241, 0.15);
+      border-radius: 8px;
+      margin-top: 8px;
+    }
+    .omchat-db-info-icon {
+      font-size: 16px;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+    .omchat-db-info-text {
+      font-size: 12px;
+      color: #a1a1aa;
+      line-height: 1.6;
+    }
+    .omchat-db-info-text strong {
+      color: #c4b5fd;
+    }
   </style>
   <script type="importmap">
   {
@@ -77,6 +185,10 @@
         <button class="sys-nav-item" data-target="panel-creator">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
           Architect
+        </button>
+        <button class="sys-nav-item" data-target="panel-omchat">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+          OmChat
         </button>
       </div>
       <div class="sys-footer">v2.5.0 Stable</div>
@@ -335,6 +447,34 @@
           <span class="portfolio-section-title">Development Roadmap & Modules</span>
           <div class="projects-grid-compact" id="creator-projects-grid">
               <!-- Rendered by systemRenderer.js -->
+          </div>
+        </div>
+      </div>
+
+      <!-- Section: OmChat -->
+      <div id="panel-omchat" class="settings-panel">
+        <div class="panel-header">
+          <h2>OmChat Server</h2>
+          <p>Configure the database backend for OmChat messaging.</p>
+        </div>
+        <div class="settings-section-card">
+          <div class="toggle-row">
+            <div class="toggle-info">
+              <span class="toggle-title">Use MongoDB</span>
+              <span class="toggle-desc">Switch to MongoDB for the database. The MongoDB URI is read from the .env file.</span>
+            </div>
+            <label class="switch"><input type="checkbox" id="omchat-use-mongo"><span class="slider"></span></label>
+          </div>
+
+          <div id="omchat-local-section" class="omchat-db-section">
+            <div class="omchat-db-field">
+              <label class="omchat-db-label">Local Database Folder</label>
+              <p class="omchat-db-desc">Choose where OmChat stores its local database files when using Local DB. Leave empty to use the default location.</p>
+              <div class="omchat-db-path-row">
+                <input type="text" id="omchat-local-db-path" class="omchat-db-input" placeholder="Default: &lt;userData&gt;/om-chat" readonly />
+                <button type="button" id="omchat-browse-local-db" class="omchat-db-browse-btn">Browse</button>
+              </div>
+            </div>
           </div>
         </div>
       </div>

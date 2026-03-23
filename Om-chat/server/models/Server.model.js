@@ -5,7 +5,8 @@ const serverSchema = new Schema({
   name: { type: String, required: true, maxlength: 80, trim: true },
   icon: { type: String, default: '??' },
   ownerId: { type: String, required: true, trim: true },
-  createdAt: { type: String, required: true }
+  createdAt: { type: String, required: true },
+  e2eShown: { type: Boolean, default: false }
 }, {
   versionKey: false,
   minimize: false

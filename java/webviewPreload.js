@@ -163,7 +163,7 @@ contextBridge.exposeInMainWorld('webviewAPI', {
       overflow: hidden !important;
     }
   `;
-  document.head.appendChild(style);
+  document.head?.appendChild(style);
 
   // Fix 6 — Blur the image and wrap the entire card container
   function blurImage(img) {
@@ -239,12 +239,14 @@ contextBridge.exposeInMainWorld('webviewAPI', {
     debounceTimer = setTimeout(processPage, 150);
   });
 
-  observer.observe(document.body, {
-    childList: true,
-    subtree: true,
-    attributes: true,
-    attributeFilter: ['src', 'data-src', 'data-lpage']
-  });
+  if (document.body) {
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['src', 'data-src', 'data-lpage']
+    });
+  }
 
   // Periodic scan for lazy loaded content
   setInterval(processPage, 1500);

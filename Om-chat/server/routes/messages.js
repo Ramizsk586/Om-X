@@ -4,6 +4,9 @@ const crypto = require('crypto');
 const path = require('path');
 const multer = require('multer');
 const UploadBlob = require('../models/UploadBlob.model');
+const { getModel } = require('../db/getModel');
+
+function getUploadBlobCollection() { return getModel('uploadBlobs', UploadBlob); }
 
 const {
   createMessage,
@@ -233,7 +236,7 @@ router.post('/upload', (req, res) => {
       const mimeType = cleanText(req.file.mimetype || 'application/octet-stream', { maxLength: 120, preserveWhitespace: true }) || 'application/octet-stream';
       const buffer = Buffer.isBuffer(req.file.buffer) ? req.file.buffer : Buffer.from([]);
 
-      const saved = await UploadBlob.create({
+      const saved = await getUploadBlobCollection().create({
         ownerUserId: String(req.session?.userId || ''),
         originalName,
         mimeType,

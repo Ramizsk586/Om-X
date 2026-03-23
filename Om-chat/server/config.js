@@ -36,6 +36,8 @@ function loadConfig(env = process.env) {
     ACCESS_PASSWORD: z.string().default(''),
     ACCESS_TOKEN: z.string().default(''),
     MONGODB_URI: z.string().trim().min(1).default('mongodb://localhost:27017'),
+    DB_MODE: z.enum(['mongo', 'local']).default('local'),
+    LOCAL_DB_PATH: z.string().trim().default(''),
     SECURE_COOKIES: z.string().default('false'),
     COOKIE_SECURE: z.string().default('0'),
     TRUST_PROXY: z.string().default('0'),
@@ -108,6 +110,10 @@ function loadConfig(env = process.env) {
     mongo: {
       uri: parsed.MONGODB_URI,
       dbName: 'omchat'
+    },
+    db: {
+      mode: parsed.DB_MODE,
+      localDbPath: parsed.LOCAL_DB_PATH || path.resolve(__dirname, '..', 'local-db')
     },
     rateLimit: {
       register: { windowMs: parsed.REGISTRATION_LIMIT_WINDOW_MS, max: parsed.REGISTRATION_LIMIT_MAX },

@@ -688,6 +688,10 @@ function createRuntime({ host, port, sessionSecret, tlsOptions, trustProxySettin
     res.sendFile(path.join(__dirname, '..', 'public', 'app.html'));
   });
 
+  app.get('/e2e-setup.html', (_req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'public', 'e2e-setup.html'));
+  });
+
   app.get('/', (_req, res) => {
     res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
   });

@@ -1,7 +1,10 @@
 const User = require('../models/User.model');
 const { createLogger } = require('../utils/logger');
+const { getModel } = require('./getModel');
 
 const logger = createLogger('user-repo');
+
+function getUserCollection() { return getModel('users', User); }
 
 /**
  * Escape a value before embedding it inside a regular expression.
@@ -58,7 +61,7 @@ function mapUser(row) {
  */
 async function createUser(input) {
   try {
-    const created = await User.create({
+    const created = await getUserCollection().create({
       isBanned: false,
       status: 'offline',
       customStatus: '',
@@ -78,7 +81,7 @@ async function createUser(input) {
  */
 async function findUserById(userId) {
   try {
-    const row = await User.findOne({ id: String(userId) }).lean();
+    const row = await getUserCollection().findOne({ id: String(userId) }).lean();
     return mapUser(row);
   } catch (error) {
     logger.error('Failed to load user by id', { message: error.message, userId });
@@ -93,7 +96,7 @@ async function findUserById(userId) {
  */
 async function findUserByUsername(username) {
   try {
-    const row = await User.findOne({ username: createExactCaseInsensitivePattern(username) }).lean();
+    const row = await getUserCollection().findOne({ username: createExactCaseInsensitivePattern(username) }).lean();
     return mapUser(row);
   } catch (error) {
     logger.error('Failed to load user by username', { message: error.message, username });
@@ -108,7 +111,7 @@ async function findUserByUsername(username) {
  */
 async function findUserByEmail(email) {
   try {
-    const row = await User.findOne({ email: createExactCaseInsensitivePattern(String(email || '').toLowerCase()) }).lean();
+    const row = await getUserCollection().findOne({ email: createExactCaseInsensitivePattern(String(email || '').toLowerCase()) }).lean();
     return mapUser(row);
   } catch (error) {
     logger.error('Failed to load user by email', { message: error.message, email });
@@ -125,7 +128,7 @@ async function findUserByIdentity(identifier) {
   try {
     const value = String(identifier || '').trim();
     const pattern = createExactCaseInsensitivePattern(value);
-    const row = await User.findOne({ $or: [{ username: pattern }, { email: pattern }] }).lean();
+    const row = await getUserCollection().findOne({ $or: [{ username: pattern }, { email: pattern }] }).lean();
     return mapUser(row);
   } catch (error) {
     logger.error('Failed to load user by identity', { message: error.message, identifier });
@@ -146,7 +149,7 @@ async function updateUser(userId, changes = {}) {
       if (next[key] === undefined) delete next[key];
     });
 
-    const row = await User.findOneAndUpdate(
+    const row = await getUserCollection().findOneAndUpdate(
       { id: String(userId) },
       { $set: next },
       { new: true }
@@ -167,7 +170,7 @@ async function updateUser(userId, changes = {}) {
  */
 async function updatePasswordHash(userId, passwordHash, updatedAt) {
   try {
-    const row = await User.findOneAndUpdate(
+    const row = await getUserCollection().findOneAndUpdate(
       { id: String(userId) },
       { $set: { passwordHash, updatedAt } },
       { new: true }
@@ -186,7 +189,7 @@ async function updatePasswordHash(userId, passwordHash, updatedAt) {
  */
 async function listUsers(limit = 100) {
   try {
-    const rows = await User.find({}).sort({ createdAt: -1 }).limit(Number(limit) || 100).lean();
+    const rows = await getUserCollection().find({}).sort({ createdAt: -1 }).limit(Number(limit) || 100).lean();
     return rows.map(mapUser);
   } catch (error) {
     logger.error('Failed to list users', { message: error.message, limit });

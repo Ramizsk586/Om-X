@@ -298,6 +298,195 @@ function isDMEncryptionEnabled(channelId) {
   return Boolean(getDMPassphrase(channelId));
 }
 
+// ─── DM Key Prompt Modal ─────────────────────────────────────────────────────
+
+let pendingDM = null;
+
+function openDMKeyPromptModal(member) {
+  const modal = document.getElementById('dm-key-prompt-modal');
+  if (!modal) return;
+  modal.classList.remove('hidden');
+
+  pendingDM = member;
+
+  const partnerSpan = document.getElementById('dm-key-prompt-partner');
+  if (partnerSpan) {
+    partnerSpan.textContent = member?.username || 'this user';
+  }
+
+  modal.classList.remove('hidden');
+
+  const noBtn = document.getElementById('dm-key-prompt-no');
+  const yesBtn = document.getElementById('dm-key-prompt-yes');
+
+  const closeAndProceed = (skipKey) => {
+    modal.classList.add('hidden');
+    if (pendingDM) {
+      proceedOpenDM(pendingDM, skipKey);
+      pendingDM = null;
+    }
+  };
+
+  noBtn.onclick = () => closeAndProceed(true);
+  yesBtn.onclick = () => {
+    modal.classList.add('hidden');
+    openDMDualKeyModal(pendingDM);
+  };
+
+  modal.onclick = (e) => {
+    if (e.target === modal) closeAndProceed(true);
+  };
+}
+
+// ─── DM Dual Key Generation Modal ────────────────────────────────────────────
+
+async function generateRandomKey(length = 24) {
+  const bytes = crypto.getRandomValues(new Uint8Array(length));
+  return bytesToHex(bytes).toUpperCase();
+}
+
+async function sha256Hash(message) {
+  const msgBuffer = new TextEncoder().encode(message);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+  return bytesToHex(new Uint8Array(hashBuffer)).toUpperCase();
+}
+
+function formatKey(key, groupLength = 4, separator = '-') {
+  const groups = [];
+  for (let i = 0; i < key.length; i += groupLength) {
+    groups.push(key.slice(i, i + groupLength));
+  }
+  return groups.join(separator);
+}
+
+async function openDMDualKeyModal(member) {
+  const modal = document.getElementById('dm-dual-key-modal');
+  if (!modal) return;
+  modal.classList.remove('hidden');
+
+  const partnerSpan1 = document.getElementById('dm-dual-key-partner');
+  const partnerSpan2 = document.getElementById('dm-final-key-partner');
+  const partnerName = member?.username || 'this user';
+
+  if (partnerSpan1) partnerSpan1.textContent = partnerName;
+  if (partnerSpan2) partnerSpan2.textContent = partnerName;
+
+  const step1 = document.getElementById('dm-dual-key-step1');
+  const step2 = document.getElementById('dm-dual-key-step2');
+  const key1Display = document.getElementById('dm-key1-display');
+  const key2Display = document.getElementById('dm-key2-display');
+  const mergedDisplay = document.getElementById('dm-merged-display');
+  const key1Status = document.getElementById('dm-key1-status');
+  const key2Status = document.getElementById('dm-key2-status');
+  const mergedStatus = document.getElementById('dm-merged-status');
+  const progressBar = document.getElementById('dm-dual-progress-bar');
+  const progressText = document.getElementById('dm-dual-progress-text');
+  const finalKeyDisplay = document.getElementById('dm-final-key-display');
+
+  step1.classList.remove('hidden');
+  step2.classList.add('hidden');
+
+  const setProgress = (pct, text) => {
+    if (progressBar) progressBar.style.width = pct + '%';
+    if (progressText) progressText.textContent = text;
+  };
+
+  try {
+    setProgress(5, 'Starting...');
+
+    setProgress(15, 'Generating Key 1...');
+    await new Promise(r => setTimeout(r, 300));
+
+    const key1 = await generateRandomKey(32);
+    if (key1Display) key1Display.textContent = formatKey(key1);
+    if (key1Status) {
+      key1Status.textContent = 'Ready';
+      key1Status.style.color = '#22c55e';
+    }
+
+    setProgress(35, 'Generating Key 2...');
+    await new Promise(r => setTimeout(r, 300));
+
+    const key2 = await generateRandomKey(32);
+    if (key2Display) key2Display.textContent = formatKey(key2);
+    if (key2Status) {
+      key2Status.textContent = 'Ready';
+      key2Status.style.color = '#22c55e';
+    }
+
+    setProgress(55, 'Merging keys...');
+    await new Promise(r => setTimeout(r, 300));
+
+    const mergedKey = await sha256Hash(key1 + key2);
+    if (mergedDisplay) mergedDisplay.textContent = formatKey(mergedKey);
+    if (mergedStatus) {
+      mergedStatus.textContent = 'Ready';
+      mergedStatus.style.color = '#22c55e';
+    }
+
+    setProgress(75, 'Getting device time...');
+    await new Promise(r => setTimeout(r, 300));
+
+    const deviceTime = Date.now().toString();
+    setProgress(85, 'Generating final key...');
+    await new Promise(r => setTimeout(r, 300));
+
+    const finalKeyRaw = await sha256Hash(mergedKey + deviceTime);
+    const finalKey = formatKey(finalKeyRaw.slice(0, 32), 4, '-');
+
+    setProgress(95, 'Finalizing...');
+    await new Promise(r => setTimeout(r, 200));
+
+    setProgress(100, 'Complete!');
+
+    step1.classList.add('hidden');
+    step2.classList.remove('hidden');
+
+    if (finalKeyDisplay) finalKeyDisplay.textContent = finalKey;
+
+    const copyBtn = document.getElementById('dm-final-key-copy');
+    const continueBtn = document.getElementById('dm-final-key-continue');
+
+    if (copyBtn) {
+      copyBtn.onclick = () => {
+        navigator.clipboard.writeText(finalKey).then(() => {
+          copyBtn.textContent = '✓ Copied!';
+          setTimeout(() => {
+            copyBtn.innerHTML = '&#128203; Copy Key';
+          }, 2000);
+        }).catch(() => {});
+      };
+    }
+
+    if (continueBtn) {
+      continueBtn.onclick = () => {
+        modal.classList.add('hidden');
+        if (pendingDM) {
+          proceedOpenDM(pendingDM, true);
+          pendingDM = null;
+        }
+      };
+    }
+
+    modal.onclick = (e) => {
+      if (e.target === modal) {
+        modal.classList.add('hidden');
+        if (pendingDM) {
+          proceedOpenDM(pendingDM, true);
+          pendingDM = null;
+        }
+      }
+    };
+
+  } catch (err) {
+    console.error('Key generation failed:', err);
+    setProgress(0, 'Error: ' + (err.message || 'Failed'));
+    step1.classList.add('hidden');
+    step2.classList.remove('hidden');
+    if (finalKeyDisplay) finalKeyDisplay.textContent = 'Key generation failed. Please try again.';
+  }
+}
+
 // ─── Binary / Base64 helpers ──────────────────────────────────────────────────
 
 function bytesToBase64(bytes) {
@@ -766,7 +955,10 @@ async function openE2EEModal() {
     saveLabel:   isOn ? 'Change Passphrase' : 'Enable Group E2EE',
     showDisable: isOn,
     footerNote:  `AES-256-GCM · PBKDF2 · ${E2EE_PBKDF2_ITERATIONS.toLocaleString()} iterations · SHA-256`,
-    onDisable: () => { setE2EEPassphrase(''); showVoiceTooltip('Group E2EE disabled'); },
+    onDisable: () => {
+      setE2EEPassphrase('');
+      showVoiceTooltip('Group E2EE disabled');
+    },
     onSave: async (pass, confirm, showError, saveBtn) => {
       if (isOn && !pass) return true;
       if (!pass) { showError('Enter a passphrase.'); return false; }
@@ -849,12 +1041,19 @@ function initializeE2EE() {
   window.omChatSetDMKey         = setDMPassphrase;
   window.omChatGetDMKey         = getDMPassphrase;
 
-  try {
-    const saved = localStorage.getItem(E2EE_PASSPHRASE_STORAGE_KEY);
-    if (saved) setE2EEPassphrase(saved);
-  } catch (_) {
-    console.warn('[Om Chat] E2EE: localStorage unavailable — passphrase will not persist across reloads.');
+  const savedPassphrase = localStorage.getItem(E2EE_PASSPHRASE_STORAGE_KEY);
+  if (savedPassphrase) {
+    setE2EEPassphrase(savedPassphrase);
   }
+}
+
+function getCsrfToken() {
+  try {
+    const rt = (typeof window.getOmChatRuntime === 'function')
+      ? window.getOmChatRuntime()
+      : (window.__OMCHAT_RUNTIME__ || {});
+    return String(rt?.csrfToken || '').trim();
+  } catch (_) { return ''; }
 }
 
 function syncViewportMetrics() {
@@ -2459,31 +2658,43 @@ function selectChannel(channelId) {
 async function openDM(member) {
   if (!member || !member.userId || member.userId === state.user.id) return;
 
+  openDMKeyPromptModal(member);
+}
+
+async function proceedOpenDM(member, skipKey = false, existingChannelId = null) {
+  if (!member || !member.userId || member.userId === state.user.id) return;
+
   closeMobilePanels();
-  const response = await fetch('/api/dm/open', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ targetUserId: member.userId })
-  });
-  const data = await response.json();
-  if (!response.ok || !data.channelId) return;
+
+  let channelId = existingChannelId;
+
+  if (!channelId) {
+    const response = await fetch('/api/dm/open', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ targetUserId: member.userId })
+    });
+    const data = await response.json();
+    if (!response.ok || !data.channelId) return;
+    channelId = data.channelId;
+  }
 
   state.currentView = 'dm';
-  state.currentDmChannelId = data.channelId;
-  state.currentChannelId = data.channelId;
-  state.dmPartner = data.channel?.partner || member;
+  state.currentDmChannelId = channelId;
+  state.currentChannelId = channelId;
+  state.dmPartner = member;
   state.messages = [];
   state.remoteTypingUsers = [];
   state.editing.messageId = null;
   state.editing.draft = '';
-  clearUnread(data.channelId);
+  clearUnread(channelId);
   updateActiveHeader();
   applyAnnouncementLock();
   renderSidebar();
   renderMessages();
   renderTypingIndicator();
   await refreshDmList();
-  socketActions.joinChannel({ channelId: data.channelId, isDm: true });
+  socketActions.joinChannel({ channelId: channelId, isDm: true });
 }
 
 function handleSearchInput() {

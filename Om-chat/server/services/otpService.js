@@ -5,8 +5,11 @@ const config = require('../config');
 const OtpCode = require('../models/OtpCode.model');
 const { createLogger } = require('../utils/logger');
 const { normalizeEmail } = require('../utils/validate');
+const { getModel } = require('../db/getModel');
 
 const logger = createLogger('otp-service');
+
+function getOtpCodeCollection() { return getModel('otpCodes', OtpCode); }
 
 const OTP_SALT_ROUNDS = 10;
 const OTP_EXPIRY_MINUTES = config.otp.expiryMinutes;
@@ -34,7 +37,7 @@ async function createOtpForEmail(email) {
   const codeHash = await bcrypt.hash(plainCode, OTP_SALT_ROUNDS);
   const expiresAt = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000);
 
-  await OtpCode.findOneAndUpdate(
+  await getOtpCodeCollection().findOneAndUpdate(
     { email: normalizedEmail },
     {
       email: normalizedEmail,
@@ -58,37 +61,37 @@ async function createOtpForEmail(email) {
  */
 async function verifyOtp(email, submittedCode) {
   const normalizedEmail = normalizeEmail(email);
-  const record = await OtpCode.findOne({ email: normalizedEmail });
+  const record = await getOtpCodeCollection().findOne({ email: normalizedEmail });
 
   if (!record) {
     return { valid: false, reason: 'not_found' };
   }
 
   if (record.expiresAt <= new Date()) {
-    await OtpCode.deleteOne({ email: normalizedEmail });
+    await getOtpCodeCollection().deleteOne({ email: normalizedEmail });
     return { valid: false, reason: 'expired' };
   }
 
   if (record.attempts >= OTP_MAX_ATTEMPTS) {
-    await OtpCode.deleteOne({ email: normalizedEmail });
+    await getOtpCodeCollection().deleteOne({ email: normalizedEmail });
     logger.warn('OTP locked after too many attempts', { email: normalizedEmail });
     return { valid: false, reason: 'too_many_attempts' };
   }
 
-  await OtpCode.updateOne({ email: normalizedEmail }, { $inc: { attempts: 1 } });
+  await getOtpCodeCollection().updateOne({ email: normalizedEmail }, { $inc: { attempts: 1 } });
 
   const isMatch = await bcrypt.compare(String(submittedCode || ''), record.codeHash);
   if (!isMatch) {
     const nextAttempts = record.attempts + 1;
     if (nextAttempts >= OTP_MAX_ATTEMPTS) {
-      await OtpCode.deleteOne({ email: normalizedEmail });
+      await getOtpCodeCollection().deleteOne({ email: normalizedEmail });
       logger.warn('OTP locked after too many attempts', { email: normalizedEmail });
       return { valid: false, reason: 'too_many_attempts' };
     }
     return { valid: false, reason: 'invalid_code' };
   }
 
-  await OtpCode.deleteOne({ email: normalizedEmail });
+  await getOtpCodeCollection().deleteOne({ email: normalizedEmail });
   logger.info('OTP verified successfully', { email: normalizedEmail });
   return { valid: true };
 }
@@ -101,14 +104,14 @@ async function verifyOtp(email, submittedCode) {
  */
 async function canResendOtp(email) {
   const normalizedEmail = normalizeEmail(email);
-  const record = await OtpCode.findOne({ email: normalizedEmail });
+  const record = await getOtpCodeCollection().findOne({ email: normalizedEmail });
 
   if (!record) {
     return { allowed: true };
   }
 
   if (record.expiresAt <= new Date()) {
-    await OtpCode.deleteOne({ email: normalizedEmail });
+    await getOtpCodeCollection().deleteOne({ email: normalizedEmail });
     return { allowed: true };
   }
 
@@ -127,7 +130,7 @@ async function canResendOtp(email) {
  * @returns {Promise<void>}
  */
 async function deleteOtpForEmail(email) {
-  await OtpCode.deleteOne({ email: normalizeEmail(email) });
+  await getOtpCodeCollection().deleteOne({ email: normalizeEmail(email) });
 }
 
 module.exports = {

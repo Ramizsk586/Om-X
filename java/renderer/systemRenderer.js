@@ -114,6 +114,11 @@ const applyThemeClass = (theme) => {
     projectsGrid: document.getElementById('creator-projects-grid'),
     statRepos: document.querySelector('.stat-box-compact:nth-child(1) .value'),
     statFollowers: document.querySelector('.stat-box-compact:nth-child(2) .value'),
+    // OmChat Panel Elements
+    omchatUseMongo: document.getElementById('omchat-use-mongo'),
+    omchatLocalSection: document.getElementById('omchat-local-section'),
+    omchatLocalDbPath: document.getElementById('omchat-local-db-path'),
+    omchatBrowseLocalDb: document.getElementById('omchat-browse-local-db'),
   };
 
   let currentSettings = {};
@@ -366,6 +371,24 @@ const applyThemeClass = (theme) => {
   }
 
   bindLlmOperatorCards();
+
+  // ─── OmChat MongoDB Toggle & Local Folder Browse ─────────────────
+  function syncOmChatMongoToggle() {
+    const useMongo = els.omchatUseMongo?.checked ?? false;
+    if (els.omchatLocalSection) {
+      els.omchatLocalSection.style.display = useMongo ? 'none' : '';
+    }
+  }
+
+  els.omchatUseMongo?.addEventListener('change', syncOmChatMongoToggle);
+
+  els.omchatBrowseLocalDb?.addEventListener('click', async () => {
+    if (!window.browserAPI?.omChat?.selectDbFolder) return;
+    const result = await window.browserAPI.omChat.selectDbFolder();
+    if (result?.success && result.folderPath) {
+      if (els.omchatLocalDbPath) els.omchatLocalDbPath.value = result.folderPath;
+    }
+  });
   function setActivePanel(targetId) {
     const resolved = String(targetId || '').trim() || 'panel-system';
     const targetPanel = document.getElementById(resolved);
@@ -620,6 +643,12 @@ const applyThemeClass = (theme) => {
 
       syncLlmOperatorSelection(getFallbackLlmProvider(s));
 
+      // Load OmChat DB settings
+      const omchatSettings = s.omchat || {};
+      if (els.omchatUseMongo) els.omchatUseMongo.checked = omchatSettings.dbMode === 'mongo';
+      if (els.omchatLocalDbPath) els.omchatLocalDbPath.value = omchatSettings.localDbPath || '';
+      syncOmChatMongoToggle();
+
       // Load blocklist
       renderBlockList(s.blocklist || []);
       
@@ -683,6 +712,10 @@ const applyThemeClass = (theme) => {
         theme: selectedTheme,
         llm: {
             provider: selectedLlmProvider || 'google'
+        },
+        omchat: {
+            dbMode: els.omchatUseMongo?.checked ? 'mongo' : 'local',
+            localDbPath: els.omchatLocalDbPath?.value.trim() || ''
         },
         shortcuts: newShortcuts,
         blocklist: currentSettings.blocklist || [],

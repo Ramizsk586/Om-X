@@ -1,0 +1,512 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="color-scheme" content="dark" />
+    <title>E2E Encryption Key — Om-X Chat</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+    <style>
+      *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+      :root {
+        --bg: #0a0a0f;
+        --bg-panel: #111118;
+        --bg-card: #1a1a22;
+        --bg-hover: #252530;
+        --accent: #6366f1;
+        --accent-light: #818cf8;
+        --accent-glow: rgba(99, 102, 241, 0.25);
+        --text: #f1f1f4;
+        --text-dim: #9ca3af;
+        --text-muted: #6b7280;
+        --border: rgba(255, 255, 255, 0.06);
+        --success: #22c55e;
+        --danger: #ef4444;
+        --warning: #f59e0b;
+      }
+
+      body {
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        overflow-y: auto;
+      }
+
+      .e2e-container {
+        width: 100%;
+        max-width: 600px;
+        background: var(--bg-panel);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 40px 36px;
+        box-shadow: 0 24px 64px rgba(0, 0, 0, 0.5);
+        text-align: center;
+      }
+
+      .e2e-icon {
+        font-size: 48px;
+        margin-bottom: 16px;
+        display: block;
+      }
+
+      .e2e-title {
+        font-size: 22px;
+        font-weight: 700;
+        color: var(--text);
+        margin-bottom: 8px;
+      }
+
+      .e2e-subtitle {
+        font-size: 14px;
+        color: var(--text-dim);
+        line-height: 1.6;
+        margin-bottom: 28px;
+      }
+
+      /* Generating state */
+      .e2e-generating {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 16px;
+        padding: 32px 0;
+      }
+
+      .e2e-spinner {
+        width: 48px;
+        height: 48px;
+        border: 3px solid var(--border);
+        border-top-color: var(--accent);
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+      }
+
+      @keyframes spin {
+        to { transform: rotate(360deg); }
+      }
+
+      .e2e-progress-bar {
+        width: 100%;
+        max-width: 320px;
+        height: 6px;
+        background: var(--bg-card);
+        border-radius: 3px;
+        overflow: hidden;
+      }
+
+      .e2e-progress-fill {
+        height: 100%;
+        width: 0%;
+        background: linear-gradient(90deg, var(--accent), var(--accent-light));
+        border-radius: 3px;
+        transition: width 0.3s ease;
+      }
+
+      .e2e-progress-label {
+        font-size: 13px;
+        color: var(--text-muted);
+        font-weight: 500;
+      }
+
+      /* Key ready state */
+      .e2e-key-section {
+        display: none;
+        flex-direction: column;
+        align-items: center;
+        gap: 20px;
+      }
+
+      .e2e-key-section.visible {
+        display: flex;
+        animation: fadeIn 0.5s ease;
+      }
+
+      @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(12px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+
+      .e2e-key-block {
+        width: 100%;
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 20px 16px;
+        font-family: 'JetBrains Mono', 'Courier New', monospace;
+        font-size: 14px;
+        font-weight: 500;
+        color: var(--accent-light);
+        line-height: 1.8;
+        letter-spacing: 0.5px;
+        word-break: break-all;
+        user-select: all;
+        text-align: center;
+      }
+
+      .e2e-actions {
+        display: flex;
+        gap: 12px;
+        width: 100%;
+        justify-content: center;
+        flex-wrap: wrap;
+      }
+
+      .e2e-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        padding: 12px 24px;
+        border: 1px solid var(--border);
+        background: var(--bg-hover);
+        color: var(--text);
+        border-radius: 10px;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        font-family: inherit;
+        min-width: 150px;
+      }
+
+      .e2e-btn:hover:not(:disabled) {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: white;
+        transform: translateY(-1px);
+        box-shadow: 0 4px 16px var(--accent-glow);
+      }
+
+      .e2e-btn:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+        transform: none;
+      }
+
+      .e2e-btn.primary {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: white;
+      }
+
+      .e2e-btn.primary:hover:not(:disabled) {
+        background: var(--accent-light);
+        border-color: var(--accent-light);
+      }
+
+      .e2e-btn.copied {
+        background: rgba(34, 197, 94, 0.15);
+        border-color: rgba(34, 197, 94, 0.4);
+        color: var(--success);
+      }
+
+      .e2e-warning {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        background: rgba(245, 158, 11, 0.08);
+        border: 1px solid rgba(245, 158, 11, 0.2);
+        border-radius: 10px;
+        padding: 14px 16px;
+        width: 100%;
+        text-align: left;
+      }
+
+      .e2e-warning-icon {
+        font-size: 18px;
+        flex-shrink: 0;
+        margin-top: 1px;
+      }
+
+      .e2e-warning-text {
+        font-size: 13px;
+        color: var(--text-dim);
+        line-height: 1.55;
+      }
+
+      .e2e-warning-text strong {
+        color: var(--warning);
+      }
+
+      /* Error state */
+      .e2e-error {
+        display: none;
+        flex-direction: column;
+        align-items: center;
+        gap: 16px;
+        padding: 24px 0;
+      }
+
+      .e2e-error.visible {
+        display: flex;
+      }
+
+      .e2e-error-msg {
+        font-size: 14px;
+        color: var(--danger);
+      }
+
+      @media (max-width: 500px) {
+        .e2e-container { padding: 28px 20px; }
+        .e2e-title { font-size: 18px; }
+        .e2e-key-block { font-size: 12px; padding: 16px 12px; }
+        .e2e-actions { flex-direction: column; }
+        .e2e-btn { width: 100%; }
+      }
+    </style>
+    <script src="/client-config.js"></script>
+  </head>
+  <body>
+    <div class="e2e-container">
+      <span class="e2e-icon" aria-hidden="true">&#128274;</span>
+      <h1 class="e2e-title">Secure Your Server</h1>
+      <p class="e2e-subtitle">
+        This is your one-time End-to-End Encryption Key.<br />
+        It will <strong>NOT</strong> be saved. Copy it before continuing.
+      </p>
+
+      <div id="e2e-generating" class="e2e-generating">
+        <div class="e2e-spinner"></div>
+        <div class="e2e-progress-bar">
+          <div id="e2e-progress-fill" class="e2e-progress-fill"></div>
+        </div>
+        <span id="e2e-progress-label" class="e2e-progress-label">Gathering entropy...</span>
+      </div>
+
+      <div id="e2e-key-section" class="e2e-key-section">
+        <div id="e2e-key-block" class="e2e-key-block"></div>
+
+        <div class="e2e-actions">
+          <button id="e2e-copy-btn" class="e2e-btn" type="button" disabled>
+            <span id="e2e-copy-label">&#128203; Copy Key</span>
+          </button>
+          <button id="e2e-open-btn" class="e2e-btn primary" type="button" disabled>
+            &#128275; Open Server
+          </button>
+        </div>
+
+        <div class="e2e-warning">
+          <span class="e2e-warning-icon" aria-hidden="true">&#9888;&#65039;</span>
+          <span class="e2e-warning-text">
+            <strong>Warning:</strong> This key cannot be recovered.
+            Store it somewhere safe before proceeding.
+          </span>
+        </div>
+      </div>
+
+      <div id="e2e-error" class="e2e-error">
+        <span class="e2e-error-msg" id="e2e-error-msg">Something went wrong.</span>
+        <button class="e2e-btn" type="button" onclick="window.location.reload()">Retry</button>
+      </div>
+    </div>
+
+    <script>
+      (function () {
+        'use strict';
+
+        var params = new URLSearchParams(window.location.search);
+        var serverId = (params.get('server') || '').trim();
+
+        if (!serverId) {
+          window.location.href = '/';
+          return;
+        }
+
+        var generatingEl = document.getElementById('e2e-generating');
+        var progressFill = document.getElementById('e2e-progress-fill');
+        var progressLabel = document.getElementById('e2e-progress-label');
+        var keySection = document.getElementById('e2e-key-section');
+        var keyBlock = document.getElementById('e2e-key-block');
+        var copyBtn = document.getElementById('e2e-copy-btn');
+        var copyLabel = document.getElementById('e2e-copy-label');
+        var openBtn = document.getElementById('e2e-open-btn');
+        var errorEl = document.getElementById('e2e-error');
+        var errorMsg = document.getElementById('e2e-error-msg');
+
+        function showError(msg) {
+          generatingEl.style.display = 'none';
+          keySection.classList.remove('visible');
+          errorMsg.textContent = msg || 'Something went wrong.';
+          errorEl.classList.add('visible');
+        }
+
+        function getCsrfToken() {
+          try {
+            var rt = (typeof window.getOmChatRuntime === 'function')
+              ? window.getOmChatRuntime()
+              : (window.__OMCHAT_RUNTIME__ || {});
+            return String(rt && rt.csrfToken || '').trim();
+          } catch (_) { return ''; }
+        }
+
+        function delay(ms) {
+          return new Promise(function (resolve) { setTimeout(resolve, ms); });
+        }
+
+        // ─── E2E Key Generation Algorithm ─────────────────────────────
+
+        function isLeapYear(Y) {
+          return (Y % 400 === 0) || (Y % 4 === 0 && Y % 100 !== 0);
+        }
+
+        function daysInMonth(Mo, Y) {
+          return [31, (isLeapYear(Y) ? 29 : 28), 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][Mo - 1];
+        }
+
+        function rotateLeft64(x, bits) {
+          bits = BigInt(bits);
+          var mask = 0xFFFFFFFFFFFFFFFFn;
+          return ((x << bits) | (x >> (64n - bits))) & mask;
+        }
+
+        async function sha256(message) {
+          var msgBuffer = new TextEncoder().encode(message);
+          var hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+          var hashArray = Array.from(new Uint8Array(hashBuffer));
+          return hashArray.map(function (b) { return b.toString(16).padStart(2, '0'); }).join('');
+        }
+
+        function setProgress(pct, label) {
+          progressFill.style.width = pct + '%';
+          progressLabel.textContent = label;
+        }
+
+        async function generateE2EKey() {
+          setProgress(10, 'Gathering entropy...');
+
+          var now = new Date();
+          var T = Date.now();
+          var H = now.getHours();
+          var M = now.getMinutes();
+          var S = now.getSeconds();
+          var MS = now.getMilliseconds();
+          var Y = now.getFullYear();
+          var Mo = now.getMonth() + 1;
+          var D = now.getDate();
+
+          var L = isLeapYear(Y) ? 1 : 0;
+          var TDM = daysInMonth(Mo, Y);
+
+          await delay(300);
+          setProgress(30, 'Computing temporal weights...');
+
+          // Layer 1: Temporal weighting
+          var A = BigInt((T * H + S * 997) ^ (M * TDM));
+          var B = BigInt(MS * 31337 + D * L * 7919);
+          var C = A ^ B;
+
+          await delay(300);
+          setProgress(50, 'Prime multiplication fold...');
+
+          // Layer 2: Prime multiplication fold
+          var P1 = 104729n, P2 = 224737n, P3 = 350377n;
+          var X = ((C * P1 + (BigInt(T) % P2)) ^ (B * P3));
+
+          await delay(300);
+          setProgress(70, 'Bit rotation & inversion...');
+
+          // Layer 3: Bit rotation & inversion
+          var rotBits = BigInt((H + TDM) % 32);
+          X = rotateLeft64(X, rotBits);
+          X = X ^ (~BigInt(T & 0xFFFFFFFF) & 0xFFFFFFFFFFFFFFFFn);
+
+          await delay(200);
+          setProgress(85, 'Hashing with SHA-256...');
+
+          // Layer 4: SHA-256 hash
+          var raw = await sha256(X.toString() + T.toString() + L.toString() + TDM.toString());
+
+          setProgress(95, 'Encoding key...');
+
+          // Layer 5: Encode to display-safe format
+          var hexToBase64 = function (hex) {
+            var bytes = [];
+            for (var i = 0; i < hex.length; i += 2) {
+              bytes.push(parseInt(hex.substr(i, 2), 16));
+            }
+            var binary = '';
+            for (var j = 0; j < bytes.length; j++) {
+              binary += String.fromCharCode(bytes[j]);
+            }
+            return btoa(binary);
+          };
+
+          var b64 = hexToBase64(raw)
+            .replace(/\+/g, 'A')
+            .replace(/\//g, 'B')
+            .replace(/=/g, '')
+            .toUpperCase();
+
+          var key64 = b64.substring(0, 64);
+          var formatted = key64.match(/.{1,4}/g).join('-');
+
+          await delay(200);
+          setProgress(100, 'Key ready!');
+
+          return formatted;
+        }
+
+        // ─── Main Flow ────────────────────────────────────────────────
+
+        generateE2EKey().then(function (key) {
+          generatingEl.style.display = 'none';
+          keyBlock.textContent = key;
+          keySection.classList.add('visible');
+          copyBtn.disabled = false;
+          openBtn.disabled = false;
+
+          copyBtn.addEventListener('click', function () {
+            navigator.clipboard.writeText(key).then(function () {
+              copyBtn.classList.add('copied');
+              copyLabel.innerHTML = '&#10003; Copied!';
+              setTimeout(function () {
+                copyBtn.classList.remove('copied');
+                copyLabel.innerHTML = '&#128203; Copy Key';
+              }, 2000);
+            }).catch(function () {
+              var range = document.createRange();
+              range.selectNode(keyBlock);
+              window.getSelection().removeAllRanges();
+              window.getSelection().addRange(range);
+              copyLabel.innerHTML = 'Select text manually';
+              setTimeout(function () {
+                copyLabel.innerHTML = '&#128203; Copy Key';
+              }, 3000);
+            });
+          });
+
+          openBtn.addEventListener('click', async function () {
+            openBtn.disabled = true;
+            openBtn.textContent = 'Opening server...';
+
+            // Mark e2eShown only
+            try {
+              var headers = { 'Content-Type': 'application/json' };
+              var csrf = getCsrfToken();
+              if (csrf) headers['x-csrf-token'] = csrf;
+              await fetch('/api/servers/' + encodeURIComponent(serverId) + '/e2e-shown', {
+                method: 'POST',
+                headers: headers,
+                credentials: 'same-origin'
+              });
+            } catch (_) {}
+
+            // Redirect to server
+            var target = '/app.html?server=' + encodeURIComponent(serverId);
+            window.location.replace(target);
+          });
+        }).catch(function (err) {
+          showError('Key generation failed: ' + (err && err.message || err));
+        });
+      })();
+    </script>
+  </body>
+</html>

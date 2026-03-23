@@ -5,8 +5,16 @@ const Member = require('../models/Member.model');
 const Invite = require('../models/Invite.model');
 const Ban = require('../models/Ban.model');
 const { createLogger } = require('../utils/logger');
+const { getModel, isLocalMode } = require('./getModel');
 
 const logger = createLogger('server-repo');
+
+function getServerCollection() { return getModel('servers', Server); }
+function getChannelCollection() { return getModel('channels', Channel); }
+function getRoleCollection() { return getModel('roles', Role); }
+function getMemberCollection() { return getModel('members', Member); }
+function getInviteCollection() { return getModel('invites', Invite); }
+function getBanCollection() { return getModel('bans', Ban); }
 
 /**
  * Clone a lean Mongo object into plain JSON data.
@@ -136,11 +144,11 @@ function mapServer(server, parts = {}) {
 async function hydrateServer(server) {
   if (!server) return null;
   const [channels, roles, members, invites, bans] = await Promise.all([
-    Channel.find({ serverId: server.id }).sort({ createdAt: 1 }).lean(),
-    Role.find({ serverId: server.id }).sort({ name: 1 }).lean(),
-    Member.find({ serverId: server.id }).sort({ joinedAt: 1 }).lean(),
-    Invite.find({ serverId: server.id }).sort({ createdAt: 1 }).lean(),
-    Ban.find({ serverId: server.id }).sort({ bannedAt: -1 }).lean()
+    getChannelCollection().find({ serverId: server.id }).sort({ createdAt: 1 }).lean(),
+    getRoleCollection().find({ serverId: server.id }).sort({ name: 1 }).lean(),
+    getMemberCollection().find({ serverId: server.id }).sort({ joinedAt: 1 }).lean(),
+    getInviteCollection().find({ serverId: server.id }).sort({ createdAt: 1 }).lean(),
+    getBanCollection().find({ serverId: server.id }).sort({ bannedAt: -1 }).lean()
   ]);
   return mapServer(server, { channels, roles, members, invites, bans });
 }
@@ -152,8 +160,8 @@ async function hydrateServer(server) {
  */
 async function createServer(input) {
   try {
-    const created = await Server.create(input);
-    return mapServer(created.toObject());
+    const created = await getServerCollection().create(input);
+    return mapServer(created.toObject ? created.toObject() : created);
   } catch (error) {
     logger.error('Failed to create server', { message: error.message, serverId: input?.id });
     throw error;
@@ -167,7 +175,7 @@ async function createServer(input) {
  */
 async function findServerById(id) {
   try {
-    const server = await Server.findOne({ id: String(id) }).lean();
+    const server = await getServerCollection().findOne({ id: String(id) }).lean();
     return hydrateServer(server ? cloneLean(server) : null);
   } catch (error) {
     logger.error('Failed to load server by id', { message: error.message, serverId: id });
@@ -182,10 +190,10 @@ async function findServerById(id) {
  */
 async function findServersByMemberUserId(userId) {
   try {
-    const memberships = await Member.find({ userId: String(userId) }).lean();
+    const memberships = await getMemberCollection().find({ userId: String(userId) }).lean();
     const serverIds = [...new Set(memberships.map((entry) => String(entry.serverId)).filter(Boolean))];
     if (!serverIds.length) return [];
-    const servers = await Server.find({ id: { $in: serverIds } }).lean();
+    const servers = await getServerCollection().find({ id: { $in: serverIds } }).lean();
     const hydrated = await Promise.all(servers.map((server) => hydrateServer(cloneLean(server))));
     return hydrated.filter(Boolean);
   } catch (error) {
@@ -201,7 +209,7 @@ async function findServersByMemberUserId(userId) {
  */
 async function findServerByInviteCode(code) {
   try {
-    const invite = await Invite.findOne({ code: String(code) }).lean();
+    const invite = await getInviteCollection().findOne({ code: String(code) }).lean();
     return invite ? findServerById(invite.serverId) : null;
   } catch (error) {
     logger.error('Failed to load server by invite', { message: error.message, code });
@@ -217,7 +225,7 @@ async function findServerByInviteCode(code) {
  */
 async function updateServer(id, changes) {
   try {
-    const row = await Server.findOneAndUpdate({ id: String(id) }, { $set: changes || {} }, { new: true }).lean();
+    const row = await getServerCollection().findOneAndUpdate({ id: String(id) }, { $set: changes || {} }, { new: true }).lean();
     return hydrateServer(row ? cloneLean(row) : null);
   } catch (error) {
     logger.error('Failed to update server', { message: error.message, serverId: id, keys: Object.keys(changes || {}) });
@@ -233,15 +241,15 @@ async function updateServer(id, changes) {
 async function deleteServer(id) {
   try {
     const serverId = String(id);
-    const existing = await Server.findOne({ id: serverId }).lean();
+    const existing = await getServerCollection().findOne({ id: serverId }).lean();
     if (!existing) return false;
     await Promise.all([
-      Server.deleteOne({ id: serverId }),
-      Channel.deleteMany({ serverId }),
-      Role.deleteMany({ serverId }),
-      Member.deleteMany({ serverId }),
-      Invite.deleteMany({ serverId }),
-      Ban.deleteMany({ serverId })
+      getServerCollection().deleteOne({ id: serverId }),
+      getChannelCollection().deleteMany({ serverId }),
+      getRoleCollection().deleteMany({ serverId }),
+      getMemberCollection().deleteMany({ serverId }),
+      getInviteCollection().deleteMany({ serverId }),
+      getBanCollection().deleteMany({ serverId })
     ]);
     return true;
   } catch (error) {
@@ -257,7 +265,7 @@ async function deleteServer(id) {
  */
 async function createChannel(input) {
   try {
-    const created = await Channel.create(input);
+    const created = await getChannelCollection().create(input);
     return mapChannel(created.toObject());
   } catch (error) {
     logger.error('Failed to create channel', { message: error.message, channelId: input?.id, serverId: input?.serverId });
@@ -272,7 +280,7 @@ async function createChannel(input) {
  */
 async function findChannelById(id) {
   try {
-    const channel = await Channel.findOne({ id: String(id) }).lean();
+    const channel = await getChannelCollection().findOne({ id: String(id) }).lean();
     return mapChannel(channel ? cloneLean(channel) : null);
   } catch (error) {
     logger.error('Failed to load channel by id', { message: error.message, channelId: id });
@@ -287,7 +295,7 @@ async function findChannelById(id) {
  */
 async function findChannelsByServerId(serverId) {
   try {
-    const channels = await Channel.find({ serverId: String(serverId) }).sort({ createdAt: 1 }).lean();
+    const channels = await getChannelCollection().find({ serverId: String(serverId) }).sort({ createdAt: 1 }).lean();
     return channels.map(mapChannel);
   } catch (error) {
     logger.error('Failed to list channels', { message: error.message, serverId });
@@ -303,7 +311,7 @@ async function findChannelsByServerId(serverId) {
  */
 async function updateChannel(id, changes) {
   try {
-    const channel = await Channel.findOneAndUpdate({ id: String(id) }, { $set: changes || {} }, { new: true }).lean();
+    const channel = await getChannelCollection().findOneAndUpdate({ id: String(id) }, { $set: changes || {} }, { new: true }).lean();
     return mapChannel(channel ? cloneLean(channel) : null);
   } catch (error) {
     logger.error('Failed to update channel', { message: error.message, channelId: id, keys: Object.keys(changes || {}) });
@@ -318,7 +326,7 @@ async function updateChannel(id, changes) {
  */
 async function deleteChannel(id) {
   try {
-    const result = await Channel.deleteOne({ id: String(id) });
+    const result = await getChannelCollection().deleteOne({ id: String(id) });
     return result.deletedCount > 0;
   } catch (error) {
     logger.error('Failed to delete channel', { message: error.message, channelId: id });
@@ -333,7 +341,7 @@ async function deleteChannel(id) {
  */
 async function createRole(input) {
   try {
-    const created = await Role.create(input);
+    const created = await getRoleCollection().create(input);
     return mapRole(created.toObject());
   } catch (error) {
     logger.error('Failed to create role', { message: error.message, roleId: input?.id, serverId: input?.serverId });
@@ -348,7 +356,7 @@ async function createRole(input) {
  */
 async function findRolesByServerId(serverId) {
   try {
-    const roles = await Role.find({ serverId: String(serverId) }).sort({ name: 1 }).lean();
+    const roles = await getRoleCollection().find({ serverId: String(serverId) }).sort({ name: 1 }).lean();
     return roles.map(mapRole);
   } catch (error) {
     logger.error('Failed to list roles', { message: error.message, serverId });
@@ -364,7 +372,7 @@ async function findRolesByServerId(serverId) {
  */
 async function updateRole(id, changes) {
   try {
-    const role = await Role.findOneAndUpdate({ id: String(id) }, { $set: changes || {} }, { new: true }).lean();
+    const role = await getRoleCollection().findOneAndUpdate({ id: String(id) }, { $set: changes || {} }, { new: true }).lean();
     return mapRole(role ? cloneLean(role) : null);
   } catch (error) {
     logger.error('Failed to update role', { message: error.message, roleId: id, keys: Object.keys(changes || {}) });
@@ -379,7 +387,7 @@ async function updateRole(id, changes) {
  */
 async function addMember(input) {
   try {
-    const row = await Member.findOneAndUpdate(
+    const row = await getMemberCollection().findOneAndUpdate(
       { userId: String(input.userId), serverId: String(input.serverId) },
       {
         $set: {
@@ -389,6 +397,8 @@ async function addMember(input) {
           avatarUrl: String(input.avatarUrl || '')
         },
         $setOnInsert: {
+          userId: String(input.userId),
+          serverId: String(input.serverId),
           joinedAt: String(input.joinedAt)
         }
       },
@@ -409,7 +419,7 @@ async function addMember(input) {
  */
 async function findMember(userId, serverId) {
   try {
-    const member = await Member.findOne({ userId: String(userId), serverId: String(serverId) }).lean();
+    const member = await getMemberCollection().findOne({ userId: String(userId), serverId: String(serverId) }).lean();
     return mapMember(member ? cloneLean(member) : null);
   } catch (error) {
     logger.error('Failed to find member', { message: error.message, userId, serverId });
@@ -424,7 +434,7 @@ async function findMember(userId, serverId) {
  */
 async function findMembersByServerId(serverId) {
   try {
-    const members = await Member.find({ serverId: String(serverId) }).sort({ joinedAt: 1 }).lean();
+    const members = await getMemberCollection().find({ serverId: String(serverId) }).sort({ joinedAt: 1 }).lean();
     return members.map(mapMember);
   } catch (error) {
     logger.error('Failed to list members', { message: error.message, serverId });
@@ -441,7 +451,7 @@ async function findMembersByServerId(serverId) {
  */
 async function updateMember(userId, serverId, changes) {
   try {
-    const member = await Member.findOneAndUpdate(
+    const member = await getMemberCollection().findOneAndUpdate(
       { userId: String(userId), serverId: String(serverId) },
       { $set: changes || {} },
       { new: true }
@@ -461,7 +471,7 @@ async function updateMember(userId, serverId, changes) {
  */
 async function updateMembersByUserId(userId, changes) {
   try {
-    await Member.updateMany({ userId: String(userId) }, { $set: changes || {} });
+    await getMemberCollection().updateMany({ userId: String(userId) }, { $set: changes || {} });
   } catch (error) {
     logger.error('Failed to sync member profile fields', { message: error.message, userId, keys: Object.keys(changes || {}) });
     throw error;
@@ -476,7 +486,7 @@ async function updateMembersByUserId(userId, changes) {
  */
 async function removeMember(userId, serverId) {
   try {
-    const result = await Member.deleteOne({ userId: String(userId), serverId: String(serverId) });
+    const result = await getMemberCollection().deleteOne({ userId: String(userId), serverId: String(serverId) });
     return result.deletedCount > 0;
   } catch (error) {
     logger.error('Failed to remove member', { message: error.message, userId, serverId });
@@ -491,7 +501,7 @@ async function removeMember(userId, serverId) {
  */
 async function createInvite(input) {
   try {
-    const created = await Invite.create({ uses: 0, maxUses: 0, expiresAt: null, ...input });
+    const created = await getInviteCollection().create({ uses: 0, maxUses: 0, expiresAt: null, ...input });
     return mapInvite(created.toObject());
   } catch (error) {
     logger.error('Failed to create invite', { message: error.message, code: input?.code, serverId: input?.serverId });
@@ -506,7 +516,7 @@ async function createInvite(input) {
  */
 async function findInviteByCode(code) {
   try {
-    const invite = await Invite.findOne({ code: String(code) }).lean();
+    const invite = await getInviteCollection().findOne({ code: String(code) }).lean();
     return mapInvite(invite ? cloneLean(invite) : null);
   } catch (error) {
     logger.error('Failed to find invite', { message: error.message, code });
@@ -521,7 +531,7 @@ async function findInviteByCode(code) {
  */
 async function incrementInviteUses(code) {
   try {
-    const invite = await Invite.findOneAndUpdate({ code: String(code) }, { $inc: { uses: 1 } }, { new: true }).lean();
+    const invite = await getInviteCollection().findOneAndUpdate({ code: String(code) }, { $inc: { uses: 1 } }, { new: true }).lean();
     return mapInvite(invite ? cloneLean(invite) : null);
   } catch (error) {
     logger.error('Failed to increment invite', { message: error.message, code });
@@ -536,7 +546,7 @@ async function incrementInviteUses(code) {
  */
 async function addBan(input) {
   try {
-    const row = await Ban.findOneAndUpdate(
+    const row = await getBanCollection().findOneAndUpdate(
       { userId: String(input.userId), serverId: String(input.serverId) },
       { $set: input },
       { upsert: true, new: true }
@@ -556,7 +566,7 @@ async function addBan(input) {
  */
 async function isBanned(userId, serverId) {
   try {
-    const ban = await Ban.findOne({ userId: String(userId), serverId: String(serverId) }).lean();
+    const ban = await getBanCollection().findOne({ userId: String(userId), serverId: String(serverId) }).lean();
     return Boolean(ban);
   } catch (error) {
     logger.error('Failed to read ban state', { message: error.message, userId, serverId });
@@ -572,7 +582,7 @@ async function isBanned(userId, serverId) {
  */
 async function removeBan(userId, serverId) {
   try {
-    const result = await Ban.deleteOne({ userId: String(userId), serverId: String(serverId) });
+    const result = await getBanCollection().deleteOne({ userId: String(userId), serverId: String(serverId) });
     return result.deletedCount > 0;
   } catch (error) {
     logger.error('Failed to remove ban', { message: error.message, userId, serverId });
@@ -587,7 +597,7 @@ async function removeBan(userId, serverId) {
  */
 async function findBansByServerId(serverId) {
   try {
-    const bans = await Ban.find({ serverId: String(serverId) }).sort({ bannedAt: -1 }).lean();
+    const bans = await getBanCollection().find({ serverId: String(serverId) }).sort({ bannedAt: -1 }).lean();
     return bans.map(mapBan);
   } catch (error) {
     logger.error('Failed to list bans', { message: error.message, serverId });
@@ -603,11 +613,11 @@ async function findBansByServerId(serverId) {
 async function importLegacyServer(legacyServer) {
   if (!legacyServer || !legacyServer.id) return null;
 
-  const existing = await Server.findOne({ id: String(legacyServer.id) }).lean();
+  const existing = await getServerCollection().findOne({ id: String(legacyServer.id) }).lean();
   if (existing) return hydrateServer(cloneLean(existing));
 
   try {
-    await Server.create({
+    await getServerCollection().create({
       id: String(legacyServer.id),
       name: String(legacyServer.name || 'Untitled Server'),
       icon: String(legacyServer.icon || '??'),
@@ -622,7 +632,7 @@ async function importLegacyServer(legacyServer) {
     const bans = Array.isArray(legacyServer.bans) ? legacyServer.bans : [];
 
     if (channels.length) {
-      await Channel.insertMany(channels.map((channel) => ({
+      await getChannelCollection().insertMany(channels.map((channel) => ({
         id: String(channel.id),
         serverId: String(legacyServer.id),
         name: String(channel.name || 'channel'),
@@ -636,7 +646,7 @@ async function importLegacyServer(legacyServer) {
     }
 
     if (roles.length) {
-      await Role.insertMany(roles.map((role) => ({
+      await getRoleCollection().insertMany(roles.map((role) => ({
         id: String(role.id),
         serverId: String(legacyServer.id),
         name: String(role.name || 'Member'),
@@ -645,7 +655,7 @@ async function importLegacyServer(legacyServer) {
       })));
     }
     if (members.length) {
-      await Member.insertMany(members.map((member) => ({
+      await getMemberCollection().insertMany(members.map((member) => ({
         userId: String(member.userId),
         serverId: String(legacyServer.id),
         roleId: member.roleId == null ? null : String(member.roleId),
@@ -657,7 +667,7 @@ async function importLegacyServer(legacyServer) {
     }
 
     if (invites.length) {
-      await Invite.insertMany(invites.map((invite) => ({
+      await getInviteCollection().insertMany(invites.map((invite) => ({
         code: String(invite.code),
         serverId: String(legacyServer.id),
         channelId: String(invite.channelId || channels[0]?.id || ''),
@@ -669,7 +679,7 @@ async function importLegacyServer(legacyServer) {
     }
 
     if (bans.length) {
-      await Ban.insertMany(bans.map((ban) => ({
+      await getBanCollection().insertMany(bans.map((ban) => ({
         userId: String(ban.userId || ban),
         serverId: String(legacyServer.id),
         bannedAt: String(ban.bannedAt || new Date().toISOString()),

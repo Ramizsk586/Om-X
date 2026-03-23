@@ -5,6 +5,11 @@ const userRepo = require('./userRepo');
 const ChatMessage = require('../models/ChatMessage.model');
 const DmConversation = require('../models/DmConversation.model');
 const UploadBlob = require('../models/UploadBlob.model');
+const { getModel, isLocalMode } = require('./getModel');
+
+function getChatMessageCollection() { return getModel('chatMessages', ChatMessage); }
+function getDmConversationCollection() { return getModel('dmConversations', DmConversation); }
+function getUploadBlobCollection() { return getModel('uploadBlobs', UploadBlob); }
 
 const palette = ['#5865F2', '#57F287', '#FEE75C', '#EB459E', '#ED4245', '#99AAB5', '#FAA81A'];
 const adjectives = ['emerald', 'crystal', 'sunset', 'vivid', 'silver', 'frost', 'quiet', 'flying', 'storm', 'lunar', 'starlight', 'velvet', 'blazing', 'cosmic', 'violet', 'aurora', 'royal', 'tundra'];
@@ -181,8 +186,8 @@ async function hydrateRuntimeUsers() {
 
 async function hydrateMongoChatState() {
   const [messages, dms] = await Promise.all([
-    ChatMessage.find({}).sort({ createdAt: 1 }).lean(),
-    DmConversation.find({}).lean()
+    getChatMessageCollection().find({}).sort({ createdAt: 1 }).lean(),
+    getDmConversationCollection().find({}).lean()
   ]);
 
   db.data.messages = Array.isArray(messages) ? messages.map((row) => ({
@@ -258,7 +263,7 @@ function normalizeMessageForStorage(message) {
 async function persistMessage(message) {
   const payload = normalizeMessageForStorage(message);
   if (!payload.id) return;
-  await ChatMessage.updateOne({ id: payload.id }, { $set: payload }, { upsert: true });
+  await getChatMessageCollection().updateOne({ id: payload.id }, { $set: payload }, { upsert: true });
 }
 
 /**
@@ -266,6 +271,8 @@ async function persistMessage(message) {
  * @returns {Promise<void>} Promise that resolves when initialization finishes.
  */
 async function initDb() {
+  const { isLocalMode } = require('./getModel');
+
   db.data = clone(defaultData);
   db.data.users = [];
   if (!db.data) {
@@ -273,8 +280,16 @@ async function initDb() {
   }
 
   ensureDefaultData(db);
-  await hydrateMongoChatState();
-  await hydrateRuntimeUsers();
+
+  if (!isLocalMode()) {
+    try {
+      await hydrateMongoChatState();
+      await hydrateRuntimeUsers();
+    } catch (err) {
+      console.warn('[Om Chat] MongoDB hydration failed, using empty state:', err.message);
+    }
+  }
+
   await db.write();
 }
 
@@ -844,7 +859,7 @@ async function deleteChannel(serverId, actorId, channelId) {
   if (!deleted) return false;
 
   db.data.messages = db.data.messages.filter((message) => !(message.serverId === server.id && message.channelId === channelId));
-  await ChatMessage.deleteMany({ serverId: server.id, channelId });
+  await getChatMessageCollection().deleteMany({ serverId: server.id, channelId });
   await deleteUnreferencedUploadFiles(attachmentUrls);
   return true;
 }
@@ -922,7 +937,7 @@ async function deleteUnreferencedUploadFiles(attachmentUrls = []) {
   }
 
   if (!targetIds.size) return;
-  await UploadBlob.deleteMany({
+  await getUploadBlobCollection().deleteMany({
     _id: { $in: [...targetIds] }
   });
 }
@@ -959,7 +974,7 @@ async function clearMessages(serverId, channelId, count = 10, actorId) {
   const removedMessages = messages.filter((message) => toDelete.includes(message.id));
   const attachmentUrls = collectAttachmentUrls(removedMessages);
   db.data.messages = db.data.messages.filter((message) => !toDelete.includes(message.id));
-  await ChatMessage.deleteMany({ id: { $in: toDelete } });
+  await getChatMessageCollection().deleteMany({ id: { $in: toDelete } });
   await deleteUnreferencedUploadFiles(attachmentUrls);
   return toDelete.length;
 }
@@ -990,7 +1005,7 @@ async function clearAllMessages(serverId, actorId, channelId = null) {
 
   const removed = before - db.data.messages.length;
   if (!removed) return 0;
-  await ChatMessage.deleteMany(channelId
+  await getChatMessageCollection().deleteMany(channelId
     ? { serverId, channelId }
     : { serverId });
   await deleteUnreferencedUploadFiles(attachmentUrls);
@@ -1050,7 +1065,7 @@ async function clearMessagesByTimeline(serverId, actorId, { from, to, channelId 
   if (!removed) return 0;
   const deletedIds = removedMessages.map((message) => message.id).filter(Boolean);
   if (deletedIds.length) {
-    await ChatMessage.deleteMany({ id: { $in: deletedIds } });
+    await getChatMessageCollection().deleteMany({ id: { $in: deletedIds } });
   }
   await deleteUnreferencedUploadFiles(attachmentUrls);
   return removed;
@@ -1149,7 +1164,7 @@ async function createMessage({ serverId, channelId, userId, username, avatarColo
   if (dm && dm.hiddenFor.length) dm.hiddenFor = [];
   await persistMessage(message);
   if (dm && dm.id) {
-    await DmConversation.updateOne(
+    await getDmConversationCollection().updateOne(
       { id: dm.id },
       { $set: { hiddenFor: [] } }
     );
@@ -1174,7 +1189,7 @@ async function createMessage({ serverId, channelId, userId, username, avatarColo
       return keep;
     });
     if (removedIds.length) {
-      await ChatMessage.deleteMany({ id: { $in: removedIds } });
+      await getChatMessageCollection().deleteMany({ id: { $in: removedIds } });
     }
   }
 
@@ -1194,7 +1209,7 @@ async function updateMessage(messageId, actorId, content) {
   message.content = String(content || '').trim();
   message.edited = true;
   message.editedAt = now();
-  await ChatMessage.updateOne(
+  await getChatMessageCollection().updateOne(
     { id: messageId },
     {
       $set: {
@@ -1221,7 +1236,7 @@ async function deleteMessage(messageId, actorId) {
   if (message.serverId == null) {
     if (message.userId !== actorId) return null;
     db.data.messages = db.data.messages.filter((item) => item.id !== messageId);
-    await ChatMessage.deleteOne({ id: messageId });
+    await getChatMessageCollection().deleteOne({ id: messageId });
     await deleteUnreferencedUploadFiles(attachmentUrls);
     return messageId;
   }
@@ -1233,7 +1248,7 @@ async function deleteMessage(messageId, actorId) {
   }
 
   db.data.messages = db.data.messages.filter((item) => item.id !== messageId);
-  await ChatMessage.deleteOne({ id: messageId });
+  await getChatMessageCollection().deleteOne({ id: messageId });
   await deleteUnreferencedUploadFiles(attachmentUrls);
   return messageId;
 }
@@ -1252,7 +1267,7 @@ async function addReaction(messageId, actorId, emoji) {
   const current = message.reactions[emoji] || [];
   if (!current.includes(actorId)) current.push(actorId);
   message.reactions[emoji] = current;
-  await ChatMessage.updateOne(
+  await getChatMessageCollection().updateOne(
     { id: messageId },
     { $set: { reactions: message.reactions } }
   );
@@ -1278,7 +1293,7 @@ async function removeReaction(messageId, actorId, emoji) {
     message.reactions[emoji] = next;
   }
 
-  await ChatMessage.updateOne(
+  await getChatMessageCollection().updateOne(
     { id: messageId },
     { $set: { reactions: message.reactions } }
   );
@@ -1298,7 +1313,7 @@ async function pinMessage(messageId, actorId) {
   if (!server || (!isAdmin(server, actorId) && !hasPermission(server, actorId, 'manage_messages'))) return null;
   message.pinned = true;
   message.pinnedAt = now();
-  await ChatMessage.updateOne(
+  await getChatMessageCollection().updateOne(
     { id: messageId },
     { $set: { pinned: true, pinnedAt: message.pinnedAt } }
   );
@@ -1318,7 +1333,7 @@ async function unpinMessage(messageId, actorId) {
   if (!server || (!isAdmin(server, actorId) && !hasPermission(server, actorId, 'manage_messages'))) return null;
   message.pinned = false;
   message.pinnedAt = null;
-  await ChatMessage.updateOne(
+  await getChatMessageCollection().updateOne(
     { id: messageId },
     { $set: { pinned: false, pinnedAt: null } }
   );
@@ -1408,7 +1423,7 @@ async function updateUserProfile(userId, payload = {}) {
     message.avatarUrl = user.avatarUrl || '';
   }
 
-  await ChatMessage.updateMany(
+  await getChatMessageCollection().updateMany(
     { userId },
     {
       $set: {
@@ -1550,7 +1565,7 @@ async function deleteServerData(serverId, actorId) {
   if (!deleted) return false;
 
   db.data.messages = db.data.messages.filter((message) => message.serverId !== serverId);
-  await ChatMessage.deleteMany({ serverId });
+  await getChatMessageCollection().deleteMany({ serverId });
   await deleteUnreferencedUploadFiles(attachmentUrls);
   return true;
 }
@@ -1566,7 +1581,7 @@ async function hideDmConversation(dmId, userId) {
   if (!dm || !userId || !dm.participants.includes(userId)) return false;
   if (!dm.hiddenFor.includes(userId)) {
     dm.hiddenFor.push(userId);
-    await DmConversation.updateOne(
+    await getDmConversationCollection().updateOne(
       { id: dm.id },
       { $set: { hiddenFor: dm.hiddenFor } }
     );
@@ -1586,7 +1601,7 @@ async function restoreDmConversation(dmId, userId) {
   const before = dm.hiddenFor.length;
   dm.hiddenFor = dm.hiddenFor.filter((entry) => entry !== userId);
   if (dm.hiddenFor.length !== before) {
-    await DmConversation.updateOne(
+    await getDmConversationCollection().updateOne(
       { id: dm.id },
       { $set: { hiddenFor: dm.hiddenFor } }
     );

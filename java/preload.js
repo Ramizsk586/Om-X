@@ -215,6 +215,8 @@ contextBridge.exposeInMainWorld('browserAPI', {
   omChat: {
     startServer: (config) => ipcRenderer.invoke('omchat:start-server', config),
     stopServer: () => ipcRenderer.invoke('omchat:stop-server'),
+    selectDbFolder: () => ipcRenderer.invoke('omchat:select-db-folder'),
+    getDbConfig: () => ipcRenderer.invoke('omchat:get-db-config'),
     onOutput: (callback) => ipcRenderer.on('omchat-server-output', (event, data) => callback(data)),
     onExit: (callback) => ipcRenderer.on('omchat-server-exit', (event, data) => callback(data))
   },

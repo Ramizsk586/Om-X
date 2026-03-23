@@ -1242,6 +1242,26 @@ async function startOmChatServerInternal(config = {}) {
   }
 
   try {
+    // Configure DB mode from settings - MUST be set BEFORE loading OmChat module
+    const omchatSettings = cachedSettings?.omchat || {};
+    const dbMode = omchatSettings.dbMode === 'mongo' ? 'mongo' : 'local';
+    const hasMongoUri = Boolean(process.env.MONGODB_URI && process.env.MONGODB_URI.trim());
+
+    if (dbMode === 'mongo' && hasMongoUri) {
+      process.env.DB_MODE = 'mongo';
+      pushServerLog('omchat', 'info', 'Using MongoDB from .env configuration');
+    } else if (dbMode === 'mongo' && !hasMongoUri) {
+      // User selected MongoDB but no URI in .env — fall back to local
+      process.env.DB_MODE = 'local';
+      pushServerLog('omchat', 'warn', 'MongoDB selected but MONGODB_URI not set in .env — falling back to Local DB');
+    } else {
+      process.env.DB_MODE = 'local';
+      if (omchatSettings.localDbPath) {
+        process.env.LOCAL_DB_PATH = omchatSettings.localDbPath;
+      }
+      pushServerLog('omchat', 'info', `Using local DB${omchatSettings.localDbPath ? ' at ' + omchatSettings.localDbPath : ' (default location)'}`);
+    }
+
     const moduleRef = await loadOmChatModule();
     const omChatApi = moduleRef?.default || moduleRef;
     const status = await omChatApi.startServer({
@@ -1853,6 +1873,10 @@ const DEFAULT_SETTINGS = {
     'toggle-devtools': 'Ctrl+B',
     'toggle-fullscreen': 'F11',
     'quit-app': 'Ctrl+Shift+Q'
+  },
+  omchat: {
+    dbMode: 'local',
+    localDbPath: ''
   }
 };
 
@@ -2835,6 +2859,27 @@ ipcMain.handle('omchat:start-server', async (event, config = {}) => {
 ipcMain.handle('omchat:stop-server', async (event) => {
   ensureTrustedServerControlSender(event);
   return stopOmChatServerInternal();
+});
+
+ipcMain.handle('omchat:select-db-folder', async (event) => {
+  ensureTrustedServerControlSender(event);
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: 'Select OmChat Local Database Folder',
+    properties: ['openDirectory', 'createDirectory']
+  });
+  if (result.canceled || !result.filePaths?.length) return { success: false, canceled: true };
+  return { success: true, folderPath: result.filePaths[0] };
+});
+
+ipcMain.handle('omchat:get-db-config', async (event) => {
+  ensureTrustedServerControlSender(event);
+  const settings = cachedSettings || {};
+  const omchat = settings.omchat || {};
+  return {
+    dbMode: omchat.dbMode || 'local',
+    localDbPath: omchat.localDbPath || '',
+    hasMongoUri: Boolean(process.env.MONGODB_URI && process.env.MONGODB_URI.trim())
+  };
 });
 
 ipcMain.handle('server:get-status', async (_event, name) => {
@@ -5316,7 +5361,14 @@ ipcMain.handle('settings-save', async (e, s) => {
       normalizedSearchEngines
     ),
     llm: normalizeSharedLlmSettings(incoming?.llm ?? cachedSettings?.llm),
-    blocklist: normalizeBlocklistEntries(incoming?.blocklist ?? cachedSettings?.blocklist)
+    blocklist: normalizeBlocklistEntries(incoming?.blocklist ?? cachedSettings?.blocklist),
+    omchat: {
+      ...DEFAULT_SETTINGS.omchat,
+      ...(cachedSettings?.omchat || {}),
+      ...(incoming?.omchat || {}),
+      dbMode: String(incoming?.omchat?.dbMode ?? cachedSettings?.omchat?.dbMode ?? 'local') === 'mongo' ? 'mongo' : 'local',
+      localDbPath: String(incoming?.omchat?.localDbPath ?? cachedSettings?.omchat?.localDbPath ?? '').trim()
+    }
   });
   normalizedSettings.aiConfig = normalizePersistedAiConfig(normalizedSettings.aiConfig);
   const secureNormalizedSettings = isPrivilegedSettingsSender(e)

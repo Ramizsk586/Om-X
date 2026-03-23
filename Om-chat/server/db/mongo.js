@@ -8,9 +8,15 @@ let connectPromise = null;
 
 /**
  * Connect to MongoDB once for the current process.
- * @returns {Promise<typeof mongoose>} Active mongoose instance.
+ * Skips connection entirely when in local DB mode.
+ * @returns {Promise<typeof mongoose>|null} Active mongoose instance or null in local mode.
  */
 async function connectMongo() {
+  if (config.db.mode === 'local') {
+    logger.info('Local DB mode - skipping MongoDB connection');
+    return null;
+  }
+
   if (mongoose.connection.readyState === 1) {
     return mongoose;
   }
@@ -27,7 +33,11 @@ async function connectMongo() {
     }).catch((error) => {
       connectPromise = null;
       logger.error('MongoDB connection failed', { message: error.message });
-      throw error;
+
+      // Auto-fallback to local mode
+      logger.warn('MongoDB unavailable — falling back to local DB mode');
+      config.db.mode = 'local';
+      return null;
     });
   }
 

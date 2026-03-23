@@ -1,6 +1,7 @@
 const express = require('express');
 const requireAuth = require('../middleware/requireAuth');
 const DmConversation = require('../models/DmConversation.model');
+const { getModel } = require('../db/getModel');
 const {
   getDmById,
   getMember,
@@ -80,7 +81,7 @@ router.post('/open', async (req, res, next) => {
       };
 
       db.data.dms.push(dm);
-      await DmConversation.updateOne(
+      await getModel('dmConversations', DmConversation).updateOne(
         { id: dm.id },
         {
           $set: {
