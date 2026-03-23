@@ -12,6 +12,7 @@ export class TabManager {
     this.onContextMenu = onContextMenu;
     this.onTabContextMenu = onTabContextMenu;
     this.onTabClose = onTabClose;
+    this.omChatOrigins = new Set();
     
     this.miniPlayer = document.getElementById('mini-player');
     this.sidebarControls = document.getElementById('sidebar-footer-controls');
@@ -108,6 +109,27 @@ export class TabManager {
       const parsed = new URL(value, window.location.href);
       const host = String(parsed.hostname || '').toLowerCase();
       return host === 'duck.ai' || host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0';
+    } catch (_) {
+      return false;
+    }
+  }
+
+  registerOmChatOrigin(origin) {
+    const safe = String(origin || '').trim();
+    if (!safe) return;
+    this.omChatOrigins.add(safe);
+  }
+
+  isOmChatUrl(url = '') {
+    const raw = String(url || '').trim();
+    if (!raw) return false;
+    try {
+      const parsed = new URL(raw, window.location.href);
+      if (this.omChatOrigins.has(parsed.origin)) return true;
+      const pathname = String(parsed.pathname || '').toLowerCase();
+      const host = String(parsed.hostname || '').toLowerCase();
+      const isLocal = host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0';
+      return isLocal && (pathname.endsWith('/app.html') || pathname.endsWith('/e2e-setup.html'));
     } catch (_) {
       return false;
     }
@@ -4765,6 +4787,10 @@ body[class*="overflow-hidden"]:not([data-legit]) {
   // Handle malicious URL detection - close tab and block site
   async handleMaliciousUrl(tab, url, reason) {
     try {
+      if (tab?.isOmChat) {
+        console.warn('[Security] Skipping auto-close for OmChat tab.');
+        return;
+      }
       console.warn(`[Security] MALICIOUS SITE DETECTED: ${url}`);
       console.warn(`[Security] Reason: ${reason}`);
       console.warn(`[Security] Closing tab and adding to blocklist...`);
@@ -4827,6 +4853,7 @@ body[class*="overflow-hidden"]:not([data-legit]) {
         finalUrl = this.createDefenseUrl(safety.type, safety.originalUrl, safety.reason);
     }
 
+    const isOmChat = options.isOmChat === true || this.isOmChatUrl(finalUrl);
     const id = this.nextTabId++;
     const isSystemPage = finalUrl.includes('system.html');
     const isTextStudio = finalUrl.includes('text-editor.html');
@@ -4848,6 +4875,7 @@ body[class*="overflow-hidden"]:not([data-legit]) {
       lastAccessed: Date.now(), suspended: false, isSystemPage,
       isTextStudio, isHistoryPage, isGamesPage, isDefensePage,
       isHomePage, isTodoPage, isScraberPage, isServerOperatorPage, isLocalAIPage,
+      isOmChat, noSuspend: isOmChat,
       isLoading: true, isMainFrameLoading: true, customIcon: false, audible: false,
       interactiveSearch: options.interactiveSearch || null
     };
@@ -5298,6 +5326,9 @@ body[class*="overflow-hidden"]:not([data-legit]) {
        }
     });
     webview.addEventListener('did-navigate', (e) => {
+      const isOmChatNow = this.isOmChatUrl(e.url);
+      tabState.isOmChat = isOmChatNow;
+      tabState.noSuspend = isOmChatNow;
       tabState.url = e.url; 
       if (this.isPdfUrl(e.url) && !tabState.customIcon) {
         tabState.titleEl.textContent = webview.getTitle() || 'PDF Viewer';
@@ -5344,6 +5375,9 @@ body[class*="overflow-hidden"]:not([data-legit]) {
       }
     });
     webview.addEventListener('did-navigate-in-page', (e) => {
+      const isOmChatNow = this.isOmChatUrl(e.url);
+      tabState.isOmChat = isOmChatNow;
+      tabState.noSuspend = isOmChatNow;
       tabState.url = e.url;
       if (this.activeTabId === tabState.id) this.onTabStateChange(e.url, false);
       setTimeout(() => {
@@ -5595,12 +5629,12 @@ body[class*="overflow-hidden"]:not([data-legit]) {
   }
 
   scheduleSuspension(tab) {
-      if (!tab || tab.id === this.activeTabId || tab.suspended || tab.audible) return;
+      if (!tab || tab.id === this.activeTabId || tab.suspended || tab.audible || tab.noSuspend || tab.isOmChat) return;
       this.cancelScheduledSuspension(tab);
       const remaining = Math.max(1000, this.SUSPEND_TIMEOUT - (Date.now() - tab.lastAccessed));
       tab.suspensionTimer = setTimeout(async () => {
           tab.suspensionTimer = null;
-          if (tab.id !== this.activeTabId && !tab.suspended) {
+          if (tab.id !== this.activeTabId && !tab.suspended && !tab.noSuspend && !tab.isOmChat) {
               // Double-check media playing before suspending
               const hasMedia = await this.isTabPlayingMedia(tab);
               if (!hasMedia && !tab.audible) {
@@ -5611,7 +5645,7 @@ body[class*="overflow-hidden"]:not([data-legit]) {
   }
 
   suspendTab(tab) {
-      if (!tab.webview) return;
+      if (!tab.webview || tab.noSuspend || tab.isOmChat) return;
       this.cancelScheduledSuspension(tab);
       try { tab.url = tab.webview.getURL(); tab.webview.blur(); } catch(e){}
       tab.webview.remove();

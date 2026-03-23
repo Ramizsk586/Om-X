@@ -331,6 +331,13 @@ function validateRolePayload(payload = {}) {
   };
 }
 
+function validateOperatorPayload(payload = {}) {
+  return {
+    userId: ensureUserId(payload.userId),
+    action: payload.action === 'revoke' ? 'revoke' : 'grant'
+  };
+}
+
 function validateServerRenamePayload(payload = {}) {
   return {
     name: ensureServerName(payload.name, 'name')
@@ -341,6 +348,20 @@ function validateServerIconPayload(payload = {}) {
   return {
     icon: ensureIcon(payload.icon)
   };
+}
+
+function validateServerAppearancePayload(payload = {}) {
+  const updates = {};
+  if (Object.prototype.hasOwnProperty.call(payload, 'iconUrl')) {
+    updates.iconUrl = ensureUrl(payload.iconUrl, 'iconUrl', { optional: true, allowRelative: true, allowDataImage: true });
+  }
+  if (Object.prototype.hasOwnProperty.call(payload, 'bannerUrl')) {
+    updates.bannerUrl = ensureUrl(payload.bannerUrl, 'bannerUrl', { optional: true, allowRelative: true, allowDataImage: true });
+  }
+  if (!Object.keys(updates).length) {
+    throw createValidationError('empty_server_update', 'No appearance changes provided');
+  }
+  return updates;
 }
 
 function validateServerClearPayload(payload = {}) {
@@ -486,9 +507,11 @@ module.exports = {
   validateOgQuery,
   validateProfileUpdatePayload,
   validateReactionPayload,
+  validateOperatorPayload,
   validateRolePayload,
   validateServerClearPayload,
   validateServerCreatePayload,
+  validateServerAppearancePayload,
   validateServerIconPayload,
   validateServerJoinPayload,
   validateServerRenamePayload,

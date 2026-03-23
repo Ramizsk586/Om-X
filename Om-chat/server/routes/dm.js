@@ -57,8 +57,9 @@ router.post('/open', async (req, res, next) => {
     }
 
     const serverId = req.session.currentServerId;
+    let server = null;
     if (serverId) {
-      const server = await getServerById(serverId);
+      server = await getServerById(serverId);
       if (server) {
         const selfMember = getMember(server, selfId);
         const targetMember = getMember(server, targetUserId);
@@ -72,6 +73,7 @@ router.post('/open', async (req, res, next) => {
     const channelId = `dm_${ids[0]}_${ids[1]}`;
 
     let dm = getDmById(channelId);
+    const wasHiddenForTarget = Boolean(dm?.hiddenFor?.includes(targetUserId));
     if (!dm) {
       dm = {
         id: channelId,
@@ -97,6 +99,21 @@ router.post('/open', async (req, res, next) => {
     } else {
       await restoreDmConversation(channelId, selfId);
       dm = getDmById(channelId);
+    }
+
+    if (dm && wasHiddenForTarget) {
+      await restoreDmConversation(channelId, targetUserId);
+    }
+
+    const io = req.app.get('io');
+    if (io) {
+      const selfUser = getUser(selfId);
+      io.to(`user:${targetUserId}`).emit('dm_opened', {
+        channelId,
+        from: serializePartner(selfUser),
+        serverId: server?.id || null,
+        serverName: server?.name || ''
+      });
     }
 
     return res.json({

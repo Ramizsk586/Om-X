@@ -42,10 +42,34 @@
         <input id="email" class="hidden" maxlength="120" placeholder="alice@example.com" autocomplete="email" />
 
         <label for="password">Password</label>
-        <input id="password" type="password" maxlength="128" placeholder="Enter your password" autocomplete="current-password" />
+        <div class="input-with-toggle">
+          <input id="password" type="password" maxlength="128" placeholder="Enter your password" autocomplete="current-password" />
+          <button class="password-toggle" type="button" data-target="password" aria-label="Show password">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path class="eye-on" d="M1.5 12s4.5-7.5 10.5-7.5S22.5 12 22.5 12s-4.5 7.5-10.5 7.5S1.5 12 1.5 12z"></path>
+              <circle class="eye-on" cx="12" cy="12" r="3.25"></circle>
+              <path class="eye-off" d="M3 3l18 18"></path>
+              <path class="eye-off" d="M10.58 10.58A3 3 0 0 0 9 12c0 1.66 1.34 3 3 3 .53 0 1.03-.14 1.46-.38"></path>
+              <path class="eye-off" d="M6.2 6.2C3.88 7.66 2.2 9.76 1.5 12c1.76 4.06 6.1 7.5 10.5 7.5 1.76 0 3.41-.4 4.9-1.07"></path>
+              <path class="eye-off" d="M17.8 17.8C19.8 16.37 21.37 14.32 22.5 12c-1.76-4.06-6.1-7.5-10.5-7.5-1.23 0-2.4.2-3.5.57"></path>
+            </svg>
+          </button>
+        </div>
 
         <label id="confirm-password-label" for="confirm-password" class="hidden">Confirm Password</label>
-        <input id="confirm-password" class="hidden" type="password" maxlength="128" placeholder="Repeat your password" autocomplete="new-password" />
+        <div id="confirm-password-wrap" class="input-with-toggle hidden">
+          <input id="confirm-password" class="hidden" type="password" maxlength="128" placeholder="Repeat your password" autocomplete="new-password" />
+          <button class="password-toggle" type="button" data-target="confirm-password" aria-label="Show password">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path class="eye-on" d="M1.5 12s4.5-7.5 10.5-7.5S22.5 12 22.5 12s-4.5 7.5-10.5 7.5S1.5 12 1.5 12z"></path>
+              <circle class="eye-on" cx="12" cy="12" r="3.25"></circle>
+              <path class="eye-off" d="M3 3l18 18"></path>
+              <path class="eye-off" d="M10.58 10.58A3 3 0 0 0 9 12c0 1.66 1.34 3 3 3 .53 0 1.03-.14 1.46-.38"></path>
+              <path class="eye-off" d="M6.2 6.2C3.88 7.66 2.2 9.76 1.5 12c1.76 4.06 6.1 7.5 10.5 7.5 1.76 0 3.41-.4 4.9-1.07"></path>
+              <path class="eye-off" d="M17.8 17.8C19.8 16.37 21.37 14.32 22.5 12c-1.76-4.06-6.1-7.5-10.5-7.5-1.23 0-2.4.2-3.5.57"></path>
+            </svg>
+          </button>
+        </div>
 
         <button id="auth-submit" type="button" class="btn-primary landing-submit">Sign In</button>
       </section>
@@ -117,6 +141,7 @@
       const passwordInput = document.getElementById('password');
       const confirmPasswordLabel = document.getElementById('confirm-password-label');
       const confirmPasswordInput = document.getElementById('confirm-password');
+      const confirmPasswordWrap = document.getElementById('confirm-password-wrap');
       const verifyEmailInput = document.getElementById('verify-email');
       const verifyCodeInput = document.getElementById('verify-code');
       const authCard = document.querySelector('.auth-card');
@@ -130,6 +155,21 @@
         servers: typeof window.getCachedServers === 'function' ? window.getCachedServers() : [],
         pendingVerificationEmail: ''
       };
+
+      function bindPasswordToggles() {
+        const buttons = document.querySelectorAll('.password-toggle');
+        buttons.forEach((button) => {
+          button.addEventListener('click', () => {
+            const targetId = button.dataset.target;
+            const input = document.getElementById(targetId);
+            if (!input) return;
+            const isVisible = input.type === 'text';
+            input.type = isVisible ? 'password' : 'text';
+            button.classList.toggle('is-visible', !isVisible);
+            button.setAttribute('aria-label', isVisible ? 'Show password' : 'Hide password');
+          });
+        });
+      }
 
       function escapeHtml(value) {
         return String(value || '').replace(/[&<>"']/g, (char) => ({
@@ -257,6 +297,7 @@
         emailLabel.classList.toggle('hidden', !isRegister);
         emailInput.classList.toggle('hidden', !isRegister);
         confirmPasswordLabel.classList.toggle('hidden', !isRegister);
+        confirmPasswordWrap?.classList.toggle('hidden', !isRegister);
         confirmPasswordInput.classList.toggle('hidden', !isRegister);
         identifierLabel.classList.toggle('hidden', isRegister);
         identifierInput.classList.toggle('hidden', isRegister);
@@ -769,6 +810,7 @@
         }
       });
 
+      bindPasswordToggles();
       setAuthMode('login');
       loadSession().catch((error) => {
         console.warn('[Om Chat] Failed to load session state:', error);

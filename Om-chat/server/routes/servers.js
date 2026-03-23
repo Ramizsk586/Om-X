@@ -9,6 +9,7 @@ const {
   createInvite,
   createServer,
   deleteServerData,
+  ensureOperatorRole,
   getServerById,
   getServerDataWithMembers,
   isAdmin,
@@ -18,6 +19,7 @@ const {
   removeMember,
   renameServer,
   setMemberRole,
+  updateServerAppearance,
   updateServerIcon,
   userMembers
 } = require('../db');
@@ -25,9 +27,11 @@ const { updateServer } = require('../db/serverRepo');
 const {
   ensureServerId,
   validateInvitePayload,
+  validateOperatorPayload,
   validateRolePayload,
   validateServerClearPayload,
   validateServerCreatePayload,
+  validateServerAppearancePayload,
   validateServerIconPayload,
   validateServerJoinPayload,
   validateServerRenamePayload,
@@ -285,6 +289,36 @@ router.post('/:id/role', async (req, res, next) => {
   }
 });
 
+router.post('/:id/operator', async (req, res, next) => {
+  try {
+    const serverId = ensureServerId(req.params.id, 'id');
+    const { userId, action } = validateOperatorPayload(req.body || {});
+    const server = await getServerById(serverId);
+    if (!server) return res.status(404).json({ error: 'server_not_found' });
+
+    const actorId = req.session.userId;
+    if (!actorId) return res.status(401).json({ error: 'unauthorized' });
+    if (!isAdmin(server, actorId)) return res.status(403).json({ error: 'unauthorized' });
+
+    let role = null;
+    if (action === 'grant') {
+      role = await ensureOperatorRole(serverId);
+    } else {
+      role = server.roles.find((item) => String(item.name || '').toLowerCase() === 'member')
+        || server.roles[server.roles.length - 1]
+        || null;
+    }
+    if (!role) return res.status(400).json({ error: 'invalid_role' });
+
+    const ok = await setMemberRole(serverId, userId, role.id, actorId);
+    if (!ok) return res.status(403).json({ error: 'unauthorized' });
+
+    return res.json({ success: true, role });
+  } catch (error) {
+    return next(error);
+  }
+});
+
 router.post('/:id/rename', async (req, res, next) => {
   try {
     const serverId = ensureServerId(req.params.id, 'id');
@@ -303,6 +337,22 @@ router.post('/:id/icon', async (req, res, next) => {
     const { icon } = validateServerIconPayload(req.body || {});
     const server = await updateServerIcon(serverId, req.session.userId, icon);
     if (!server) return res.status(403).json({ error: 'unauthorized' });
+    return res.json({ server: serializeServer(server, req) });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.post('/:id/appearance', async (req, res, next) => {
+  try {
+    const serverId = ensureServerId(req.params.id, 'id');
+    const payload = validateServerAppearancePayload(req.body || {});
+    const server = await updateServerAppearance(serverId, req.session.userId, payload);
+    if (!server) return res.status(403).json({ error: 'unauthorized' });
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`server:${serverId}`).emit('server_updated', { server: serializeServer(server, req) });
+    }
     return res.json({ server: serializeServer(server, req) });
   } catch (error) {
     return next(error);

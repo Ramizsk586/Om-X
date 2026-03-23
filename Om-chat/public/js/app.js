@@ -25,6 +25,8 @@ const el = {
   serverMenu: $('#server-menu'),
   serverIcon: $('#server-icon'),
   serverName: $('#server-name'),
+  chatPane: document.querySelector('.chat-pane'),
+  chatBackground: $('#chat-background'),
   dmBadge: $('#dm-section-badge'),
   dmList: $('#dm-list'),
   channelNav: $('#channel-nav'),
@@ -77,6 +79,26 @@ const el = {
   serverInfoLink: $('#server-info-link'),
   copyServerIdBtn: $('#copy-server-id-btn'),
   copyServerLinkBtn: $('#copy-server-link-btn'),
+  serverAppearanceModal: $('#server-appearance-modal'),
+  serverAppearanceTitle: $('#server-appearance-title'),
+  serverAppearanceClose: $('#server-appearance-close'),
+  serverIconPreview: $('#server-icon-preview'),
+  serverBannerPreview: $('#server-banner-preview'),
+  serverIconUpload: $('#server-icon-upload'),
+  serverIconClear: $('#server-icon-clear'),
+  serverBannerUpload: $('#server-banner-upload'),
+  serverBannerClear: $('#server-banner-clear'),
+  createChannelModal: $('#create-channel-modal'),
+  createChannelClose: $('#create-channel-close'),
+  createChannelCancel: $('#create-channel-cancel'),
+  createChannelSubmit: $('#create-channel-submit'),
+  createChannelError: $('#create-channel-error'),
+  createChannelName: $('#create-channel-name'),
+  createChannelCategory: $('#create-channel-category'),
+  createChannelType: $('#create-channel-type'),
+  createChannelPerms: $('#create-channel-perms'),
+  createChannelTopic: $('#create-channel-topic'),
+  createChannelSlow: $('#create-channel-slow'),
   chatCleanupModal: $('#chat-cleanup-modal'),
   chatCleanupClose: $('#chat-cleanup-close'),
   cleanupFromInput: $('#cleanup-from-input'),
@@ -95,7 +117,9 @@ const el = {
   switchInput: $('#channel-switch-input'),
   switchList: $('#channel-switch-list'),
   userMicBtn: $('#user-mic-btn'),
-  userDeafenBtn: $('#user-deafen-btn')
+  userDeafenBtn: $('#user-deafen-btn'),
+  serverIconInput: $('#server-icon-input'),
+  serverBannerInput: $('#server-banner-input')
 };
 
 const uiTimers = {
@@ -154,7 +178,8 @@ const MAX_AVATAR_SIZE_BYTES = 5 * 1024 * 1024;
 
 // ─── End-to-End Encryption ────────────────────────────────────────────────────
 const E2EE_PREFIX = 'omx-e2ee:v1:';
-const E2EE_PASSPHRASE_STORAGE_KEY = 'omchat_e2ee_passphrase_v1';
+const E2EE_PASSPHRASE_STORAGE_KEY = 'omchat_e2ee_passphrase_v1'; // legacy global key (no longer used)
+const E2EE_GROUP_KEY_PREFIX = 'omchat_e2ee_group_v2:'; // + serverId
 const E2EE_FAILURE_TEXT = '🔒 [Encrypted — wrong or missing passphrase]';
 const E2EE_PBKDF2_ITERATIONS = 210_000; // OWASP 2023 recommended minimum
 const E2EE_MIN_PASSPHRASE_LENGTH = 8;
@@ -168,6 +193,7 @@ const e2ee = {
   /** @type {'on'|'off'|'error'} */
   status: 'off'
 };
+
 const GIF_LIBRARY = ["___Itachi__Naruto__Itachi_Uchiha.png","akikunbeam.gif","Anime_Rengoku_UMAI.png","AquaBounce.gif","AquaNom.gif","AquaRide.gif","ArsSlam.gif","ArsWiggle.gif","AyameAndMama.gif","beluga.png","burnnnnnn.png","cat.png","cat_howdare.png","cat_laundry.gif","childe.png","CocoOkite.gif","CocoOkiteFast.gif","come.gif","coming_foryou.png","coolh.png","dance3.gif","dazailipbite.png","DBVegeta6.png","DeadInside.png","dedhahah.png","dogroove.gif","evilweika.png","FaunaJoyVibe.gif","FubukiDance.gif","FubukiSlurp.gif","fwaint.png","genjutsugoditachi.png","go.png","gojo_ke.png","gojo111.png","gojocat.png","gojoLMAO.png","gojolove.png","gojooooo.png","gojowoah.png","gonnnn.png","GV_Girlangry.png","HaatoSlam.gif","hart.png","HashiraRengoku.png","hecker.png","hi.gif","Hiincome.gif","hinataSPINNER.gif","hinataZOOM.gif","hshshshahshsh.png","huggies_pengy.png","Hushudfhfgg.png","hutao_wheeaze.png","InaBonk.gif","itachi_818096545001898014.png","Itachi_Uchiha.png","itachiiiiii.png","jotaro.png","kaneki_pain.png","kanna.png","KenmaLipbite.png","killuaisEATINGPENGYS.png","kitha.png","KizunaSpin.gif","KoroBonk.gif","KoroneDance.gif","KoroneTard.gif","LEMAO.png","lets_nacho.gif","lovehugs.png","MarineBOOTYarr.gif","MarineLetsGoOnmyouji.gif","MatsuriCatHappy.gif","MatsuriCursed.gif","MatsuriJump.gif","MatsuriRave.gif","MitoNom.gif","mn_go_get_it.png","MoonaSwingingHappy.gif","Nani.png","nezu.png","nhay.gif","Obitodamn.png","obitoobreak.png","obitoooo.png","Obitou.png","OkayuHeadSwing.gif","OkayuMoguMogu.gif","OkayuPeek.gif","OkayuSpin.gif","peepo.png","PekoraHeadBang.gif","pengy_love.png","pepemafia.png","peppa_hmm.png","RengokuConcern.png","RENGOKUHAHAHA.png","RengokuHappy.png","RengokuHuh.png","Rengokuuu.png","rengokuwave.png","RoaCuteKawaii.gif","RobocoStare.gif","SadGroovy.png","scaramouche_.gif","sed.png","ShionJump.gif","skittle.png","skonk.png","sparkloin.png","ssxo.png","staystronk_pengy.png","SuiseiSlam.gif","Suku.png","sukunaaa.png","sukunaaaaa.png","sukunu.png","sus.png","tanjiorooi.png","Tanjiro.png","Tanjiro_ha.png","tanjiro_watafak.png","tanjirodab.png","tanjirorage.png","tanjirowow.png","tf.png","thonk.png","tiredaf.png","tobiii.png","toomuchpain.png","TowaNod.gif","TowaPat.gif","toysad.gif","vegetasimp.png","veryfy.gif","warmies.png","WatameDestroy.gif","WatameHeadBang.gif","WatameHeadbangFast.gif","WatameNooo.gif","wooo.gif","WTF.png","Yagthulu.gif","yv3ttesmilo.png","z_OkBye.gif","z_sukuna8.png","zorojuro.png","zorolike.png","zorooooo.png","ZoroPray.png","ZoroRage.png","zoroupset.png","zoru.png"].map((name) => {
   const type = name.toLowerCase().endsWith('.png') ? 'png' : 'gif';
   const baseName = name.replace(/\.[^.]+$/, '');
@@ -193,7 +219,7 @@ const GIF_LIBRARY = ["___Itachi__Naruto__Itachi_Uchiha.png","akikunbeam.gif","An
 //
 //  1. GROUP (server channels)
 //     • Everyone on the server shares ONE passphrase.
-//     • Stored in localStorage under E2EE_PASSPHRASE_STORAGE_KEY.
+//     • Stored per server under E2EE_GROUP_KEY_PREFIX + serverId.
 //     • Admin can read group messages (they know the key — that's by design).
 //
 //  2. DM (direct messages)
@@ -240,21 +266,29 @@ function getPassphraseStrength(passphrase) {
 
 // ─── Group passphrase (server channels) ──────────────────────────────────────
 
+function getGroupPassphraseStorageKey(serverId) {
+  const id = String(serverId || '').trim();
+  return id ? `${E2EE_GROUP_KEY_PREFIX}${id}` : '';
+}
+
 /**
  * Set/clear the shared GROUP passphrase.
  * This key encrypts server channel messages only — never DMs.
  */
-function setE2EEPassphrase(passphrase) {
+function setE2EEPassphrase(passphrase, { serverId = state.server?.id, persist = true } = {}) {
   const next = String(passphrase || '').trim();
   e2ee.passphrase = next;
   e2ee.keyCache.clear();
   e2ee.fingerprintCache.clear();
   e2ee.status = next ? 'on' : 'off';
 
-  try {
-    if (next) localStorage.setItem(E2EE_PASSPHRASE_STORAGE_KEY, next);
-    else      localStorage.removeItem(E2EE_PASSPHRASE_STORAGE_KEY);
-  } catch (_) { /* storage blocked */ }
+  const storageKey = getGroupPassphraseStorageKey(serverId);
+  if (persist && storageKey) {
+    try {
+      if (next) localStorage.setItem(storageKey, next);
+      else      localStorage.removeItem(storageKey);
+    } catch (_) { /* storage blocked */ }
+  }
 
   updateE2EEIndicator();
 }
@@ -1034,17 +1068,25 @@ async function openDME2EEModal(channelId, partnerName = 'this person') {
  * Loads saved passphrases from localStorage — no blocking prompts.
  * Group passphrase loads automatically. DM passphrases load on-demand via getE2EEKey().
  */
-function initializeE2EE() {
+function initializeE2EE(serverId) {
   window.omChatSetE2EEPassphrase = setE2EEPassphrase;
   window.omChatDisableE2EE      = () => setE2EEPassphrase('');
   window.omChatE2EEFingerprint  = getE2EEKeyFingerprint;
   window.omChatSetDMKey         = setDMPassphrase;
   window.omChatGetDMKey         = getDMPassphrase;
 
-  const savedPassphrase = localStorage.getItem(E2EE_PASSPHRASE_STORAGE_KEY);
-  if (savedPassphrase) {
-    setE2EEPassphrase(savedPassphrase);
+  const safeServerId = String(serverId || state.server?.id || '').trim();
+  if (!safeServerId) {
+    setE2EEPassphrase('', { serverId: '', persist: false });
+    return;
   }
+
+  let savedPassphrase = '';
+  try {
+    savedPassphrase = localStorage.getItem(getGroupPassphraseStorageKey(safeServerId)) || '';
+  } catch (_) { savedPassphrase = ''; }
+
+  setE2EEPassphrase(savedPassphrase, { serverId: safeServerId, persist: false });
 }
 
 function getCsrfToken() {
@@ -1087,6 +1129,8 @@ function syncCachedServer(server) {
     id: server.id,
     name: server.name || server.id,
     icon: server.icon || getServerBadge(server),
+    iconUrl: server.iconUrl || '',
+    bannerUrl: server.bannerUrl || '',
     ownerId: server.ownerId || null
   }));
 }
@@ -1108,6 +1152,36 @@ async function refreshServerCache() {
 
 function getServerBadge(server) {
   return String(server?.icon || server?.name || 'OX').trim().slice(0, 2).toUpperCase() || 'OX';
+}
+
+function applyServerAppearance(server) {
+  const rawIconUrl = String(server?.iconUrl || '').trim();
+  const rawBannerUrl = String(server?.bannerUrl || '').trim();
+  const origin = window.location.origin && window.location.origin !== 'null' ? window.location.origin : '';
+  const iconUrl = rawIconUrl && rawIconUrl.startsWith('/') && origin ? origin + rawIconUrl : rawIconUrl;
+  const bannerUrl = rawBannerUrl && rawBannerUrl.startsWith('/') && origin ? origin + rawBannerUrl : rawBannerUrl;
+  const badge = getServerBadge(server);
+
+  if (el.serverIcon) {
+    el.serverIcon.textContent = badge;
+    el.serverIcon.classList.toggle('has-image', Boolean(iconUrl));
+    el.serverIcon.style.backgroundImage = iconUrl ? `url("${iconUrl}")` : '';
+  }
+
+  if (el.serverIconPreview) {
+    el.serverIconPreview.textContent = badge;
+    el.serverIconPreview.classList.toggle('has-image', Boolean(iconUrl));
+    el.serverIconPreview.style.backgroundImage = iconUrl ? `url("${iconUrl}")` : '';
+  }
+
+  if (el.serverBannerPreview) {
+    el.serverBannerPreview.classList.toggle('has-image', Boolean(bannerUrl));
+    el.serverBannerPreview.style.backgroundImage = bannerUrl ? `url("${bannerUrl}")` : '';
+  }
+
+  if (el.chatPane) {
+    el.chatPane.style.setProperty('--server-banner-image', bannerUrl ? `url("${bannerUrl}")` : 'none');
+  }
 }
 
 function getUserTag(userId) {
@@ -1232,6 +1306,11 @@ function renderServerRail() {
     button.setAttribute('aria-label', server.name || 'Server');
     button.title = server.name || 'Server';
     button.textContent = getServerBadge(server);
+    const iconUrl = String(server.iconUrl || '').trim();
+    if (iconUrl) {
+      button.classList.add('has-image');
+      button.style.backgroundImage = `url("${iconUrl}")`;
+    }
     el.serverRailList.appendChild(button);
   }
 }
@@ -1454,6 +1533,81 @@ function closeServerInfoModal() {
   el.serverInfoModal.classList.add('hidden');
 }
 
+function openServerAppearanceModal(options = {}) {
+  if (!state.server) return;
+  if (el.serverAppearanceTitle) el.serverAppearanceTitle.textContent = options.title || 'Server Appearance';
+  applyServerAppearance(state.server);
+  const allowEdits = Boolean(state.isAdmin);
+  el.serverIconUpload?.toggleAttribute('disabled', !allowEdits);
+  el.serverIconClear?.toggleAttribute('disabled', !allowEdits);
+  el.serverBannerUpload?.toggleAttribute('disabled', !allowEdits);
+  el.serverBannerClear?.toggleAttribute('disabled', !allowEdits);
+  el.serverAppearanceModal?.classList.remove('hidden');
+}
+
+function closeServerAppearanceModal() {
+  el.serverAppearanceModal?.classList.add('hidden');
+}
+
+function setCreateChannelError(message = '') {
+  if (!el.createChannelError) return;
+  const text = String(message || '').trim();
+  el.createChannelError.textContent = text;
+  el.createChannelError.classList.toggle('hidden', !text);
+}
+
+function openCreateChannelModal({ category = 'TEXT CHANNELS' } = {}) {
+  if (!state.server?.id) return;
+  el.createChannelName.value = '';
+  el.createChannelCategory.value = category || 'TEXT CHANNELS';
+  el.createChannelType.value = String(category || '').toLowerCase().includes('voice') ? 'voice-placeholder' : 'text';
+  el.createChannelPerms.value = 'everyone';
+  el.createChannelTopic.value = '';
+  el.createChannelSlow.value = 0;
+  setCreateChannelError('');
+  el.createChannelModal.classList.remove('hidden');
+  setTimeout(() => el.createChannelName.focus(), 0);
+}
+
+function closeCreateChannelModal() {
+  el.createChannelModal.classList.add('hidden');
+  setCreateChannelError('');
+}
+
+async function submitCreateChannel() {
+  if (!state.server?.id) return;
+  const name = String(el.createChannelName.value || '').trim();
+  if (!name) {
+    setCreateChannelError('Channel name is required.');
+    return;
+  }
+
+  const category = String(el.createChannelCategory.value || 'TEXT CHANNELS').trim() || 'TEXT CHANNELS';
+  let type = String(el.createChannelType.value || 'text');
+  const who = String(el.createChannelPerms.value || 'everyone');
+  if (type === 'text' && who === 'admins') type = 'announcement';
+
+  const topic = String(el.createChannelTopic.value || '').trim();
+  const slowMode = Number(el.createChannelSlow.value || 0);
+
+  const response = await fetch(`/api/channels/server/${encodeURIComponent(state.server.id)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, category, type, topic, slowMode })
+  });
+  const data = await response.json().catch(() => null);
+  if (!response.ok || !data?.channel) {
+    setCreateChannelError(data?.error || 'Failed to create channel.');
+    return;
+  }
+
+  state.channels = [...state.channels, data.channel];
+  if (state.server) state.server.channels = state.channels;
+  renderSidebar();
+  selectChannel(data.channel.id);
+  closeCreateChannelModal();
+}
+
 function setChatCleanupError(message = '') {
   if (!el.chatCleanupError) return;
   const text = String(message || '').trim();
@@ -1607,6 +1761,16 @@ async function handleServerMenuAction(action) {
     return;
   }
 
+  if (action === 'info') {
+    openServerInfoModal();
+    return;
+  }
+
+  if (action === 'appearance') {
+    openServerAppearanceModal({ title: 'Server Appearance' });
+    return;
+  }
+
   if (action === 'icon') {
     openActionModal({
       title: 'Change server icon',
@@ -1685,6 +1849,8 @@ async function handleServerMenuAction(action) {
 function renderServerMenu() {
   const items = state.isAdmin
     ? [
+      { action: 'info', label: 'Server Info' },
+      { action: 'appearance', label: 'Appearance' },
       { action: 'rename', label: 'Rename Server' },
       { action: 'icon', label: 'Change Icon' },
       { action: 'invite', label: 'Invite People' },
@@ -1864,7 +2030,7 @@ function renderSidebar() {
   renderServerRail();
 
   el.serverName.textContent = state.server.name;
-  el.serverIcon.textContent = getServerBadge(state.server);
+  applyServerAppearance(state.server);
   if (el.mobileNavToggle) {
     el.mobileNavToggle.setAttribute('title', 'Open navigation for ' + state.server.name);
     el.mobileNavToggle.setAttribute('aria-label', 'Open navigation for ' + state.server.name);
@@ -2464,6 +2630,18 @@ async function sendCurrentMessage() {
   const text = el.composerInput.value.trim();
   if (!text && !state.pendingFiles.length) return;
 
+  if (text) {
+    const handled = await handleSlashCommand(text);
+    if (handled) {
+      el.composerInput.value = '';
+      el.composerInput.style.height = 'auto';
+      state.pendingFiles = [];
+      state.pendingUploadItems = [];
+      renderPendingAttachments();
+      return;
+    }
+  }
+
   // Warn once per session if about to send unencrypted
   const isCurrentDM = state.currentView === 'dm';
   const currentlyEncrypted = isCurrentDM
@@ -2510,8 +2688,10 @@ function closeAllTransientUi() {
   closeMemberPopout();
   closeDeleteConfirm();
   closeServerInfoModal();
+  closeServerAppearanceModal();
   closeChatCleanupModal();
   closeActionModal();
+  closeCreateChannelModal();
   closeMobilePanels();
   el.searchPanel.classList.add('hidden');
   el.channelSwitcher.classList.add('hidden');
@@ -2657,8 +2837,90 @@ function selectChannel(channelId) {
 
 async function openDM(member) {
   if (!member || !member.userId || member.userId === state.user.id) return;
+  const ids = [state.user?.id, member.userId].filter(Boolean).map(String).sort();
+  const channelId = ids.length === 2 ? `dm_${ids[0]}_${ids[1]}` : '';
+  if (channelId && isDMEncryptionEnabled(channelId)) {
+    await proceedOpenDM(member, true, channelId);
+    return;
+  }
 
   openDMKeyPromptModal(member);
+}
+
+async function handleSlashCommand(raw) {
+  const value = String(raw || '').trim();
+  if (!value.startsWith('/')) return false;
+  const parts = value.split(/\s+/);
+  const command = parts[0].toLowerCase();
+
+  if (command === '/op' || command === '/deop') {
+    if (!state.server?.id) {
+      showVoiceTooltip('Open a server first.');
+      return true;
+    }
+    if (!state.isAdmin) {
+      showVoiceTooltip('Only admins can use this command.');
+      return true;
+    }
+    const targetRaw = parts.slice(1).join(' ').trim();
+    if (!targetRaw) {
+      showVoiceTooltip(`Usage: ${command} @username`);
+      return true;
+    }
+    const normalized = targetRaw.replace(/^@/, '').trim().toLowerCase();
+    let member = state.members.find((m) => String(m.username || '').toLowerCase() === normalized);
+    if (!member) {
+      member = state.members.find((m) => getUserTag(m.userId).toLowerCase() === normalized);
+    }
+    if (!member) {
+      showVoiceTooltip('Member not found.');
+      return true;
+    }
+
+    const action = command === '/op' ? 'grant' : 'revoke';
+    const response = await fetch(`/api/servers/${encodeURIComponent(state.server.id)}/operator`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: member.userId, action })
+    });
+    const data = await response.json().catch(() => null);
+    if (!response.ok || !data?.role) {
+      showVoiceTooltip(data?.error || 'Role update failed.');
+      return true;
+    }
+
+    const role = data.role;
+    if (!state.roles.find((item) => item.id === role.id)) state.roles.push(role);
+    state.members = state.members.map((entry) => (
+      entry.userId === member.userId ? { ...entry, roleId: role.id } : entry
+    ));
+    renderMembers(state.members, state.roles, el.membersList);
+    showVoiceTooltip(action === 'grant'
+      ? `Operator granted to @${member.username}`
+      : `Operator removed from @${member.username}`);
+    return true;
+  }
+
+  return false;
+}
+
+async function updateServerAppearance(patch = {}) {
+  if (!state.server?.id || !state.isAdmin) return false;
+  const response = await fetch(`/api/servers/${encodeURIComponent(state.server.id)}/appearance`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch)
+  });
+  const data = await response.json().catch(() => null);
+  if (!response.ok) {
+    showVoiceTooltip(data?.error || 'Failed to update server appearance');
+    return false;
+  }
+  state.server = data.server || state.server;
+  syncCachedServer(state.server);
+  applyServerAppearance(state.server);
+  renderSidebar();
+  return true;
 }
 
 async function proceedOpenDM(member, skipKey = false, existingChannelId = null) {
@@ -3036,13 +3298,7 @@ function bind() {
       const categoryName = category.dataset.category || '';
       const addButton = event.target.closest('.channel-category-add');
       if (addButton) {
-        openActionModal({
-          title: 'Create Channel',
-          description: 'Channel creation for ' + categoryName + ' lands in Section 2.',
-          primaryLabel: 'Okay',
-          hideInput: true,
-          onConfirm: async () => true
-        });
+        openCreateChannelModal({ category: categoryName });
         return;
       }
 
@@ -3145,6 +3401,61 @@ function bind() {
   el.copyServerIdBtn.addEventListener('click', () => copyText(state.server?.id || '', el.copyServerIdBtn));
   el.copyServerLinkBtn.addEventListener('click', () => copyText(el.serverInfoLink.textContent || getServerJoinUrl(), el.copyServerLinkBtn));
   el.serverInfoModal.addEventListener('click', (event) => { if (event.target === el.serverInfoModal) closeServerInfoModal(); });
+  el.serverAppearanceClose?.addEventListener('click', closeServerAppearanceModal);
+  el.serverAppearanceModal?.addEventListener('click', (event) => { if (event.target === el.serverAppearanceModal) closeServerAppearanceModal(); });
+
+  el.createChannelClose?.addEventListener('click', closeCreateChannelModal);
+  el.createChannelCancel?.addEventListener('click', closeCreateChannelModal);
+  el.createChannelModal?.addEventListener('click', (event) => { if (event.target === el.createChannelModal) closeCreateChannelModal(); });
+  el.createChannelSubmit?.addEventListener('click', submitCreateChannel);
+  el.createChannelName?.addEventListener('keydown', (event) => { if (event.key === 'Enter') submitCreateChannel(); });
+
+  el.serverIconUpload?.addEventListener('click', () => {
+    if (!state.isAdmin || !el.serverIconInput) return;
+    el.serverIconInput.value = '';
+    el.serverIconInput.click();
+  });
+  el.serverBannerUpload?.addEventListener('click', () => {
+    if (!state.isAdmin || !el.serverBannerInput) return;
+    el.serverBannerInput.value = '';
+    el.serverBannerInput.click();
+  });
+  el.serverIconClear?.addEventListener('click', () => {
+    if (!state.isAdmin) return;
+    void updateServerAppearance({ iconUrl: '' });
+  });
+  el.serverBannerClear?.addEventListener('click', () => {
+    if (!state.isAdmin) return;
+    void updateServerAppearance({ bannerUrl: '' });
+  });
+  el.serverIconInput?.addEventListener('change', async () => {
+    if (!state.isAdmin) return;
+    const file = el.serverIconInput.files?.[0];
+    if (!file) return;
+    try {
+      const uploaded = await uploadFile(file);
+      await updateServerAppearance({ iconUrl: uploaded?.url || '' });
+      showVoiceTooltip('Server icon updated');
+    } catch (error) {
+      showVoiceTooltip(error?.message || 'Server icon upload failed');
+    } finally {
+      el.serverIconInput.value = '';
+    }
+  });
+  el.serverBannerInput?.addEventListener('change', async () => {
+    if (!state.isAdmin) return;
+    const file = el.serverBannerInput.files?.[0];
+    if (!file) return;
+    try {
+      const uploaded = await uploadFile(file);
+      await updateServerAppearance({ bannerUrl: uploaded?.url || '' });
+      showVoiceTooltip('Server background updated');
+    } catch (error) {
+      showVoiceTooltip(error?.message || 'Server background upload failed');
+    } finally {
+      el.serverBannerInput.value = '';
+    }
+  });
 
   el.chatCleanupClose.addEventListener('click', closeChatCleanupModal);
   el.chatCleanupModal.addEventListener('click', (event) => { if (event.target === el.chatCleanupModal) closeChatCleanupModal(); });
@@ -3215,6 +3526,7 @@ function wireSocket() {
       state.channels = server.channels || [];
       state.roles = server.roles || [];
       state.members = members || server.members || [];
+      initializeE2EE(state.server?.id || '');
       updateAdminState();
       renderSidebar();
       await refreshDmList();
@@ -3318,8 +3630,27 @@ function wireSocket() {
       if (found) Object.assign(found, message);
       renderMessages();
     },
+    dm_opened: async ({ channelId, from }) => {
+      if (!from?.userId || from.userId === state.user?.id) return;
+      await refreshDmList();
+      if (state.currentView === 'dm' && state.currentChannelId === channelId) return;
+
+      const label = from.username ? `@${from.username}` : 'A user';
+      if (!state.hasFocus && 'Notification' in window && Notification.permission === 'granted') {
+        new Notification('New DM request', { body: `${label} started a DM` });
+      } else {
+        showVoiceTooltip(`${label} started a DM`);
+      }
+    },
     profile_updated: ({ user }) => {
       syncUserAppearance(user);
+    },
+    server_updated: ({ server }) => {
+      if (!server || server.id !== state.server?.id) return;
+      state.server = server;
+      syncCachedServer(state.server);
+      renderSidebar();
+      updateActiveHeader();
     },
     user_list_update: ({ members }) => { state.members = members || []; updateAdminState(); renderSidebar(); if (state.currentView === 'dm') updateActiveHeader(); },
     user_joined: ({ user }) => {
@@ -3381,10 +3712,6 @@ async function bootstrap() {
   }
 
   state.user = me.user;
-  initializeE2EE();
-  // Inject the persistent E2EE status badge into the header
-  // (done after a short delay so the header DOM is fully painted)
-  setTimeout(injectE2EEIndicator, 120);
   state.collapsedCategories = JSON.parse(sessionStorage.getItem('omchat_collapsed_categories') || '{}');
   state.sidebarHidden = sessionStorage.getItem('omchat_sidebar_hidden') === '1';
   state.serverRail = getCachedServerList();
@@ -3409,6 +3736,11 @@ async function bootstrap() {
   state.channels = state.server.channels || [];
   state.roles = state.server.roles || [];
   state.members = state.server.members || [];
+
+  initializeE2EE(state.server?.id || '');
+  // Inject the persistent E2EE status badge into the header
+  // (done after a short delay so the header DOM is fully painted)
+  setTimeout(injectE2EEIndicator, 120);
 
   const isMember = state.members.some((member) => member.userId === state.user.id);
   if (!isMember && requestedServerId) {

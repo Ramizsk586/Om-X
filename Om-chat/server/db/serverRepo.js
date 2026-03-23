@@ -126,6 +126,8 @@ function mapServer(server, parts = {}) {
     id: String(server.id),
     name: String(server.name || ''),
     icon: String(server.icon || '??'),
+    iconUrl: String(server.iconUrl || ''),
+    bannerUrl: String(server.bannerUrl || ''),
     ownerId: String(server.ownerId || ''),
     createdAt: String(server.createdAt || ''),
     channels: Array.isArray(parts.channels) ? parts.channels.map(mapChannel) : [],

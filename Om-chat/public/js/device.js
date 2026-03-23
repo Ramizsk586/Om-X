@@ -38,6 +38,8 @@ function normalizeCachedServer(server) {
     id: String(server.id),
     name: String(server.name || server.id).slice(0, 80),
     icon: typeof server.icon === 'string' ? server.icon : '',
+    iconUrl: typeof server.iconUrl === 'string' ? server.iconUrl : '',
+    bannerUrl: typeof server.bannerUrl === 'string' ? server.bannerUrl : '',
     ownerId: server.ownerId || null
   };
 }

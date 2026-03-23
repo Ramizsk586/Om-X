@@ -96,6 +96,7 @@
       </aside>
 
       <main class="chat-pane">
+        <div id="chat-background" class="chat-background" aria-hidden="true"></div>
         <header class="chat-header">
           <button id="mobile-nav-toggle" class="icon-btn mobile-nav-toggle" type="button" aria-label="Open navigation drawer" aria-expanded="false">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -255,6 +256,90 @@
         <div class="modal-stack-actions">
           <button id="copy-server-id-btn" type="button" class="btn-secondary">Copy Server ID</button>
           <button id="copy-server-link-btn" type="button" class="btn-primary">Copy Link</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="server-appearance-modal" class="modal hidden">
+      <div class="modal-inner server-appearance-modal-inner">
+        <div class="modal-head">
+          <strong id="server-appearance-title">Server Appearance</strong>
+          <button id="server-appearance-close" type="button" class="icon-btn" aria-label="Close server appearance">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M18 6 6 18"></path>
+              <path d="m6 6 12 12"></path>
+            </svg>
+          </button>
+        </div>
+        <div class="server-info-row server-appearance">
+          <div class="server-appearance-block">
+            <span class="section-label">Server Icon Image</span>
+            <div class="appearance-row">
+              <div id="server-icon-preview" class="server-icon-preview">OX</div>
+              <div class="appearance-actions">
+                <button id="server-icon-upload" type="button" class="btn-secondary">Upload</button>
+                <button id="server-icon-clear" type="button" class="btn-secondary">Clear</button>
+              </div>
+            </div>
+          </div>
+          <div class="server-appearance-block">
+            <span class="section-label">Server Background</span>
+            <div id="server-banner-preview" class="server-banner-preview">
+              <span class="appearance-hint">No background set</span>
+            </div>
+            <div class="appearance-actions">
+              <button id="server-banner-upload" type="button" class="btn-secondary">Upload</button>
+              <button id="server-banner-clear" type="button" class="btn-secondary">Clear</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <input id="server-icon-input" type="file" accept="image/*" hidden />
+    <input id="server-banner-input" type="file" accept="image/*" hidden />
+
+    <div id="create-channel-modal" class="modal hidden">
+      <div class="modal-inner create-channel-modal-inner">
+        <div class="modal-head">
+          <strong>Create Channel</strong>
+          <button id="create-channel-close" type="button" class="icon-btn" aria-label="Close create channel">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M18 6 6 18"></path>
+              <path d="m6 6 12 12"></path>
+            </svg>
+          </button>
+        </div>
+        <div class="create-channel-grid">
+          <label class="section-label" for="create-channel-name">Channel name</label>
+          <input id="create-channel-name" class="modal-input" maxlength="40" placeholder="new-channel" />
+
+          <label class="section-label" for="create-channel-category">Category</label>
+          <input id="create-channel-category" class="modal-input" maxlength="40" placeholder="TEXT CHANNELS" />
+
+          <label class="section-label" for="create-channel-type">Channel type</label>
+          <select id="create-channel-type" class="modal-input">
+            <option value="text">Text</option>
+            <option value="announcement">Announcement</option>
+            <option value="voice-placeholder">Voice</option>
+          </select>
+
+          <label class="section-label" for="create-channel-perms">Who can message?</label>
+          <select id="create-channel-perms" class="modal-input">
+            <option value="everyone">Everyone</option>
+            <option value="admins">Admins only</option>
+          </select>
+
+          <label class="section-label" for="create-channel-topic">Topic</label>
+          <input id="create-channel-topic" class="modal-input" maxlength="120" placeholder="What's this channel about?" />
+
+          <label class="section-label" for="create-channel-slow">Slow mode (seconds)</label>
+          <input id="create-channel-slow" class="modal-input" type="number" min="0" max="3600" value="0" />
+        </div>
+        <div id="create-channel-error" class="modal-description hidden"></div>
+        <div class="modal-actions">
+          <button id="create-channel-cancel" type="button" class="btn-secondary">Cancel</button>
+          <button id="create-channel-submit" type="button" class="btn-primary">Create</button>
         </div>
       </div>
     </div>

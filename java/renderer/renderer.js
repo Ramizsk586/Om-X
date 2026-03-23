@@ -1207,9 +1207,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (btnClose) btnClose.addEventListener('click', () => window.browserAPI.window.close());
 
     // ── APP-TAB UTILS ─────────────────────────────────────────────────────────
-    const openAppTab = (url) => {
-        const existing = tabManager.tabs.find(t => t.url === url);
-        if (existing) tabManager.setActiveTab(existing.id); else tabManager.createTab(url);
+    const openAppTab = (url, options = {}) => {
+        const existing = options.isOmChat
+            ? tabManager.tabs.find(t => t.isOmChat)
+            : tabManager.tabs.find(t => t.url === url);
+        if (existing) {
+            if (options.isOmChat) {
+                existing.isOmChat = true;
+                existing.noSuspend = true;
+            }
+            tabManager.setActiveTab(existing.id);
+        } else {
+            tabManager.createTab(url, options);
+        }
         featuresHomePopup?.classList.add('hidden');
     };
 
@@ -1271,7 +1281,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                 return;
             }
             window.__omxOmChatNetworkUrl = `${publicUrl}/`;
-            openAppTab(window.__omxOmChatNetworkUrl);
+            try {
+                const omOrigin = new URL(window.__omxOmChatNetworkUrl).origin;
+                tabManager?.registerOmChatOrigin?.(omOrigin);
+            } catch (_) {}
+            openAppTab(window.__omxOmChatNetworkUrl, { isOmChat: true });
         } catch (error) {
             console.error('[Om Chat] Launcher failed:', error);
             window.alert(`Om Chat failed to start: ${error?.message || error}`);

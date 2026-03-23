@@ -313,6 +313,57 @@ mark {
   padding: 0 12px;
 }
 
+.input-with-toggle {
+  position: relative;
+}
+
+.input-with-toggle input {
+  padding-right: 44px;
+}
+
+.password-toggle {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.password-toggle:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.password-toggle:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.password-toggle svg {
+  width: 18px;
+  height: 18px;
+}
+
+.password-toggle .eye-off {
+  display: none;
+}
+
+.password-toggle.is-visible .eye-off {
+  display: block;
+}
+
+.password-toggle.is-visible .eye-on {
+  display: none;
+}
+
 .landing-submit {
   width: 100%;
   margin-top: 20px;
@@ -546,6 +597,15 @@ mark {
   font-size: 12px;
   font-weight: 700;
   flex-shrink: 0;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  overflow: hidden;
+}
+
+.server-title-icon.has-image {
+  color: transparent;
+  text-shadow: none;
 }
 
 #server-name {
@@ -929,6 +989,30 @@ mark {
   background: var(--bg-surface);
 }
 
+.chat-background {
+  position: absolute;
+  inset: 0;
+  background-image: var(--server-banner-image, none);
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  opacity: var(--server-banner-opacity, 0.18);
+  filter: saturate(1.05);
+  pointer-events: none;
+}
+
+.chat-background::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(20, 20, 24, 0.65) 0%, rgba(20, 20, 24, 0.85) 50%, rgba(20, 20, 24, 0.98) 100%);
+}
+
+.chat-pane > *:not(.chat-background) {
+  position: relative;
+  z-index: 1;
+}
+
 .chat-header {
   min-height: var(--header-h);
   display: flex;
@@ -937,7 +1021,8 @@ mark {
   gap: 12px;
   padding: 0 16px;
   border-bottom: 1px solid var(--border-subtle);
-  background: var(--bg-surface);
+  background: color-mix(in srgb, var(--bg-surface) 80%, #000 20%);
+  backdrop-filter: blur(6px);
 }
 
 .chat-header-copy {
@@ -1052,7 +1137,7 @@ mark {
 .message-list {
   flex: 1;
   overflow: auto;
-  padding: 8px 0 20px;
+  padding: 16px 0 28px;
   contain: layout paint style;
   will-change: scroll-position;
 }
@@ -1975,6 +2060,33 @@ blockquote {
   box-shadow: var(--shadow-lg);
 }
 
+.server-info-modal-inner {
+  width: min(640px, calc(100% - 32px));
+  max-height: min(78vh, 640px);
+  overflow: auto;
+}
+
+.server-appearance-modal-inner {
+  width: min(520px, calc(100% - 32px));
+  max-height: min(78vh, 560px);
+  overflow: auto;
+}
+
+.create-channel-modal-inner {
+  width: min(520px, calc(100% - 32px));
+  max-height: min(82vh, 720px);
+  overflow: auto;
+}
+
+.create-channel-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.create-channel-grid .section-label {
+  margin-top: 8px;
+}
+
 .image-viewer {
   z-index: 80;
   padding: 24px;
@@ -2152,6 +2264,70 @@ blockquote {
 .server-info-link-value {
   font-family: var(--font-mono);
   font-size: 12px;
+}
+
+.server-appearance {
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 12px;
+}
+
+.server-appearance-block {
+  display: grid;
+  gap: 10px;
+}
+
+.appearance-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.server-icon-preview {
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  background: var(--bg-hover);
+  border: 1px solid var(--border-subtle);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--text-primary);
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+.server-icon-preview.has-image {
+  color: transparent;
+}
+
+.server-banner-preview {
+  width: 100%;
+  height: 120px;
+  border-radius: 14px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-hover);
+  display: grid;
+  place-items: center;
+  color: var(--text-muted);
+  font-size: 12px;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  position: relative;
+  overflow: hidden;
+}
+
+.server-banner-preview.has-image .appearance-hint {
+  display: none;
+}
+
+.appearance-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .chat-cleanup-modal-inner {
@@ -2416,6 +2592,20 @@ blockquote {
   font-size: 13px;
   font-weight: 700;
   letter-spacing: 0.02em;
+}
+
+.server-rail-pill.has-image {
+  color: transparent;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-color: transparent;
+}
+
+.server-rail-pill.has-image:hover,
+.server-rail-pill.has-image.is-active {
+  background-color: transparent;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.25) inset;
 }
 
 .server-rail-pill.is-active::before,

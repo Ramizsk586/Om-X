@@ -518,6 +518,7 @@ function userMembers(server) {
  */
 function createDefaultRoles() {
   const adminId = createId(11);
+  const operatorId = createId(11);
   const memberId = createId(11);
   return [
     {
@@ -525,6 +526,12 @@ function createDefaultRoles() {
       name: 'Admin',
       color: '#F04747',
       permissions: ['manage_server', 'manage_channels', 'kick_members', 'create_channels', 'manage_messages', 'send_messages', 'read_messages', 'pin_messages', 'manage_members']
+    },
+    {
+      id: operatorId,
+      name: 'Operator',
+      color: '#3B82F6',
+      permissions: ['manage_channels', 'kick_members', 'create_channels', 'manage_messages', 'send_messages', 'read_messages', 'pin_messages', 'manage_members']
     },
     {
       id: memberId,
@@ -658,6 +665,8 @@ async function createServer({ name, icon, owner }) {
     id: serverId,
     name: String(name).slice(0, 80),
     icon: icon || '??',
+    iconUrl: '',
+    bannerUrl: '',
     ownerId: owner.id,
     createdAt
   });
@@ -1457,6 +1466,25 @@ async function getServerRoles(serverId) {
 }
 
 /**
+ * Ensure the Operator role exists for a server.
+ * @param {string} serverId Server identifier.
+ * @returns {Promise<Record<string, unknown>|null>} Operator role.
+ */
+async function ensureOperatorRole(serverId) {
+  const server = await getServerById(serverId);
+  if (!server) return null;
+  const existing = server.roles.find((role) => String(role.name || '').toLowerCase() === 'operator');
+  if (existing) return existing;
+  return serverRepo.createRole({
+    id: createId(11),
+    serverId,
+    name: 'Operator',
+    color: '#3B82F6',
+    permissions: ['manage_channels', 'kick_members', 'create_channels', 'manage_messages', 'send_messages', 'read_messages', 'pin_messages', 'manage_members']
+  });
+}
+
+/**
  * Set a member role in MongoDB.
  * @param {string} serverId Server identifier.
  * @param {string} userId Target user identifier.
@@ -1547,6 +1575,27 @@ async function updateServerIcon(serverId, actorId, icon) {
   const server = await getServerById(serverId);
   if (!server || !isAdmin(server, actorId)) return null;
   return serverRepo.updateServer(serverId, { icon: String(icon || '??') });
+}
+
+/**
+ * Update server appearance fields (icon image / banner).
+ * @param {string} serverId Server identifier.
+ * @param {string} actorId Acting user identifier.
+ * @param {{iconUrl?: string, bannerUrl?: string}} payload Appearance payload.
+ * @returns {Promise<Record<string, unknown>|null>} Updated server.
+ */
+async function updateServerAppearance(serverId, actorId, payload = {}) {
+  const server = await getServerById(serverId);
+  if (!server || !isAdmin(server, actorId)) return null;
+  const changes = {};
+  if (Object.prototype.hasOwnProperty.call(payload, 'iconUrl')) {
+    changes.iconUrl = String(payload.iconUrl || '');
+  }
+  if (Object.prototype.hasOwnProperty.call(payload, 'bannerUrl')) {
+    changes.bannerUrl = String(payload.bannerUrl || '');
+  }
+  if (!Object.keys(changes).length) return server;
+  return serverRepo.updateServer(serverId, changes);
 }
 
 /**
@@ -1686,6 +1735,7 @@ module.exports = {
   getServerByInvite,
   getServerDataWithMembers,
   getServerRoles,
+  ensureOperatorRole,
   getUser,
   getUserByDeviceToken,
   hasPermission,
@@ -1711,6 +1761,7 @@ module.exports = {
   updateChannel,
   updateMessage,
   updateServerIcon,
+  updateServerAppearance,
   updateUserProfile,
   userMembers
 };

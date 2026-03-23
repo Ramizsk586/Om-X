@@ -280,6 +280,7 @@ module.exports = function initSockets(io) {
     }
 
     registerUserSocket(userId, socket.id);
+    socket.join(`user:${userId}`);
 
     let activeServerId = session.currentServerId || null;
     let activeChannelId = null;

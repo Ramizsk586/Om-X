@@ -4,6 +4,8 @@ const serverSchema = new Schema({
   id: { type: String, required: true, unique: true, trim: true },
   name: { type: String, required: true, maxlength: 80, trim: true },
   icon: { type: String, default: '??' },
+  iconUrl: { type: String, default: '' },
+  bannerUrl: { type: String, default: '' },
   ownerId: { type: String, required: true, trim: true },
   createdAt: { type: String, required: true },
   e2eShown: { type: Boolean, default: false }
