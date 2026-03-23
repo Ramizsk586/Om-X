@@ -64,6 +64,17 @@ const applyThemeClass = (theme) => {
     featVirusTotal: document.getElementById('feat-virustotal'),
     featCookieShield: document.getElementById('feat-cookie-shield'),
     featCookieThirdParty: document.getElementById('feat-cookie-third-party'),
+    featSessionGuard: document.getElementById('feat-sessionguard'),
+    // Ad Blocker Panel
+    featAdblockerMaster: document.getElementById('feat-adblocker-master'),
+    featAdblockerPopups: document.getElementById('feat-adblocker-popups'),
+    featAdblockerFloating: document.getElementById('feat-adblocker-floating'),
+    featAdblockerBanners: document.getElementById('feat-adblocker-banners'),
+    featAdblockerVideo: document.getElementById('feat-adblocker-video'),
+    featAdblockerSocial: document.getElementById('feat-adblocker-social'),
+    featAdblockerTrackers: document.getElementById('feat-adblocker-trackers'),
+    featAdblockerSearch: document.getElementById('feat-adblocker-search'),
+    adblockerTogglesContainer: document.getElementById('adblocker-toggles-container'),
     virusTotalConfig: document.getElementById('virustotal-config'),
     btnOpenVirusTotalPopup: document.getElementById('btn-open-virustotal-popup'),
     virusTotalPopup: document.getElementById('virustotal-popup'),
@@ -88,6 +99,10 @@ const applyThemeClass = (theme) => {
     blockInputDomain: document.getElementById('block-input-domain'),
     btnAddBlock: document.getElementById('btn-add-block'),
     blockListContainer: document.getElementById('block-list-container'),
+    // Whitelist Panel
+    whitelistInputDomain: document.getElementById('whitelist-input-domain'),
+    btnAddWhitelist: document.getElementById('btn-add-whitelist'),
+    whitelistContainer: document.getElementById('whitelist-container'),
     // Footer / UI
     btnSave: document.getElementById('btn-save-settings'),
     status: document.getElementById('save-status'),
@@ -276,6 +291,13 @@ const applyThemeClass = (theme) => {
       return;
     }
     syncVirusTotalLinkTools();
+  }
+
+  function syncAdblockerToggles() {
+    if (!els.adblockerTogglesContainer) return;
+    const enabled = Boolean(els.featAdblockerMaster?.checked);
+    els.adblockerTogglesContainer.style.opacity = enabled ? '1' : '0.5';
+    els.adblockerTogglesContainer.style.pointerEvents = enabled ? 'auto' : 'none';
   }
 
   async function scanVirusTotalLink() {
@@ -575,6 +597,20 @@ const applyThemeClass = (theme) => {
         const res = s.security?.cookieShield?.blockThirdPartyResponseCookies ?? true;
         els.featCookieThirdParty.checked = Boolean(req && res);
       }
+      if (els.featSessionGuard) els.featSessionGuard.checked = s.security?.sessionGuard?.enabled ?? true;
+      
+      // Load Ad Blocker settings (default OFF)
+      const adBlocker = s.adBlocker || {};
+      if (els.featAdblockerMaster) els.featAdblockerMaster.checked = adBlocker.enabled ?? false;
+      if (els.featAdblockerPopups) els.featAdblockerPopups.checked = adBlocker.blockPopups ?? false;
+      if (els.featAdblockerFloating) els.featAdblockerFloating.checked = adBlocker.blockFloating ?? false;
+      if (els.featAdblockerBanners) els.featAdblockerBanners.checked = adBlocker.blockBanners ?? false;
+      if (els.featAdblockerVideo) els.featAdblockerVideo.checked = adBlocker.blockVideoAds ?? false;
+      if (els.featAdblockerSocial) els.featAdblockerSocial.checked = adBlocker.blockSocialAds ?? false;
+      if (els.featAdblockerTrackers) els.featAdblockerTrackers.checked = adBlocker.blockTrackers ?? false;
+      if (els.featAdblockerSearch) els.featAdblockerSearch.checked = adBlocker.cleanSearchEngines ?? false;
+      syncAdblockerToggles();
+      
       if (els.virusTotalApiKey) els.virusTotalApiKey.value = s.security?.virusTotal?.apiKey || '';
       if (els.featVirusTotalUrlScan) els.featVirusTotalUrlScan.checked = s.security?.virusTotal?.scanUrls ?? true;
       if (els.featVirusTotalFileScan) els.featVirusTotalFileScan.checked = s.security?.virusTotal?.scanExecutables ?? true;
@@ -586,6 +622,9 @@ const applyThemeClass = (theme) => {
 
       // Load blocklist
       renderBlockList(s.blocklist || []);
+      
+      // Load whitelist
+      renderWhitelist(s.adBlockerWhitelist || []);
 
       selectedTheme = applyThemeClass(s.theme || 'noir');
       renderShortcuts(s.shortcuts || {});
@@ -625,7 +664,21 @@ const applyThemeClass = (theme) => {
                 enabled: true,
                 blockThirdPartyRequestCookies: true,
                 blockThirdPartyResponseCookies: true
+            },
+            sessionGuard: {
+                ...(window.omniSettings.security?.sessionGuard || {}),
+                enabled: els.featSessionGuard?.checked ?? true
             }
+        },
+        adBlocker: {
+            enabled: els.featAdblockerMaster?.checked ?? false,
+            blockPopups: els.featAdblockerPopups?.checked ?? false,
+            blockFloating: els.featAdblockerFloating?.checked ?? false,
+            blockBanners: els.featAdblockerBanners?.checked ?? false,
+            blockVideoAds: els.featAdblockerVideo?.checked ?? false,
+            blockSocialAds: els.featAdblockerSocial?.checked ?? false,
+            blockTrackers: els.featAdblockerTrackers?.checked ?? false,
+            cleanSearchEngines: els.featAdblockerSearch?.checked ?? false
         },
         theme: selectedTheme,
         llm: {
@@ -633,6 +686,7 @@ const applyThemeClass = (theme) => {
         },
         shortcuts: newShortcuts,
         blocklist: currentSettings.blocklist || [],
+        adBlockerWhitelist: currentSettings.adBlockerWhitelist || [],
         openDevToolsOnStart: false
       };
       els.btnSave.disabled = true; els.btnSave.textContent = "Saving...";
@@ -673,6 +727,74 @@ const applyThemeClass = (theme) => {
     });
   }
 
+  // Whitelist handlers
+  function renderWhitelist(whitelist = []) {
+    if (!els.whitelistContainer) return;
+    
+    if (!Array.isArray(whitelist) || whitelist.length === 0) {
+      els.whitelistContainer.innerHTML = '<div style="padding: 24px; text-align: center; color: #71717a;"><p style="margin: 0; margin-bottom: 8px;">No whitelisted sites yet</p><span style="font-size: 12px;">Add domains above to reduce ad blocking on them</span></div>';
+      return;
+    }
+    
+    els.whitelistContainer.innerHTML = '';
+    [...whitelist].reverse().forEach((domain) => {
+      const item = document.createElement('div');
+      item.style.cssText = 'display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,0.05); background: rgba(16,185,129,0.02);';
+      const info = document.createElement('div');
+      info.style.cssText = 'flex: 1; min-width: 0;';
+      const title = document.createElement('div');
+      title.style.cssText = 'color: #fff; font-weight: 500; font-size: 14px; word-break: break-all;';
+      title.textContent = String(domain || '');
+      const description = document.createElement('div');
+      description.style.cssText = 'color: #71717a; font-size: 12px; margin-top: 4px;';
+      description.textContent = 'Ad blocker reduced to popup-only mode';
+      info.appendChild(title);
+      info.appendChild(description);
+
+      const removeBtn = document.createElement('button');
+      removeBtn.className = 'btn-remove-whitelist';
+      removeBtn.dataset.domain = String(domain || '');
+      removeBtn.style.cssText = 'background: rgba(16,185,129,0.2); color: #10b981; border: 1px solid rgba(16,185,129,0.3); padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 600; transition: all 0.2s; flex-shrink: 0; margin-left: 12px; white-space: nowrap;';
+      removeBtn.textContent = 'Remove';
+      removeBtn.addEventListener('click', (event) => {
+        const targetDomain = event.currentTarget?.dataset?.domain;
+        const updated = (currentSettings.adBlockerWhitelist || []).filter(d => d !== targetDomain);
+        currentSettings.adBlockerWhitelist = updated;
+        window.omniSettings.adBlockerWhitelist = updated;
+        renderWhitelist(updated);
+      });
+
+      item.appendChild(info);
+      item.appendChild(removeBtn);
+      els.whitelistContainer.appendChild(item);
+    });
+  }
+
+  if (els.btnAddWhitelist) {
+    els.btnAddWhitelist.addEventListener('click', () => {
+      const domain = els.whitelistInputDomain?.value.trim();
+      if (!domain) return;
+      
+      // Clean the domain (remove protocol if present)
+      let cleanDomain = domain.replace(/^https?:\/\//, '').replace(/\/$/, '');
+      
+      if (!currentSettings.adBlockerWhitelist) currentSettings.adBlockerWhitelist = [];
+      if (!currentSettings.adBlockerWhitelist.includes(cleanDomain)) {
+        currentSettings.adBlockerWhitelist.push(cleanDomain);
+        window.omniSettings.adBlockerWhitelist = currentSettings.adBlockerWhitelist;
+        renderWhitelist(currentSettings.adBlockerWhitelist);
+        if (els.whitelistInputDomain) els.whitelistInputDomain.value = '';
+      }
+    });
+  }
+
+  // Allow Enter key to add whitelisted domain
+  if (els.whitelistInputDomain) {
+    els.whitelistInputDomain.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') els.btnAddWhitelist?.click();
+    });
+  }
+
   document.addEventListener('keydown', (event) => {
     if (event.key !== 'Escape') return;
     if (els.virusTotalPopup && !els.virusTotalPopup.classList.contains('hidden')) {
@@ -682,6 +804,10 @@ const applyThemeClass = (theme) => {
 
   if (els.featVirusTotal) {
     els.featVirusTotal.addEventListener('change', syncVirusTotalVisibility);
+  }
+
+  if (els.featAdblockerMaster) {
+    els.featAdblockerMaster.addEventListener('change', syncAdblockerToggles);
   }
 
   if (els.virusTotalApiKey) {

@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SessionGuard</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body style="display:flex;flex-direction:column;height:100vh;overflow:hidden;">
+  <!-- Header -->
+  <header class="header">
+    <div class="logo">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+        <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z" fill="#22c55e"/>
+        <path d="M10 12l2 2 4-4" stroke="#fff" stroke-width="2" fill="none"/>
+      </svg>
+      <h1>SessionGuard</h1>
+    </div>
+    <div class="status-badge" id="statusBadge">Protected</div>
+  </header>
+
+  <!-- Stats Bar -->
+  <div class="stats-bar">
+    <div class="stat">
+      <span class="stat-value" id="blockedCount">0</span>
+      <span class="stat-label">Blocked</span>
+    </div>
+    <div class="stat">
+      <span class="stat-value" id="alertCount">0</span>
+      <span class="stat-label">Alerts</span>
+    </div>
+    <div class="stat">
+      <span class="stat-value" id="sessionCount">0</span>
+      <span class="stat-label">Sessions</span>
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <nav class="tabs">
+    <button class="tab active" data-tab="sessions">Sessions</button>
+    <button class="tab" data-tab="domains">Domains</button>
+    <button class="tab" data-tab="log">Audit Log</button>
+    <button class="tab" data-tab="settings">Settings</button>
+  </nav>
+
+  <!-- Tab Content -->
+  <div class="tab-content">
+    <!-- Sessions Tab -->
+    <div class="tab-panel active" id="sessionsPanel">
+      <div class="panel-header">
+        <h2>Active Sessions</h2>
+        <button class="btn-refresh" id="refreshSessions">↻</button>
+      </div>
+      <div class="session-list" id="sessionList">
+        <div class="empty-state">No active sessions</div>
+      </div>
+    </div>
+
+    <!-- Domains Tab -->
+    <div class="tab-panel" id="domainsPanel">
+      <div class="panel-header">
+        <h2>Protected Domains</h2>
+      </div>
+      <div class="domain-input-row">
+        <input type="text" id="domainInput" placeholder="example.com">
+        <button class="btn-add" id="addDomain">Add</button>
+      </div>
+      <div class="domain-list" id="domainList">
+        <!-- Domain items populated by JS -->
+      </div>
+    </div>
+
+    <!-- Audit Log Tab -->
+    <div class="tab-panel" id="logPanel">
+      <div class="panel-header">
+        <h2>Audit Log</h2>
+        <button class="btn-clear" id="clearLog">Clear</button>
+      </div>
+      <div class="log-list" id="logList">
+        <div class="empty-state">No events logged</div>
+      </div>
+    </div>
+
+    <!-- Settings Tab -->
+    <div class="tab-panel" id="settingsPanel">
+      <div class="setting-row">
+        <div class="setting-info">
+          <span class="setting-label">Enable Protection</span>
+          <span class="setting-desc">Monitor and block cross-tab cookie access</span>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" id="enableProtection" checked>
+          <span class="slider"></span>
+        </label>
+      </div>
+      <div class="setting-row">
+        <div class="setting-info">
+          <span class="setting-label">Strict Mode</span>
+          <span class="setting-desc">Block ALL cross-origin cookie access</span>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" id="strictMode">
+          <span class="slider"></span>
+        </label>
+      </div>
+      <div class="setting-row">
+        <div class="setting-info">
+          <span class="setting-label">Session Lock Timeout</span>
+          <span class="setting-desc">Release locked sessions after tab close</span>
+        </div>
+        <select id="lockTimeout">
+          <option value="10000">10 seconds</option>
+          <option value="30000" selected>30 seconds</option>
+          <option value="60000">1 minute</option>
+          <option value="300000">5 minutes</option>
+          <option value="0">Never</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <!-- Alert Toast -->
+  <div class="toast" id="alertToast">
+    <div class="toast-icon">⚠️</div>
+    <div class="toast-message" id="toastMessage"></div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

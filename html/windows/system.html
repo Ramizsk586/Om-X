@@ -66,6 +66,14 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
           Blocklist
         </button>
+        <button class="sys-nav-item" data-target="panel-whitelist">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+          Whitelist
+        </button>
+        <button class="sys-nav-item" data-target="panel-adblocker">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07" stroke-width="1.5"/></svg>
+          Ad Blocker
+        </button>
         <button class="sys-nav-item" data-target="panel-creator">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
           Architect
@@ -95,6 +103,13 @@
               <span class="toggle-desc">Use the VirusTotal API key from <code>.env</code> (<code>VIRUSTOTAL_API_KEY</code>) to scan executable installs and untrusted URL apps before loading.</span>
             </div>
             <label class="switch"><input type="checkbox" id="feat-virustotal"><span class="slider"></span></label>
+          </div>
+          <div class="toggle-row">
+            <div class="toggle-info">
+              <span class="toggle-title">SessionGuard</span>
+              <span class="toggle-desc">Protects session tokens and authentication cookies from cross-tab access, token theft, and unauthorized reads on protected sites.</span>
+            </div>
+            <label class="switch"><input type="checkbox" id="feat-sessionguard" checked><span class="slider"></span></label>
           </div>
         </div>
       </div>
@@ -179,6 +194,109 @@
           
           <div style="margin-top: 12px; padding: 12px; background: rgba(255,200,0,0.1); border-left: 3px solid #fbbf24; border-radius: 8px;">
             <p style="color: #fbbf24; font-size: 13px; margin: 0;"><strong>Note:</strong> Only sites in this block list are restricted. Add domains to block them completely.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Section: Whitelist -->
+      <div id="panel-whitelist" class="settings-panel">
+        <div class="panel-header">
+          <h2>Whitelist</h2>
+          <p>Sites where ad blocker power is reduced by 90%. Only popup ads will be blocked on whitelisted sites.</p>
+        </div>
+        <div class="settings-section-card">
+          <div style="margin-bottom: 20px;">
+            <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #fff;">Add Website to Whitelist</label>
+            <div style="display: flex; gap: 8px;">
+              <input type="text" id="whitelist-input-domain" placeholder="example.com or https://example.com" style="flex: 1; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 12px; color: #fff; outline: none;">
+              <button id="btn-add-whitelist" style="background: var(--accent-color); color: white; border: none; padding: 12px 24px; border-radius: 10px; cursor: pointer; font-weight: 600; transition: all 0.2s;">Add</button>
+            </div>
+          </div>
+          
+          <label style="display: block; margin-bottom: 12px; font-weight: 600; color: #fff;">Whitelisted Entries</label>
+          <div id="whitelist-container" style="background: rgba(0,0,0,0.3); border-radius: 12px; max-height: 400px; overflow-y: auto; border: 1px solid rgba(255,255,255,0.05);">
+            <div style="padding: 24px; text-align: center; color: #71717a;">No whitelisted sites yet. Add domains to reduce ad blocking on them.</div>
+          </div>
+          
+          <div style="margin-top: 12px; padding: 12px; background: rgba(16,185,129,0.1); border-left: 3px solid #10b981; border-radius: 8px;">
+            <p style="color: #10b981; font-size: 13px; margin: 0;"><strong>Note:</strong> Ad blocker will only block popup ads on whitelisted sites. No CSS changes, no image blurring, no floating detection.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Section: Ad Blocker -->
+      <div id="panel-adblocker" class="settings-panel">
+        <div class="panel-header">
+          <h2>Ad Blocker</h2>
+          <p>Configure ad blocking features. All features are disabled by default.</p>
+        </div>
+        <div class="settings-section-card">
+          <!-- Master Toggle -->
+          <div class="toggle-row" style="background: rgba(255,255,255,0.03); padding: 16px; border-radius: 10px; margin-bottom: 16px;">
+            <div class="toggle-info">
+              <span class="toggle-title" style="font-size: 15px;">Enable Ad Blocker</span>
+              <span class="toggle-desc">Master switch for all ad blocking features</span>
+            </div>
+            <label class="switch"><input type="checkbox" id="feat-adblocker-master"><span class="slider"></span></label>
+          </div>
+
+          <!-- Feature Toggles -->
+          <div id="adblocker-toggles-container" style="opacity: 0.5; pointer-events: none;">
+            <div class="toggle-row">
+              <div class="toggle-info">
+                <span class="toggle-title">Popup Ad Blocker</span>
+                <span class="toggle-desc">Blocks popup windows and overlay ads that interrupt browsing</span>
+              </div>
+              <label class="switch"><input type="checkbox" id="feat-adblocker-popups"><span class="slider"></span></label>
+            </div>
+
+            <div class="toggle-row">
+              <div class="toggle-info">
+                <span class="toggle-title">Floating Ad Detection</span>
+                <span class="toggle-desc">Detects and hides sticky/floating ad containers on the page</span>
+              </div>
+              <label class="switch"><input type="checkbox" id="feat-adblocker-floating"><span class="slider"></span></label>
+            </div>
+
+            <div class="toggle-row">
+              <div class="toggle-info">
+                <span class="toggle-title">Banner Ad Blocking</span>
+                <span class="toggle-desc">Hides known ad network banners (Google Ads, Taboola, Outbrain, etc.)</span>
+              </div>
+              <label class="switch"><input type="checkbox" id="feat-adblocker-banners"><span class="slider"></span></label>
+            </div>
+
+            <div class="toggle-row">
+              <div class="toggle-info">
+                <span class="toggle-title">Video Ad Blocking</span>
+                <span class="toggle-desc">Blocks pre-roll, mid-roll, and overlay ads on video players</span>
+              </div>
+              <label class="switch"><input type="checkbox" id="feat-adblocker-video"><span class="slider"></span></label>
+            </div>
+
+            <div class="toggle-row">
+              <div class="toggle-info">
+                <span class="toggle-title">Social Media Ad Filtering</span>
+                <span class="toggle-desc">Filters sponsored posts on Facebook, Twitter, Instagram, Reddit</span>
+              </div>
+              <label class="switch"><input type="checkbox" id="feat-adblocker-social"><span class="slider"></span></label>
+            </div>
+
+            <div class="toggle-row">
+              <div class="toggle-info">
+                <span class="toggle-title">Tracker Blocking</span>
+                <span class="toggle-desc">Blocks analytics, telemetry, and tracking scripts</span>
+              </div>
+              <label class="switch"><input type="checkbox" id="feat-adblocker-trackers"><span class="slider"></span></label>
+            </div>
+
+            <div class="toggle-row">
+              <div class="toggle-info">
+                <span class="toggle-title">Search Engine Clean</span>
+                <span class="toggle-desc">Removes ad results from Google, Bing, Yahoo search pages</span>
+              </div>
+              <label class="switch"><input type="checkbox" id="feat-adblocker-search"><span class="slider"></span></label>
+            </div>
           </div>
         </div>
       </div>

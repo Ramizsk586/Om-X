@@ -1,4 +1,4 @@
-import { isBlocked } from '../block.js';
+import { isBlocked, addToBlocklist, checkVirusTotal, checkKnownMaliciousPatterns } from '../block.js';
 
 export class TabManager {
   constructor(tabListContainerId, webviewContainerId, onTabStateChange, onContextMenu, onTabContextMenu, onTabClose) {
@@ -34,6 +34,7 @@ export class TabManager {
     this.SECURITY_BLOCKED_DEFENSE_URL = new URL('../../../html/pages/security-defense-blocked.html', import.meta.url).href;
     this.PRELOAD_URL = new URL('../../preload.js', import.meta.url).href;
     this.WEBVIEW_PRELOAD_URL = new URL('../../webviewPreload.js', import.meta.url).href;
+    this.SESSIONGUARD_SCRIPT_URL = new URL('../../sessionGuard.js', import.meta.url).href;
     this.APP_ROOT_URL = new URL('../../../', import.meta.url).href;
     this.OMX_ICON_URL = new URL('../../../assets/icons/app.ico', import.meta.url).href;
     
@@ -80,8 +81,8 @@ export class TabManager {
     this.loadSettings();
     this.setupPlayerControls();
 
-    this.SUSPEND_TIMEOUT = 30 * 1000;
-    this.SUSPEND_CHECK_INTERVAL = 10 * 1000;
+    this.SUSPEND_TIMEOUT = 10 * 1000; // 10 seconds after leaving tab
+    this.SUSPEND_CHECK_INTERVAL = 5 * 1000; // Check every 5 seconds
     setInterval(() => this.checkSuspension(), this.SUSPEND_CHECK_INTERVAL);
   }
 
@@ -448,10 +449,24 @@ body {
   // website EXCEPT YouTube (which has its own addon pipeline).
   // Inline content ads are left alone — only layout-disrupting floaters are removed.
 
-  getFloatingAdBlockerConfig() {
-    const cfg = this.settings?.floatingAdBlocker || {};
+  getAdBlockerSettings() {
+    const ab = this.settings?.adBlocker || {};
     return {
-      enabled: cfg.enabled !== false   // on by default
+      enabled: ab.enabled === true,           // OFF by default
+      blockPopups: ab.blockPopups === true,
+      blockFloating: ab.blockFloating === true,
+      blockBanners: ab.blockBanners === true,
+      blockVideoAds: ab.blockVideoAds === true,
+      blockSocialAds: ab.blockSocialAds === true,
+      blockTrackers: ab.blockTrackers === true,
+      cleanSearchEngines: ab.cleanSearchEngines === true
+    };
+  }
+
+  getFloatingAdBlockerConfig() {
+    const ab = this.getAdBlockerSettings();
+    return {
+      enabled: ab.enabled && ab.blockFloating
     };
   }
 
@@ -2537,6 +2552,46 @@ body[class*="overflow-hidden"]:not([data-legit]) {
     // ════════════════════════════════════════════════════════════════
     const AD_CLASS_RE = /(advert|advertisement|\bad[-_]?(slot|unit|banner|wrap|container|box|block|frame|overlay|popup|modal|float|sticky|fixed|promo|sponsor|insert|sense|ngin|thrive|vine|raptive|ezoic|setupad|dfp|gpt|prebid)\b|\bads\b|sponsor(ed)?|promobox|popunder|interstitial|age[-_]?(gate|check|verify)|cookie[-_]?(banner|consent|notice|wall|bar)|gdpr[-_]?(banner|overlay)|onetrust|trustarc|cookiebot|taboola|outbrain|revcontent|mgid|clickbait|track(er|ing)|analytics|telemetry|metric|session|hotjar|mouseflow|luckyorange|yandex|metrika|sentry|bugsnag|clarity|facebook|pixel|twitter|linkedin|pinterest|reddit|tiktok|unityads|ironsrc|vungle|fyber|mintegral|samsungad|miui|huawei|realme|oppomob|oneplus|applead|segment|fullstory|logrocket|heap|pendo|amplitude|mixpanel|intercom|drift|crisp\.chat|zendesk|tawk|native[-_]?ad|infeed|in[-_]?article[-_]?ad|recommendation[-_]?(widget|unit|engine)|content[-_]?recommendation|sponsored[-_]?(content|post)|promoted[-_]?(content|post)|video[-_]?ad|preroll|midroll|postroll|vast|vpaid|ima|adhesion|anchor[-_]?ad|dock[-_]?ad|sticky[-_]?(footer|header)[-_]?ad|fixed[-_]?(bottom|top)[-_]?ad|bottom[-_]?(fixed|sticky)[-_]?ad|takeover|skin[-_]?ad|offerwall|reward[-_]?wall|survey[-_]?wall)/i;
 
+    // Trusted domains — never remove their UI elements (search bars, navs, logos)
+    const TRUSTED_DOMAINS = new Set([
+      'google.com', 'www.google.com', 'google.co.uk', 'google.ca', 'google.com.au',
+      'bing.com', 'www.bing.com',
+      'duckduckgo.com', 'duckduckgo.com',
+      'search.yahoo.com', 'yahoo.com',
+      'baidu.com', 'www.baidu.com',
+      'yandex.com', 'yandex.ru',
+      'eikipedia.org', 'wikipedia.org',
+      'github.com', 'stackoverflow.com', 'reddit.com',
+      'youtube.com',
+      'amazon.com', 'www.amazon.com', 'amazon.co.uk', 'amazon.de'
+    ]);
+
+    const isTrustedSite = () => {
+      try {
+        const host = String(location.hostname || '').toLowerCase();
+        if (TRUSTED_DOMAINS.has(host)) return true;
+        // Match *.google.com, *.amazon.com, etc.
+        for (const d of TRUSTED_DOMAINS) {
+          if (host.endsWith('.' + d)) return true;
+        }
+        return false;
+      } catch (_) { return false; }
+    };
+
+    // Common CSS selectors for site UI that should never be removed
+    const LEGIT_UI_SELECTORS = new Set([
+      '#masthead-container', '#masthead', '#header', '#nav', '#search',
+      '#searchform', '#searchbox', '#search-input', '#header-container',
+      '#logo', '#site-logo', '#site-header',
+      '.masthead', '.header', '.nav', '.search', '.searchform',
+      '.searchbox', '.search-input', '.header-container',
+      '.logo', '.site-logo', '.site-header',
+      '.gb_D', '.gb_Ha', '.gb_bb', // Google-specific
+      '#gb', '#gb_1', '#gb_2',     // Google bar
+      '[role="banner"]', '[role="navigation"]',
+      'form[role="search"]', '#tsf'
+    ]);
+
     const isSuspect = (el) => {
       try {
         if (!el || el.nodeType !== 1 || el.__omxBlocked) return false;
@@ -2550,6 +2605,18 @@ body[class*="overflow-hidden"]:not([data-legit]) {
           'picture','video','audio','canvas','svg','figure','figcaption',
           'section','time','mark','code','pre','blockquote','cite']);
         if (SAFE.has(tag)) return false;
+
+        // Skip known UI elements (search bars, navs, logos)
+        for (const sel of LEGIT_UI_SELECTORS) {
+          if (el.matches(sel)) return false;
+        }
+        // Also skip if element is a descendant of a known UI container
+        for (const sel of LEGIT_UI_SELECTORS) {
+          try { if (el.closest(sel)) return false; } catch (_) {}
+        }
+
+        // On trusted sites, be much more conservative — only block obvious ad iframes/scripts
+        const trusted = isTrustedSite();
 
         // Skip if element has legitimate content markers
         const hasLegitContent = el.querySelector('main, article, [role="main"], [role="article"], .post, .entry, .content, .story');
@@ -2586,6 +2653,12 @@ body[class*="overflow-hidden"]:not([data-legit]) {
         // ── Floating heuristics ────────────────────────────────────
         const cs = window.getComputedStyle(el);
         const pos = cs.position;
+
+        // On trusted sites, skip all floating heuristics — only block via explicit ad selectors
+        if (trusted && (pos === 'fixed' || pos === 'sticky' || pos === 'absolute')) {
+          return score >= 3; // require 3+ ad signals, not just floating position
+        }
+
         if (pos !== 'fixed' && pos !== 'sticky' && pos !== 'absolute') {
           return score >= 1; // trust class signal alone for non-positioned
         }
@@ -2658,6 +2731,9 @@ body[class*="overflow-hidden"]:not([data-legit]) {
         const textContent = (el.innerText || '').trim();
         if (textContent.length > 500 && score < 3) return false;
 
+        // On trusted sites, require higher score to block
+        if (trusted) return score >= 4;
+
         return score >= 2;
       } catch (_) { return false; }
     };
@@ -2688,9 +2764,8 @@ body[class*="overflow-hidden"]:not([data-legit]) {
 
     const SCAN_SELECTOR = [
       'ins.adsbygoogle','[id^="div-gpt-ad"]','[id^="aswift_"]',
-      'div[style*="position:fixed"]','div[style*="position: fixed"]',
-      'div[style*="position:sticky"]','div[style*="position: sticky"]',
-      'aside[style*="position:fixed"]','section[style*="position:fixed"]',
+      // Removed generic position:fixed/sticky selectors — they catch legit UI (Google header, nav, etc.)
+      // The isSuspect() heuristic already handles floating ad detection more precisely
       // Google Ads
       'iframe[src*="doubleclick"]','iframe[src*="googlesyndication"]','iframe[src*="googleadservices"]','iframe[src*="adservice.google.com"]',
       'iframe[src*="tpc.googlesyndication"]',
@@ -2866,6 +2941,7 @@ body[class*="overflow-hidden"]:not([data-legit]) {
 
     const scan = () => {
       try {
+        // Only scan elements matching explicit ad selectors (safe on all sites)
         document.querySelectorAll(SCAN_SELECTOR).forEach(el => {
           const tag = el.tagName.toLowerCase();
           if (tag === 'script') blockScript(el);
@@ -2873,8 +2949,10 @@ body[class*="overflow-hidden"]:not([data-legit]) {
           else remove(el); // iframes/imgs already filtered by selector
         });
 
-        // Sweep all body children for floating overlays
-        if (document.body) {
+        // On trusted sites (Google, Bing, etc.), skip floating overlay detection entirely
+        // to prevent removing search bars, navs, and logos
+        if (!trusted && document.body) {
+          // Sweep all body children for floating overlays (non-trusted sites only)
           Array.from(document.body.children).forEach(el => {
             if (isSuspect(el)) remove(el);
           });
@@ -2953,97 +3031,17 @@ body[class*="overflow-hidden"]:not([data-legit]) {
 
     const blurAdElement = (el) => {
       if (!el || el.__omxBlurred) return;
-      // NEVER blur YouTube video player elements
-      if (isYouTubeProtected(el)) return;
       el.__omxBlurred = true;
       el.style.setProperty('filter', 'blur(20px)', 'important');
-      el.style.setProperty('-webkit-filter', 'blur(20px)', 'important');
-      el.style.setProperty('opacity', '0.15', 'important');
       el.style.setProperty('pointer-events', 'none', 'important');
+      el.style.setProperty('-webkit-filter', 'blur(20px)', 'important');
       el.style.setProperty('user-select', 'none', 'important');
-      el.style.setProperty('-webkit-user-select', 'none', 'important');
-      // Also blur the parent if it looks like an ad container
-      var parent = el.parentElement;
-      if (parent && !parent.__omxBlurred && !isYouTubeProtected(parent) && AD_CLASS_KEYWORDS.test(parent.className || '')) {
-        blurAdElement(parent);
-      }
+      el.style.setProperty('transition', 'filter 0.3s ease', 'important');
     };
 
+    // Image blurring disabled — images are never blurred, only actual ad popups are
     const isAdImage = (img) => {
-      try {
-        if (!img || img.__omxBlurred || img.__omxBlocked) return false;
-        // NEVER flag YouTube video player elements as ads
-        if (isYouTubeProtected(img)) return false;
-        // Skip if on YouTube domain
-        try {
-          var imgHost = (window.location.hostname || '').toLowerCase();
-          if (imgHost.indexOf('youtube.com') >= 0 || imgHost.indexOf('youtube-nocookie.com') >= 0 || imgHost.indexOf('googlevideo.com') >= 0) {
-            // On YouTube, only flag elements with clear ad indicators
-            var ytCls = (img.className || '').toLowerCase();
-            if (ytCls.indexOf('ytp-ad') >= 0 || ytCls.indexOf('ad-showing') >= 0) {
-              // This is an ad element on YouTube, allow it
-            } else {
-              return false; // Don't flag non-ad YouTube elements
-            }
-          }
-        } catch(_) {}
-        var src = (img.src || (img.getAttribute && img.getAttribute('data-src')) || '').toLowerCase();
-        var alt = (img.alt || img.title || '').toLowerCase();
-        var cls = (img.className || '').toLowerCase();
-        var parent = img.parentElement;
-        var parentCls = (parent && parent.className) ? parent.className.toLowerCase() : '';
-        var parentId = (parent && parent.id) ? parent.id.toLowerCase() : '';
-        var linkEl = null;
-        try { linkEl = img.closest('a'); } catch(_) {}
-        var linkHref = (linkEl && linkEl.href) ? linkEl.href.toLowerCase() : '';
-
-        // 1. Known ad URL patterns
-        if (src && isAdUrl(src)) return true;
-        if (src && AD_FILENAME_RE.test(src)) return true;
-        if (src && AD_PATH_KEYWORDS.test(src)) return true;
-
-        // 2. Parent/link has ad-related href
-        if (linkHref) {
-          try {
-            var linkRe = new RegExp('(click|redirect|track|affiliate|sponsor|promo|doubleclick|googlesyndication)', 'i');
-            if (linkRe.test(linkHref)) return true;
-          } catch(_) {}
-        }
-
-        // 3. Standard IAB ad dimensions
-        var w = parseInt(img.width || img.naturalWidth || (img.getAttribute && img.getAttribute('width')) || 0, 10);
-        var h = parseInt(img.height || img.naturalHeight || (img.getAttribute && img.getAttribute('height')) || 0, 10);
-        if (w > 0 && h > 0 && AD_SIZE_SET.has(w + 'x' + h)) return true;
-
-        // 3b. Check for ad dimensions in style attribute
-        var styleAttr = '';
-        try { styleAttr = (img.getAttribute('style') || '').toLowerCase(); } catch(_) {}
-        if (styleAttr) {
-          try {
-            var dimRe = new RegExp('(width:\\s*(728|300|336|160|120|970|320|468|250|200|88)\\s*px)', 'i');
-            var hDimRe = new RegExp('(height:\\s*(90|250|280|600|50|100|480|60|31|200|150)\\s*px)', 'i');
-            if (dimRe.test(styleAttr) && hDimRe.test(styleAttr)) return true;
-          } catch(_) {}
-        }
-
-        // 4. Ad-related alt text
-        if (alt) {
-          try {
-            var altRe = new RegExp('(advertisement|sponsored|click here|click now)', 'i');
-            if (altRe.test(alt)) return true;
-          } catch(_) {}
-        }
-
-        // 5. Ad-related class names on image or parent
-        if (AD_CLASS_KEYWORDS.test(cls) || AD_CLASS_KEYWORDS.test(parentCls) || AD_CLASS_KEYWORDS.test(parentId)) return true;
-
-        // 6. Image inside an ad container
-        var adContainer = null;
-        try { adContainer = img.closest('[class*="ad-banner"],[class*="ad-container"],[class*="ad-slot"],[class*="advertisement"]'); } catch(_) {}
-        if (adContainer) return true;
-
-        return false;
-      } catch (_) { return false; }
+      return false;
     };
 
     const isPopupOverlay = (el) => {
@@ -3051,6 +3049,8 @@ body[class*="overflow-hidden"]:not([data-legit]) {
         if (!el || el.__omxBlurred || el.__omxBlocked) return false;
         // NEVER flag YouTube video player elements as popups
         if (isYouTubeProtected(el)) return false;
+        // On trusted sites, don't flag popups — legitimate site UI only
+        if (trusted) return false;
         var tag = '';
         try { tag = (el.tagName || '').toLowerCase(); } catch(_) {}
         if (!tag || tag === 'html' || tag === 'body' || tag === 'script' || tag === 'style' || tag === 'link') return false;
@@ -3116,37 +3116,17 @@ body[class*="overflow-hidden"]:not([data-legit]) {
       } catch (_) { return false; }
     };
 
+    // Only blur popup overlay ads (not images, not class-based elements)
     const blurFallbackScan = () => {
       try {
-        // 1. Blur ad images that weren't blocked
-        var imgs = document.querySelectorAll('img');
-        for (var i = 0; i < imgs.length; i++) {
-          try {
-            if (isAdImage(imgs[i])) blurAdElement(imgs[i]);
-          } catch(_) {}
-        }
+        // On trusted sites, skip popup detection entirely
+        if (trusted) return;
 
-        // 2. Blur popup/overlay ads that weren't blocked
-        var overlays = document.querySelectorAll('div,section,aside,iframe,object,embed');
+        // Only blur popup/overlay ads that weren't blocked by other means
+        var overlays = document.querySelectorAll('div,section,aside');
         for (var j = 0; j < overlays.length; j++) {
           try {
             if (isPopupOverlay(overlays[j])) blurAdElement(overlays[j]);
-          } catch(_) {}
-        }
-
-        // 3. Blur elements with ad-related content that are still visible
-        var adEls = document.querySelectorAll('[class*="ad-banner"],[class*="ad-container"],[class*="ad-wrapper"],[class*="ad-slot"],[class*="ad-unit"],[class*="advertisement"],[id*="ad-banner"],[id*="ad-container"],[id*="ad-slot"]');
-        for (var k = 0; k < adEls.length; k++) {
-          try {
-            var el = adEls[k];
-            if (el.__omxBlurred || el.__omxBlocked) continue;
-            var cs2 = window.getComputedStyle(el);
-            if (cs2.display === 'none' || cs2.visibility === 'hidden') continue;
-            var rect2 = el.getBoundingClientRect();
-            if (rect2.width < 50 || rect2.height < 50) continue;
-            if (AD_CLASS_KEYWORDS.test(el.className + ' ' + (el.id || ''))) {
-              blurAdElement(el);
-            }
           } catch(_) {}
         }
       } catch (_) {}
@@ -3179,7 +3159,6 @@ body[class*="overflow-hidden"]:not([data-legit]) {
           const el = m.target;
           const val = el.getAttribute(m.attributeName) || '';
           if (isAdUrl(val)) remove(el);
-          else if (el.tagName === 'IMG' && isAdImage(el)) blurAdElement(el);
           continue;
         }
         // New nodes added
@@ -3188,18 +3167,16 @@ body[class*="overflow-hidden"]:not([data-legit]) {
           const tag = node.tagName.toLowerCase();
           if (tag === 'script') { blockScript(node); continue; }
           if (isSuspect(node)) { remove(node); hasAdded = true; continue; }
-          // Check if it's an ad image that slipped through
-          if (tag === 'img' && isAdImage(node)) { blurAdElement(node); hasAdded = true; continue; }
-          if (isPopupOverlay(node)) { blurAdElement(node); hasAdded = true; continue; }
-          // Check children in the subtree
+          // On non-trusted sites, also check for popup overlays (not images)
+          if (!trusted && isPopupOverlay(node)) { blurAdElement(node); hasAdded = true; continue; }
+          // Check children in the subtree for explicit ad selectors only
           node.querySelectorAll && node.querySelectorAll(
-            'script,iframe,img,ins.adsbygoogle,[id^="div-gpt-ad"],[class*="adsbygoogle"]'
+            'script,iframe[src*="doubleclick"],iframe[src*="googlesyndication"],iframe[src*="adnxs"],iframe[src*="taboola"],iframe[src*="outbrain"],iframe[src*="criteo"],ins.adsbygoogle,[id^="div-gpt-ad"],[class*="adsbygoogle"]'
           ).forEach(child => {
             const ct = child.tagName.toLowerCase();
             if (ct === 'script') blockScript(child);
             else if (isSuspect(child)) remove(child);
-            else if (ct === 'img' && isAdImage(child)) blurAdElement(child);
-            else remove(child);
+            else if (ct !== 'iframe') remove(child);
           });
           hasAdded = true;
         }
@@ -3496,31 +3473,177 @@ body[class*="overflow-hidden"]:not([data-legit]) {
     `;
   }
 
+  // Search engine domains — ad blocker does NOTHING on these sites
+  isSearchEngineUrl(url = '') {
+    try {
+      const host = new URL(url).hostname.toLowerCase();
+      // Google search
+      if (host === 'google.com' || host.endsWith('.google.com')) return true;
+      // Bing
+      if (host === 'bing.com' || host.endsWith('.bing.com')) return true;
+      // DuckDuckGo
+      if (host === 'duckduckgo.com' || host.endsWith('.duckduckgo.com')) return true;
+      // Yahoo Search
+      if (host === 'search.yahoo.com' || host === 'yahoo.com' || host.endsWith('.yahoo.com')) return true;
+      // Baidu
+      if (host === 'baidu.com' || host.endsWith('.baidu.com')) return true;
+      // Yandex
+      if (host === 'yandex.com' || host === 'yandex.ru' || host.endsWith('.yandex.com') || host.endsWith('.yandex.ru')) return true;
+      // Brave Search
+      if (host === 'search.brave.com' || host.endsWith('.search.brave.com')) return true;
+      // Startpage
+      if (host === 'startpage.com' || host.endsWith('.startpage.com')) return true;
+      // Ecosia
+      if (host === 'ecosia.org' || host.endsWith('.ecosia.org')) return true;
+      return false;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // Check if URL is in the user's ad blocker whitelist
+  // Whitelisted sites only get popup ad blocking — 90% less ad blocking power
+  isWhitelistedUrl(url = '') {
+    try {
+      const whitelist = this.settings?.adBlockerWhitelist || [];
+      if (!Array.isArray(whitelist) || whitelist.length === 0) return false;
+
+      const checkHost = new URL(url).hostname.toLowerCase().replace(/^www\./, '');
+
+      for (const entry of whitelist) {
+        const cleanEntry = String(entry || '').trim().toLowerCase().replace(/^(https?:\/\/)?(www\.)?/, '').replace(/\/.*$/, '');
+        if (!cleanEntry) continue;
+        // Exact match or subdomain match
+        if (checkHost === cleanEntry || checkHost.endsWith('.' + cleanEntry)) return true;
+      }
+      return false;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // Minimal popup-only blocker for whitelisted sites
+  // Only blocks popup/overlay ads — no CSS changes, no image blurring, no floating detection
+  getPopupOnlyBlockerScript() {
+    return `
+    (function() {
+      try {
+        // Only remove popup overlay ads — nothing else
+        const POPUP_SELECTOR = 'div[style*="position:fixed"][style*="z-index"]';
+
+        const isPopupAd = (el) => {
+          try {
+            if (!el) return false;
+            const cs = window.getComputedStyle(el);
+            if (cs.position !== 'fixed' && cs.position !== 'absolute') return false;
+
+            const rect = el.getBoundingClientRect();
+            if (rect.width < 100 || rect.height < 50) return false;
+            if (rect.width > window.innerWidth * 0.9 && rect.height > window.innerHeight * 0.9) return false;
+
+            const zIdx = parseInt(cs.zIndex, 10) || 0;
+            if (zIdx < 100) return false;
+
+            const cls = (el.className || '').toLowerCase();
+            const id = (el.id || '').toLowerCase();
+            const text = (el.innerText || '').toLowerCase();
+
+            // Check for ad indicators
+            const hasAdClass = /ad[-_]?banner|ad[-_]?slot|ad[-_]?container|ad[-_]?overlay|ad[-_]?popup|advertisement|interstitial|popunder/i.test(cls + ' ' + id);
+            const hasAdText = /advertisement|sponsored|click here|learn more|sign up|subscribe|download now|limited time|offer|deal/i.test(text);
+
+            // Only block if clear ad indicators are present
+            if (hasAdClass || hasAdText) return true;
+
+            // Bottom/top thin banner
+            if (cs.position === 'fixed' && (rect.bottom >= window.innerHeight - 10 || rect.top <= 10) && rect.height < 160) {
+              if (text.length < 100) return true;
+            }
+
+            return false;
+          } catch (_) { return false; }
+        };
+
+        const scan = () => {
+          try {
+            document.querySelectorAll(POPUP_SELECTOR).forEach(el => {
+              if (isPopupAd(el)) {
+                el.style.setProperty('display', 'none', 'important');
+                el.style.setProperty('visibility', 'hidden', 'important');
+                el.style.setProperty('pointer-events', 'none', 'important');
+              }
+            });
+          } catch (_) {}
+        };
+
+        scan();
+        setTimeout(scan, 1000);
+        setTimeout(scan, 3000);
+
+        // Watch for new popup ads
+        const observer = new MutationObserver(() => scan());
+        observer.observe(document.documentElement || document.body, { childList: true, subtree: true });
+      } catch (_) {}
+    })();
+    `;
+  }
+
   async applyFloatingAdBlocker(webview) {
     try {
       if (!webview || !webview.getURL) return;
-      const config = this.getFloatingAdBlockerConfig();
+      const ab = this.getAdBlockerSettings();
       const url = webview.getURL();
 
       const isWebsite = this.isWebsiteUrl(url);
       const isYT      = this.isYouTubeUrl(url);
+      const isInsta   = this.isInstagramUrl(url);
+      const isSearchEngine = this.isSearchEngineUrl(url);
+      const isWhitelisted = this.isWhitelistedUrl(url);
 
-      // Skip floating ad blocker on YouTube - YouTube has its own addon pipeline
-      if (isYT) {
+      // If ad blocker is completely disabled, clear everything
+      if (!ab.enabled) {
         await this.syncWebviewInsertedCss(webview, '__omxFloatAdBlockerCssKey', '');
         return;
       }
 
-      // Apply CSS to non-YouTube websites
-      const cssText = (isWebsite && config.enabled) ? this.getFloatingAdBlockerCss() : '';
+      // Skip on search engines unless cleanSearchEngines is enabled
+      if (isSearchEngine) {
+        if (ab.cleanSearchEngines) {
+          await webview.executeJavaScript(this.getPopupOnlyBlockerScript(), true);
+        }
+        return;
+      }
+
+      // Skip on YouTube and Instagram (they have their own handling)
+      if (isYT || isInsta) {
+        await this.syncWebviewInsertedCss(webview, '__omxFloatAdBlockerCssKey', '');
+        return;
+      }
+
+      // Whitelisted sites: only block popup ads if enabled
+      if (isWhitelisted) {
+        await this.syncWebviewInsertedCss(webview, '__omxFloatAdBlockerCssKey', '');
+        if (isWebsite && ab.blockPopups) {
+          await webview.executeJavaScript(this.getPopupOnlyBlockerScript(), true);
+        }
+        return;
+      }
+
+      // Full ad blocking for non-whitelisted websites
+      // Floating ad blocking
+      const cssText = (isWebsite && ab.blockFloating) ? this.getFloatingAdBlockerCss() : '';
       await this.syncWebviewInsertedCss(webview, '__omxFloatAdBlockerCssKey', cssText);
 
-      if (isWebsite && config.enabled) {
-        // Inject the full JS blocker on non-YouTube web pages
+      if (isWebsite && ab.blockFloating) {
         await webview.executeJavaScript(this.getFloatingAdBlockerScript(), true);
       }
+
+      // Popup blocking
+      if (isWebsite && ab.blockPopups) {
+        await webview.executeJavaScript(this.getPopupOnlyBlockerScript(), true);
+      }
     } catch (e) {
-      console.warn('[Floating Ad Blocker] Failed:', e?.message);
+      console.warn('[Ad Blocker] Failed:', e?.message);
     }
   }
   // ── End Ad Blocker ────────────────────────────────────────────────────────
@@ -3529,6 +3652,15 @@ body[class*="overflow-hidden"]:not([data-legit]) {
     try {
       const host = new URL(url).hostname.toLowerCase();
       return host === 'youtu.be' || host === 'youtube.com' || host.endsWith('.youtube.com');
+    } catch (e) {
+      return false;
+    }
+  }
+
+  isInstagramUrl(url = '') {
+    try {
+      const host = new URL(url).hostname.toLowerCase();
+      return host === 'instagram.com' || host.endsWith('.instagram.com');
     } catch (e) {
       return false;
     }
@@ -3798,6 +3930,32 @@ body[class*="overflow-hidden"]:not([data-legit]) {
         }
       })();
     `;
+  }
+
+  // ── SessionGuard (embedded session protection) ─────────────────────────
+  async applySessionGuard(webview) {
+    try {
+      if (!webview || !webview.getURL) return;
+      const url = webview.getURL();
+      if (!this.isWebsiteUrl(url)) return;
+      
+      // Read the SessionGuard script from URL
+      const response = await fetch(this.SESSIONGUARD_SCRIPT_URL);
+      const script = await response.text();
+      await webview.executeJavaScript(script, true);
+    } catch (e) {
+      console.warn('[SessionGuard] Injection failed:', e?.message);
+    }
+  }
+
+  // Get SessionGuard stats from a webview
+  async getSessionGuardStats(webview) {
+    try {
+      if (!webview?.executeJavaScript) return null;
+      return await webview.executeJavaScript('window.__omxSessionGuardStats || null', true);
+    } catch (e) {
+      return null;
+    }
   }
 
   async applyYouTubeAddon(webview) {
@@ -4304,6 +4462,120 @@ body[class*="overflow-hidden"]:not([data-legit]) {
       const safeReason = encodeURIComponent(reason || 'Blocked by Safety Policy');
       return `${defenseBase}?type=${type}&url=${safeUrl}&reason=${safeReason}`;
   }
+
+  // Security settings
+  getSecurityConfig() {
+    const cfg = this.settings?.security || {};
+    return {
+      virusTotalEnabled: cfg.virusTotalEnabled !== false, // enabled by default
+      virusTotalApiKey: cfg.virusTotalApiKey || '',
+      localPatternCheck: cfg.localPatternCheck !== false // enabled by default
+    };
+  }
+
+  // Check if URL is malicious and block if necessary
+  // Returns: { isMalicious: boolean, reason: string }
+  async checkUrlSecurity(url) {
+    try {
+      // Skip checking for system pages, about:blank, etc.
+      if (!url || url.startsWith('file://') || url.startsWith('about:') || url.startsWith('data:')) {
+        return { isMalicious: false, reason: 'Internal page' };
+      }
+
+      // Skip if already blocked
+      const blockedCheck = isBlocked(url);
+      if (blockedCheck.status === 'BLOCKED') {
+        return { isMalicious: true, reason: blockedCheck.reason || 'Already blocked' };
+      }
+
+      const config = this.getSecurityConfig();
+
+      // 1. Local pattern check (fast, no API needed)
+      if (config.localPatternCheck) {
+        const patternResult = checkKnownMaliciousPatterns(url);
+        if (patternResult.isSuspicious) {
+          console.warn(`[Security] Suspicious pattern detected: ${url} - ${patternResult.reason}`);
+          // Add to blocklist but don't close yet (local patterns can have false positives)
+          // Only block if it matches known typosquatting
+          if (patternResult.pattern?.includes('typosquat')) {
+            addToBlocklist(url, patternResult.reason, 'Local Pattern');
+            return { isMalicious: true, reason: patternResult.reason };
+          }
+        }
+      }
+
+      // 2. VirusTotal API check
+      if (config.virusTotalEnabled && config.virusTotalApiKey) {
+        try {
+          const vtResult = await checkVirusTotal(url);
+          
+          if (vtResult.error) {
+            // API error, allow navigation but log
+            console.warn('[Security] VirusTotal API error, allowing navigation');
+            return { isMalicious: false, reason: 'API unavailable' };
+          }
+
+          if (vtResult.isMalicious) {
+            // Add to blocklist
+            addToBlocklist(
+              url, 
+              vtResult.reason || `Detected by ${vtResult.detections} engines`, 
+              'VirusTotal',
+              vtResult.detections
+            );
+            return { 
+              isMalicious: true, 
+              reason: vtResult.reason,
+              detections: vtResult.detections 
+            };
+          }
+
+          return { isMalicious: false, reason: 'VirusTotal: Safe' };
+        } catch (e) {
+          console.warn('[Security] VirusTotal check failed:', e);
+          return { isMalicious: false, reason: 'Check failed' };
+        }
+      }
+
+      return { isMalicious: false, reason: 'Security check skipped' };
+    } catch (e) {
+      console.warn('[Security] URL security check failed:', e);
+      return { isMalicious: false, reason: 'Check error' };
+    }
+  }
+
+  // Handle malicious URL detection - close tab and block site
+  async handleMaliciousUrl(tab, url, reason) {
+    try {
+      console.warn(`[Security] MALICIOUS SITE DETECTED: ${url}`);
+      console.warn(`[Security] Reason: ${reason}`);
+      console.warn(`[Security] Closing tab and adding to blocklist...`);
+
+      // Add to blocklist
+      addToBlocklist(url, reason, 'VirusTotal');
+
+      // Show notification to user (if notification system exists)
+      if (window.browserAPI?.notifications) {
+        window.browserAPI.notifications.show({
+          title: '⚠️ Security Alert',
+          body: `Blocked malicious site: ${new URL(url).hostname}\nReason: ${reason}`,
+          type: 'warning'
+        });
+      }
+
+      // Close the tab immediately
+      if (tab && tab.id) {
+        this.closeTab(tab.id);
+      }
+
+      // Create a security alert tab
+      const alertUrl = this.createDefenseUrl('malicious-site', url, reason);
+      this.createTab(alertUrl);
+
+    } catch (e) {
+      console.warn('[Security] Failed to handle malicious URL:', e);
+    }
+  }
   
   navigateTo(url, options = {}) {
     if (!url) return;
@@ -4521,11 +4793,40 @@ body[class*="overflow-hidden"]:not([data-legit]) {
         const url = webview.getURL ? webview.getURL() : '';
         const isWebsite = this.isWebsiteUrl(url);
         const isYT = this.isYouTubeUrl(url);
-        if (isWebsite && !isYT) {
-          const config = this.getFloatingAdBlockerConfig();
-          if (config.enabled) {
+        const isSearchEngine = this.isSearchEngineUrl(url);
+        const isWhitelisted = this.isWhitelistedUrl(url);
+        const sessionGuardEnabled = this.settings?.security?.sessionGuard?.enabled !== false;
+        const ab = this.getAdBlockerSettings();
+
+        // Skip search engines entirely — do nothing on these pages
+        if (isSearchEngine) return;
+
+        // Inject SessionGuard on protected domains (runs early, before page scripts)
+        if (isWebsite && sessionGuardEnabled) {
+          await this.applySessionGuard(webview);
+        }
+
+        // If ad blocker is disabled, skip all ad blocking
+        if (!ab.enabled) return;
+
+        // Whitelisted sites: only inject popup blocker if enabled
+        if (isWhitelisted && isWebsite) {
+          if (ab.blockPopups) {
+            await webview.executeJavaScript(this.getPopupOnlyBlockerScript(), true);
+          }
+          return;
+        }
+
+        // Early injection for floating ad blocker (before page scripts)
+        if (isWebsite && !isYT && !this.isInstagramUrl(url)) {
+          if (ab.blockFloating) {
             await webview.executeJavaScript(this.getFloatingAdBlockerScript(), true);
           }
+        }
+
+        // Early injection for popup blocker
+        if (isWebsite && ab.blockPopups) {
+          await webview.executeJavaScript(this.getPopupOnlyBlockerScript(), true);
         }
       } catch (_) {}
     });
@@ -4634,16 +4935,25 @@ body[class*="overflow-hidden"]:not([data-legit]) {
     webview.addEventListener('media-paused', () => {
         tabState.audible = false;
         tabState.tabItem.classList.remove('audible');
-        if (tabState.id !== this.activeTabId) {
-            this.scheduleSuspension(tabState);
-        }
-        setTimeout(() => {
+        // Check if media is actually still playing (some sites pause/play rapidly)
+        setTimeout(async () => {
+            const stillPlaying = await this.isTabPlayingMedia(tabState);
+            if (stillPlaying) {
+                tabState.audible = true;
+                tabState.tabItem.classList.add('audible');
+                return;
+            }
+            // Media really stopped, schedule suspension if not active
+            if (tabState.id !== this.activeTabId && !tabState.suspended) {
+                this.scheduleSuspension(tabState);
+            }
+            // Update mini player
             if (this.activeAudioTabId === tabState.id && !tabState.audible) {
                 const otherPlaying = this.tabs.find(t => t.audible);
                 if (otherPlaying) this.updateMiniPlayerState(otherPlaying, true);
                 else this.updateMiniPlayerState(null, false);
             }
-        }, 500);
+        }, 1000); // Wait 1 second to check if media resumes
     });
     webview.addEventListener('did-start-navigation', (e) => {
       if (!e?.isMainFrame) return;
@@ -4777,6 +5087,21 @@ body[class*="overflow-hidden"]:not([data-legit]) {
       }
       window.dispatchEvent(new CustomEvent('website-visited', { detail: { id: tabState.id, url: e.url } }));
       if (this.activeTabId === tabState.id) this.onTabStateChange(e.url, false);
+
+      // ── Security Check: Scan URL for malware/phishing ──────────────────
+      // Runs asynchronously - if malicious, closes tab and blocks site
+      (async () => {
+        try {
+          const securityCheck = await this.checkUrlSecurity(e.url);
+          if (securityCheck.isMalicious) {
+            await this.handleMaliciousUrl(tabState, e.url, securityCheck.reason);
+          }
+        } catch (err) {
+          console.warn('[Security] Check failed:', err);
+        }
+      })();
+      // ── End Security Check ─────────────────────────────────────────────
+
       setTimeout(() => {
         this.applyGlobalWebsiteCss(webview);
         this.applyYouTubeAddon(webview);
@@ -4984,11 +5309,55 @@ body[class*="overflow-hidden"]:not([data-legit]) {
       }
   }
 
+  // Check if tab has playing video/audio (more reliable than just the audible flag)
+  async isTabPlayingMedia(tab) {
+    // If audible flag is set, definitely has media playing
+    if (tab.audible) return true;
+    // If suspended, no media playing
+    if (tab.suspended || !tab.webview) return false;
+    // Check if there's actually a playing media element
+    try {
+      const result = await tab.webview.executeJavaScript(`
+        (function() {
+          try {
+            var videos = document.querySelectorAll('video');
+            for (var i = 0; i < videos.length; i++) {
+              if (!videos[i].paused && videos[i].currentTime > 0 && !videos[i].ended) return true;
+            }
+            var audios = document.querySelectorAll('audio');
+            for (var j = 0; j < audios.length; j++) {
+              if (!audios[j].paused && audios[j].currentTime > 0 && !audios[j].ended) return true;
+            }
+            // Check mediaSession for background audio
+            if (navigator.mediaSession && navigator.mediaSession.playbackState === 'playing') return true;
+          } catch(e) {}
+          return false;
+        })();
+      `);
+      return result === true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   checkSuspension() {
       const now = Date.now();
-      this.tabs.forEach(t => {
-          if (t.audible) return;
-          if (t.id !== this.activeTabId && !t.suspended && now - t.lastAccessed > this.SUSPEND_TIMEOUT) { 
+      this.tabs.forEach(async (t) => {
+          // Never suspend the active tab
+          if (t.id === this.activeTabId) return;
+          // Never suspend if already suspended
+          if (t.suspended) return;
+          // Check if tab has playing media (async check)
+          const hasMedia = await this.isTabPlayingMedia(t);
+          if (hasMedia) {
+              // Update audible flag if media was detected
+              t.audible = true;
+              t.tabItem?.classList.add('audible');
+              this.cancelScheduledSuspension(t);
+              return;
+          }
+          // Check if enough time has passed since last access
+          if (now - t.lastAccessed > this.SUSPEND_TIMEOUT) {
              this.suspendTab(t);
           }
       });
@@ -5004,10 +5373,14 @@ body[class*="overflow-hidden"]:not([data-legit]) {
       if (!tab || tab.id === this.activeTabId || tab.suspended || tab.audible) return;
       this.cancelScheduledSuspension(tab);
       const remaining = Math.max(1000, this.SUSPEND_TIMEOUT - (Date.now() - tab.lastAccessed));
-      tab.suspensionTimer = setTimeout(() => {
+      tab.suspensionTimer = setTimeout(async () => {
           tab.suspensionTimer = null;
-          if (tab.id !== this.activeTabId && !tab.suspended && !tab.audible) {
-              this.suspendTab(tab);
+          if (tab.id !== this.activeTabId && !tab.suspended) {
+              // Double-check media playing before suspending
+              const hasMedia = await this.isTabPlayingMedia(tab);
+              if (!hasMedia && !tab.audible) {
+                  this.suspendTab(tab);
+              }
           }
       }, remaining);
   }

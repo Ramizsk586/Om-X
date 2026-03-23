@@ -1,0 +1,58 @@
+[
+  {
+    "id": 1,
+    "priority": 1,
+    "action": {
+      "type": "modifyHeaders",
+      "requestHeaders": [
+        {
+          "header": "Cookie",
+          "operation": "remove"
+        }
+      ]
+    },
+    "condition": {
+      "requestDomains": [
+        "google-analytics.com",
+        "googletagmanager.com",
+        "facebook.com",
+        "connect.facebook.net",
+        "doubleclick.net",
+        "hotjar.com",
+        "mouseflow.com",
+        "sentry.io",
+        "bugsnag.com",
+        "amplitude.com",
+        "mixpanel.com",
+        "segment.io",
+        "heap.io",
+        "clarity.ms"
+      ],
+      "resourceTypes": ["xmlhttprequest"]
+    }
+  },
+  {
+    "id": 2,
+    "priority": 1,
+    "action": {
+      "type": "modifyHeaders",
+      "requestHeaders": [
+        {
+          "header": "Referer",
+          "operation": "remove"
+        }
+      ]
+    },
+    "condition": {
+      "domainType": "thirdParty",
+      "requestDomains": [
+        "google-analytics.com",
+        "googletagmanager.com",
+        "facebook.com",
+        "connect.facebook.net",
+        "doubleclick.net"
+      ],
+      "resourceTypes": ["xmlhttprequest", "image"]
+    }
+  }
+]

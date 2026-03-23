@@ -1,0 +1,57 @@
+{
+  "manifest_version": 3,
+  "name": "SessionGuard",
+  "version": "1.0.0",
+  "description": "Protects session tokens and authentication cookies from cross-tab access and token theft",
+  "permissions": [
+    "cookies",
+    "tabs",
+    "storage",
+    "declarativeNetRequest",
+    "webNavigation",
+    "scripting",
+    "notifications",
+    "alarms"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background/service_worker.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": [
+        "utils/token_detector.js",
+        "content_scripts/cookie_proxy.js",
+        "content_scripts/fetch_interceptor.js",
+        "content_scripts/storage_monitor.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": true
+    }
+  ],
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "icons/shield16.png",
+      "48": "icons/shield48.png",
+      "128": "icons/shield128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/shield16.png",
+    "48": "icons/shield48.png",
+    "128": "icons/shield128.png"
+  },
+  "declarative_net_request": {
+    "rule_resources": [
+      {
+        "id": "rules",
+        "enabled": true,
+        "path": "rules/net_rules.json"
+      }
+    ]
+  }
+}

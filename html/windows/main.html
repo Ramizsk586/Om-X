@@ -852,8 +852,8 @@
                 <button class="feature-tile" id="quick-panel-navigation" type="button" title="Navigation" data-tooltip="Navigation">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9 7l-5 5 5 5"/><path d="M4 12h9"/><path d="M15 7l5 5-5 5"/><path d="M20 12h-9"/></svg>
                 </button>
-                <button class="feature-tile" id="quick-panel-page-info" type="button" title="Page Info" data-tooltip="Page Info">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M12 10v5"/><circle cx="12" cy="7.5" r="0.8" fill="currentColor" stroke="none"/></svg>
+                <button class="feature-tile" id="quick-panel-sessionguard" type="button" title="SessionGuard" data-tooltip="SessionGuard">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4" stroke-width="2"/></svg>
                 </button>
             </div>
         </div>
@@ -1155,6 +1155,13 @@
       </div>
     </div>
 
+  </div>
+
+  <!-- SessionGuard Popup Overlay -->
+  <div id="sessionguard-overlay" class="modal-overlay hidden">
+    <div class="sessionguard-popup-container">
+      <iframe id="sessionguard-iframe" src="" frameborder="0"></iframe>
+    </div>
   </div>
 
   <script type="module" src="../../java/renderer/renderer.js"></script>

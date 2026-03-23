@@ -210,7 +210,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const quickPanelYoutubeAddon        = document.getElementById('quick-panel-youtube-addon');
     const quickPanelDuckAi              = document.getElementById('quick-panel-duck-ai');
     const quickPanelNavigation          = document.getElementById('quick-panel-navigation');
-    const quickPanelPageInfo            = document.getElementById('quick-panel-page-info');
+    const quickPanelSessionGuard        = document.getElementById('quick-panel-sessionguard');
     const quickPanelBookmarks           = document.getElementById('quick-panel-bookmarks');
     const quickPanelScraper             = document.getElementById('quick-panel-scraper');
     const quickPanelTodoStation         = document.getElementById('quick-panel-todo-station');
@@ -252,6 +252,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     const youtubeAddonToggleAdSkipper   = document.getElementById('youtube-addon-toggle-adskipper');
     const duckAiPanel                   = document.getElementById('duck-ai-panel');
     const duckAiToggleSidebar           = document.getElementById('duck-ai-toggle-sidebar');
+    const sessionGuardOverlay           = document.getElementById('sessionguard-overlay');
+    const sessionGuardIframe            = document.getElementById('sessionguard-iframe');
+    const SESSIONGUARD_POPUP_URL        = new URL('../../SessionGuard/popup/popup.html', import.meta.url).href;
     const webviewContextMenu            = document.getElementById('webview-context-menu');
     const tabContextMenu                = document.getElementById('tab-context-menu');
     const btnMin                        = document.getElementById('btn-min');
@@ -559,11 +562,58 @@ document.addEventListener('DOMContentLoaded', async () => {
         setBookmarkEditorVisible(false);
         setYouTubeAddonVisible(false);
         setDuckAiPanelVisible(false);
+        setSessionGuardVisible(false);
         setSiteInfoVisible(true);
         await refreshSiteInfoPopup();
     };
 
     siteInfoPanel?.addEventListener('mousedown', e => e.stopPropagation());
+
+    // ── SESSIONGUARD HELPERS ──────────────────────────────────────────────────
+    const setSessionGuardVisible = (visible) => {
+        if (!sessionGuardOverlay) return;
+        sessionGuardOverlay.classList.toggle('hidden', !visible);
+        if (visible && sessionGuardIframe) {
+            sessionGuardIframe.src = SESSIONGUARD_POPUP_URL;
+        } else if (!visible && sessionGuardIframe) {
+            sessionGuardIframe.src = '';
+        }
+    };
+
+    const toggleSessionGuardPanel = () => {
+        hideFeaturesHomePopup();
+        const isVisible = !sessionGuardOverlay?.classList.contains('hidden');
+        setNavigationTopPanelVisible(false);
+        setYouTubeAddonVisible(false);
+        setDuckAiPanelVisible(false);
+        setBookmarkPanelVisible(false);
+        setBookmarkEditorVisible(false);
+        setSiteInfoVisible(false);
+        setSessionGuardVisible(!isVisible);
+    };
+
+    sessionGuardOverlay?.addEventListener('click', (e) => {
+        if (e.target === sessionGuardOverlay) setSessionGuardVisible(false);
+    });
+
+    // Handle SessionGuard popup data requests (from iframe)
+    window.addEventListener('message', async (e) => {
+        if (e.data?.type === 'GET_SESSIONGUARD_DATA') {
+            const activeWebview = tabManager?.getActiveWebview?.();
+            const stats = activeWebview ? await tabManager.getSessionGuardStats(activeWebview) : null;
+            const sessionGuardEnabled = cachedSettings?.security?.sessionGuard?.enabled !== false;
+            
+            if (sessionGuardIframe?.contentWindow) {
+                sessionGuardIframe.contentWindow.postMessage({
+                    type: 'SESSIONGUARD_DATA',
+                    enabled: sessionGuardEnabled,
+                    threatsBlocked: stats?.getThreatsBlocked?.() || 0,
+                    tabsCount: tabManager?.tabs?.length || 0,
+                    domain: stats?.domain || 'unknown'
+                }, '*');
+            }
+        }
+    });
 
     // ── DARK MODE FOR TABS ────────────────────────────────────────────────────
     const toggleDarkModeForTab = async (tabId) => {
@@ -808,8 +858,31 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
         ]);
 
-        webviewContextMenu.style.left = `${params.x}px`;
-        webviewContextMenu.style.top  = `${params.y}px`;
+        // Position context menu, keeping it within window bounds
+        const menuWidth = webviewContextMenu.offsetWidth || 220;
+        const menuHeight = webviewContextMenu.offsetHeight || 300;
+        const windowWidth = window.innerWidth;
+        const windowHeight = window.innerHeight;
+        
+        let left = params.x;
+        let top = params.y;
+        
+        // Adjust horizontal position if menu would go off right edge
+        if (left + menuWidth > windowWidth) {
+            left = windowWidth - menuWidth - 10;
+        }
+        // Ensure minimum left position
+        if (left < 10) left = 10;
+        
+        // Adjust vertical position if menu would go off bottom edge
+        if (top + menuHeight > windowHeight) {
+            top = windowHeight - menuHeight - 10;
+        }
+        // Ensure minimum top position
+        if (top < 10) top = 10;
+        
+        webviewContextMenu.style.left = `${left}px`;
+        webviewContextMenu.style.top  = `${top}px`;
         showContextMenuBackdrop();
         webviewContextMenu.classList.remove('hidden');
     };
@@ -819,8 +892,28 @@ document.addEventListener('DOMContentLoaded', async () => {
         closeAllContextMenus();
         currentTabContextId = id;
         if (!tabContextMenu) return;
-        tabContextMenu.style.left = `${x}px`;
-        tabContextMenu.style.top  = `${y}px`;
+        
+        // Position tab context menu, keeping it within window bounds
+        const menuWidth = tabContextMenu.offsetWidth || 180;
+        const menuHeight = tabContextMenu.offsetHeight || 200;
+        const windowWidth = window.innerWidth;
+        const windowHeight = window.innerHeight;
+        
+        let left = x;
+        let top = y;
+        
+        if (left + menuWidth > windowWidth) {
+            left = windowWidth - menuWidth - 10;
+        }
+        if (left < 10) left = 10;
+        
+        if (top + menuHeight > windowHeight) {
+            top = windowHeight - menuHeight - 10;
+        }
+        if (top < 10) top = 10;
+        
+        tabContextMenu.style.left = `${left}px`;
+        tabContextMenu.style.top  = `${top}px`;
         showContextMenuBackdrop();
         tabContextMenu.classList.remove('hidden');
 
@@ -874,12 +967,20 @@ document.addEventListener('DOMContentLoaded', async () => {
         );
         sidePanelContextMenu.appendChild(makeDivider());
         makeSidebarMenuItem(sidePanelContextMenu, 'Restore Full View',
-            'M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z',
+            'M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2-2zm0 16H8V7h11v14z',
             () => sidePanel.restore()
         );
 
-        sidePanelContextMenu.style.left = `${x}px`;
-        sidePanelContextMenu.style.top  = `${y}px`;
+        // Position within window bounds
+        const spMenuWidth = sidePanelContextMenu.offsetWidth || 180;
+        const spMenuHeight = sidePanelContextMenu.offsetHeight || 200;
+        let spLeft = Math.min(x, window.innerWidth - spMenuWidth - 10);
+        let spTop = Math.min(y, window.innerHeight - spMenuHeight - 10);
+        if (spLeft < 10) spLeft = 10;
+        if (spTop < 10) spTop = 10;
+
+        sidePanelContextMenu.style.left = `${spLeft}px`;
+        sidePanelContextMenu.style.top  = `${spTop}px`;
         showContextMenuBackdrop();
         sidePanelContextMenu.classList.remove('hidden');
     };
@@ -903,8 +1004,16 @@ document.addEventListener('DOMContentLoaded', async () => {
             () => activeWebview?.reload()
         );
 
-        hiddenSidebarContextMenu.style.left = `${x}px`;
-        hiddenSidebarContextMenu.style.top  = `${y}px`;
+        // Position within window bounds
+        const hsMenuWidth = hiddenSidebarContextMenu.offsetWidth || 180;
+        const hsMenuHeight = hiddenSidebarContextMenu.offsetHeight || 150;
+        let hsLeft = Math.min(x, window.innerWidth - hsMenuWidth - 10);
+        let hsTop = Math.min(y, window.innerHeight - hsMenuHeight - 10);
+        if (hsLeft < 10) hsLeft = 10;
+        if (hsTop < 10) hsTop = 10;
+
+        hiddenSidebarContextMenu.style.left = `${hsLeft}px`;
+        hiddenSidebarContextMenu.style.top  = `${hsTop}px`;
         showContextMenuBackdrop();
         hiddenSidebarContextMenu.classList.remove('hidden');
     };
@@ -1040,17 +1149,38 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const canShowDuckAiPanel = () => isDuckAiChatUrl(getActiveTabUrl());
 
-    const canShowPageInfoPanel = () => {
+    // SessionGuard protected domains (must match extension's domain_manager.js)
+    const SESSIONGUARD_DOMAINS = new Set([
+        'discord.com', 'youtube.com', 'instagram.com', 'facebook.com',
+        'twitter.com', 'x.com', 'github.com', 'linkedin.com', 'reddit.com',
+        'google.com', 'netflix.com', 'amazon.com', 'twitch.tv', 'tiktok.com',
+        'spotify.com', 'apple.com', 'microsoft.com', 'slack.com', 'zoom.us',
+        'zoom.com', 'dropbox.com', 'outlook.com', 'live.com'
+    ]);
+
+    const isSessionGuardProtectedDomain = (url) => {
+        try {
+            const hostname = new URL(url).hostname.toLowerCase().replace(/^www\./, '');
+            for (const domain of SESSIONGUARD_DOMAINS) {
+                if (hostname === domain || hostname.endsWith('.' + domain)) return true;
+            }
+        } catch (_) {}
+        return false;
+    };
+
+    const canShowSessionGuardPanel = () => {
         const t = getActiveTabState();
-        return !!t && !(t.isSystemPage || t.isTextStudio || t.isHistoryPage || t.isGamesPage
-            || t.isDefensePage || t.isHomePage || t.isTodoPage || t.isScraberPage || t.isServerOperatorPage);
+        if (!t) return false;
+        if (t.isSystemPage || t.isTextStudio || t.isHistoryPage || t.isGamesPage
+            || t.isDefensePage || t.isHomePage || t.isTodoPage || t.isScraberPage || t.isServerOperatorPage) return false;
+        return isSessionGuardProtectedDomain(getActiveTabUrl());
     };
 
     // Debounced to prevent repeated reflows when tab navigation fires rapidly.
     const syncSiteToolQuickLaunchButtons = debounce(() => {
         setFeatureTileAvailability(quickPanelYoutubeAddon, canShowYouTubeAddon(), 'YouTube Addon', 'Open YouTube to use');
         setFeatureTileAvailability(quickPanelDuckAi,       canShowDuckAiPanel(),  'Duck AI',       'Open Duck AI chat to use');
-        setFeatureTileAvailability(quickPanelPageInfo,     canShowPageInfoPanel(),'Page Info',     'Unavailable on Om-X panels');
+        setFeatureTileAvailability(quickPanelSessionGuard, canShowSessionGuardPanel(), 'SessionGuard',  'Open a protected site (YouTube, Discord, etc.)');
     }, 16);
 
     const syncNavigationTopPanelButtons = () => {
@@ -1108,6 +1238,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!canShowYouTubeAddon()) return;
         setNavigationTopPanelVisible(false);
         setDuckAiPanelVisible(false);
+        setSessionGuardVisible(false);
         setBookmarkPanelVisible(false);
         setBookmarkEditorVisible(false);
         setYouTubeAddonVisible(youtubeAddonPanel?.classList.contains('hidden'));
@@ -1117,6 +1248,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!canShowDuckAiPanel()) return;
         setNavigationTopPanelVisible(false);
         setYouTubeAddonVisible(false);
+        setSessionGuardVisible(false);
         setBookmarkPanelVisible(false);
         setBookmarkEditorVisible(false);
         setDuckAiPanelVisible(duckAiPanel?.classList.contains('hidden'));
@@ -1695,7 +1827,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // ── QUICK-PANEL BUTTONS ────────────────────────────────────────────────────
     if (quickPanelBookmarks)    quickPanelBookmarks.onclick    = () => openBookmarkPanel();
     if (quickPanelNavigation)   quickPanelNavigation.onclick   = () => toggleNavigationTopPanel();
-    if (quickPanelPageInfo)     quickPanelPageInfo.onclick     = () => { if (canShowPageInfoPanel()) openSiteInfoPopup(); };
+    if (quickPanelSessionGuard) quickPanelSessionGuard.onclick = () => { if (canShowSessionGuardPanel()) { hideFeaturesHomePopup(); toggleSessionGuardPanel(); } };
     if (quickPanelYoutubeAddon) quickPanelYoutubeAddon.onclick = () => { if (canShowYouTubeAddon()) { hideFeaturesHomePopup(); toggleYouTubeAddonPanel(); } };
     if (quickPanelDuckAi)       quickPanelDuckAi.onclick       = () => { if (canShowDuckAiPanel())  { hideFeaturesHomePopup(); toggleDuckAiPanel();       } };
     if (quickPanelScraper)      quickPanelScraper.onclick      = () => { hideFeaturesHomePopup(); tabManager.createTab(SCRABER_URL); };
@@ -1758,7 +1890,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const screenshotLayerActive = document.getElementById('screenshot-layer')?.classList.contains('active');
             if (screenshotLayerActive) return;
             if (key === 'i') { e.preventDefault(); captureActiveWebview(openLensSearchForImage, { lensMode: true }); }
-            else if (key === 'g') { e.preventDefault(); openSiteInfoPopup(); }
+            else if (key === 'g') { if (canShowSessionGuardPanel()) { e.preventDefault(); toggleSessionGuardPanel(); } }
         }
     });
 
@@ -1781,6 +1913,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
         if (duckAiPanel && !duckAiPanel.classList.contains('hidden')) {
             if (!duckAiPanel.contains(e.target) && !btnNavHome?.contains?.(e.target)) setDuckAiPanelVisible(false);
+        }
+        if (sessionGuardOverlay && !sessionGuardOverlay.classList.contains('hidden')) {
+            if (e.target === sessionGuardOverlay) setSessionGuardVisible(false);
         }
         if (siteInfoOverlay && !siteInfoOverlay.classList.contains('hidden')) {
             if (!siteInfoOverlay.contains(e.target)) hideSiteInfoPopup();
