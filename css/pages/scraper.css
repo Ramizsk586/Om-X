@@ -1094,3 +1094,31 @@ body {
   background: #f87171;
 }
 
+/* Adult content filter - blur images from blocked domains */
+.scraper-img-card.adult-blocked img {
+  filter: blur(25px);
+  pointer-events: none;
+  user-select: none;
+}
+
+.scraper-img-card.adult-blocked .scraper-dl-overlay {
+  display: none !important;
+}
+
+.scraper-img-card.adult-blocked::after {
+  content: "Content Filtered";
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.6);
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-radius: 4px;
+  pointer-events: none;
+}
+

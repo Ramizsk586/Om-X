@@ -3646,7 +3646,225 @@ body[class*="overflow-hidden"]:not([data-legit]) {
       console.warn('[Ad Blocker] Failed:', e?.message);
     }
   }
+
+  // Apply adult content image blocker to webview
+  async applyAdultContentBlocker(webview) {
+    try {
+      if (!webview || !webview.executeJavaScript) return;
+      
+      // Check if adult content blocking is enabled in settings
+      const adultBlockEnabled = this.settings?.features?.enableAdultContentBlock !== false;
+      if (!adultBlockEnabled) return;
+      
+      await webview.executeJavaScript(this.getAdultContentBlockerScript(), true);
+    } catch (e) {
+      console.warn('[Adult Blocker] Failed to apply:', e?.message);
+    }
+  }
   // ── End Ad Blocker ────────────────────────────────────────────────────────
+
+  // ── Adult Content Image Blocker ─────────────────────────────────────────
+  getAdultContentBlockerScript() {
+    return `
+(function() {
+  'use strict';
+  
+  try {
+    if (window.__omxAdultBlocker) return;
+    window.__omxAdultBlocker = true;
+
+    const ADULT_DOMAINS = [
+      'pornhub','xvideos','xhamster','xnxx','xnxxx',
+      'youporn','redtube','tube8','spankbang','tnaflix',
+      'slutload','heavy-r','drtuber','beeg','txxx',
+      'hclips','fuq','vjav','hdzog','pornone',
+      'anyporn','fullporner','cliphunter','inporn',
+      'bravotube','porndig','rexxx','tubxporn','pornktube',
+      'sexvid','empflix','porntrex','faphouse','fapality',
+      'sexu','pornrox','porn300','tubegalore','porngo',
+      'shesfreaky','gotporn','yourporn','jizzbo',
+      'javhd','javmost','javbus','javlibrary',
+      'brazzers','bangbros','realitykings','naughtyamerica',
+      'mofos','digitalplayground','kink','vixen','tushy',
+      'deeper','slayed','teamskeet','evilangel',
+      'chaturbate','myfreecams','cam4','camsoda',
+      'bongacams','stripchat','livejasmin','streamate',
+      'jerkmate','camversity','onlyfans','fansly','manyvids',
+      'xart','sexstories','literotica','hentaihaven',
+      'nhentai','hanime','rule34',
+      'motherless','imagefap','erome','nuvid',
+      'porn.','xxx.','freeones',
+      'adultempire','porzo','whoreshub','eroprofile',
+      'pornerbros','porntube','xtube',
+      'perfectgirls','18porn','teenporn','gayporn',
+      'pornhat','theporndude','theporn','pronhub',
+      'metaporn','rusporn','artporn','ratxxx','porndeals',
+      'thepornart','sentimes','thecut'
+    ];
+
+    function isAdultUrl(url) {
+      if (!url) return false;
+      const lower = url.toLowerCase();
+      for (const d of ADULT_DOMAINS) {
+        if (lower.includes(d)) return true;
+      }
+      return false;
+    }
+
+    // Inject CSS
+    const style = document.createElement('style');
+    style.id = 'omx-adult-blocker-style';
+    style.textContent = \`
+      .omx-adult-blur {
+        filter: blur(50px) !important;
+        -webkit-filter: blur(50px) !important;
+        opacity: 0.3 !important;
+        pointer-events: none !important;
+        user-select: none !important;
+      }
+      .omx-adult-wrap {
+        position: relative !important;
+        pointer-events: none !important;
+      }
+      .omx-adult-wrap::after {
+        content: "🚫" !important;
+        position: absolute !important;
+        top: 50% !important;
+        left: 50% !important;
+        transform: translate(-50%, -50%) !important;
+        background: rgba(0,0,0,0.95) !important;
+        color: #fff !important;
+        padding: 10px 20px !important;
+        border-radius: 8px !important;
+        font-size: 12px !important;
+        font-weight: bold !important;
+        letter-spacing: 1px !important;
+        z-index: 999999 !important;
+        white-space: nowrap !important;
+        pointer-events: none !important;
+      }
+      .omx-adult-remove {
+        display: none !important;
+        visibility: hidden !important;
+        height: 0 !important;
+        overflow: hidden !important;
+      }
+    \`;
+    document.head.appendChild(style);
+
+    function checkAndBlur(img) {
+      if (!img || img.dataset.omxFiltered) return;
+      
+      const src = img.src || img.getAttribute('data-src') || img.getAttribute('data-original-url') || '';
+      const link = img.closest('a');
+      const href = link ? link.href : '';
+      
+      // Check source text near image (Google shows source labels)
+      const container = img.closest('[data-lpage]') || img.closest('[jsname]') || img.closest('.islrc') || img.parentElement?.parentElement;
+      const sourceText = container ? container.textContent.toLowerCase() : '';
+      
+      const combined = src + ' ' + href + ' ' + sourceText;
+      
+      if (isAdultUrl(combined)) {
+        img.dataset.omxFiltered = 'true';
+        img.classList.add('omx-adult-blur');
+        
+        // Try to wrap for label
+        const parent = img.parentElement;
+        if (parent && !parent.classList.contains('omx-adult-wrap')) {
+          parent.classList.add('omx-adult-wrap');
+          parent.style.position = 'relative';
+        }
+        
+        // Also hide parent container for Google Images
+        const googleContainer = img.closest('[data-lpage]');
+        if (googleContainer) {
+          googleContainer.classList.add('omx-adult-remove');
+        }
+      }
+    }
+
+    // Hide entire search result cards that reference adult sites
+    function hideAdultSearchResults() {
+      // Google search result containers
+      const selectors = [
+        '.g',                    // Standard search results
+        '.MjjYud',               // Google result wrapper
+        '[data-hveid]',          // Generic result container
+        '.tF2Cxc',               // Organic result
+      ];
+
+      document.querySelectorAll(selectors.join(',')).forEach(card => {
+        if (card.dataset.omxFiltered) return;
+
+        // Only check hrefs and data attributes (URLs), NOT card.textContent
+        // This avoids false positives from words like "pornography" in normal text
+        const links = Array.from(card.querySelectorAll('a[href]')).map(a => a.getAttribute('href') || '').join(' ');
+        const dataAttrs = Array.from(card.attributes).filter(a => a.name.startsWith('data-')).map(a => a.value).join(' ');
+
+        const combined = links + ' ' + dataAttrs;
+
+        if (isAdultUrl(combined)) {
+          card.dataset.omxFiltered = 'true';
+          card.classList.add('omx-adult-remove');
+        }
+      });
+    }
+
+    // Check for video elements
+    function checkAndHideVideo(video) {
+      if (!video || video.dataset.omxFiltered) return;
+      const src = video.src || '';
+      if (isAdultUrl(src)) {
+        video.dataset.omxFiltered = 'true';
+        video.classList.add('omx-adult-remove');
+      }
+    }
+
+    function scan() {
+      // Scan all images
+      document.querySelectorAll('img').forEach(checkAndBlur);
+      // Scan all videos
+      document.querySelectorAll('video').forEach(checkAndHideVideo);
+      // Scan Google Images specific containers
+      document.querySelectorAll('[data-lpage]').forEach(el => {
+        const href = el.getAttribute('data-lpage') || '';
+        if (isAdultUrl(href)) {
+          el.classList.add('omx-adult-remove');
+        }
+      });
+      // Hide entire search result cards with adult content
+      hideAdultSearchResults();
+    }
+
+    // Initial scan
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', () => setTimeout(scan, 300));
+    } else {
+      setTimeout(scan, 300);
+    }
+
+    // Debounced MutationObserver for dynamic content
+    let debounceTimer = null;
+    const observer = new MutationObserver(() => {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(scan, 150);
+    });
+    observer.observe(document.body || document.documentElement, {
+      childList: true,
+      subtree: true
+    });
+
+    // Periodic scan for lazy-loaded content
+    setInterval(scan, 2000);
+    
+  } catch (e) {
+    console.warn('[Adult Blocker] Error:', e);
+  }
+})();
+    `;
+  }
+  // ── End Adult Content Blocker ───────────────────────────────────────────
 
   isYouTubeUrl(url = '') {
     try {
@@ -4828,6 +5046,12 @@ body[class*="overflow-hidden"]:not([data-legit]) {
         if (isWebsite && ab.blockPopups) {
           await webview.executeJavaScript(this.getPopupOnlyBlockerScript(), true);
         }
+
+        // Early injection for adult content blocker
+        const adultBlockEnabled = this.settings?.features?.enableAdultContentBlock !== false;
+        if (isWebsite && adultBlockEnabled) {
+          await webview.executeJavaScript(this.getAdultContentBlockerScript(), true);
+        }
       } catch (_) {}
     });
 
@@ -4836,6 +5060,7 @@ body[class*="overflow-hidden"]:not([data-legit]) {
             await this.applyGlobalWebsiteCss(webview);
             await this.applyYouTubeAddon(webview);
             await this.applyFloatingAdBlocker(webview);
+            await this.applyAdultContentBlocker(webview);
             const currentUrl = webview.getURL ? webview.getURL() : '';
             if (this.isDuckAiChatUrl(currentUrl)) {
                 await this.applyDuckAiSidebarPreference(webview);

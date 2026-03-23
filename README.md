@@ -348,6 +348,57 @@ A powerful quick-launch panel with customizable search engines and keyboard shor
 - Remove blocked domains from the list
 - Import/export blocklist
 
+#### Adult Content Blocker
+A multi-layered content filtering system that blocks adult/pornographic websites across search results, images, and direct browsing.
+
+**How It Works:**
+The blocker operates at two levels:
+
+| Layer | File | Purpose |
+|-------|------|---------|
+| **Preload Script** | `webviewPreload.js` | Injected into every webview, blocks images and search result cards |
+| **Tab UI Blocker** | `tabs.js` | Integrated into tab management, provides additional card-level blocking |
+
+**Detection Methods:**
+
+| Method | Description |
+|--------|-------------|
+| **Domain Matching** | Checks 80+ adult domains via raw substring matching (no `new URL()` parsing) |
+| **URL Decoding** | Decodes Google redirect URLs (`%2F%2Fxhamster.com` → `xhamster.com`) |
+| **Ancestor Traversal** | Walks up 12 parent levels collecting `data-lpage`, `data-ou`, `data-iurl`, `href` attributes |
+| **Source Labels** | Checks text labels under thumbnails (e.g., "RusPorn", "The Art Porn") against keyword list |
+| **Search Result Cards** | Hides entire Google search result cards containing adult URLs in hrefs/data attributes |
+
+**What Gets Blocked:**
+
+| Content Type | Action | Visual |
+|--------------|--------|--------|
+| **Image Thumbnails** | Blurred with CSS filter | `🚫` overlay on card |
+| **Search Result Cards** | Hidden via `display: none` | Completely removed |
+| **Video Elements** | Hidden | Removed from page |
+| **Clickable Cards** | `pointer-events: none` | Cannot be clicked through |
+
+**Keyword Detection:**
+Short text labels (<200 chars) are checked against keywords:
+- `porn`, `xxx`, `hentai`, `nsfw`, `onlyfans`, `xvideos`
+
+**Protected Against:**
+- CDN-proxied thumbnails (Google serves from `encrypted-tbn0.gstatic.com`)
+- URL-encoded redirect links in `<a href>` attributes
+- Lazy-loaded content via MutationObserver
+- False positives (only URLs are checked for search results, not page text)
+
+**Configuration:**
+The blocker runs automatically on every webview. No configuration required. Domains are defined in:
+- `webviewPreload.js` → `ADULT_DOMAINS` array (line 18-45)
+- `tabs.js` → `ADULT_DOMAINS` array (line 3676-3710)
+
+**Technical Details:**
+- Debounced MutationObserver (150ms) to prevent performance issues
+- `data-omxProcessed` / `data-omxFiltered` attributes prevent double-processing
+- Periodic scan every 2 seconds for lazy-loaded content
+- CSS classes: `omx-blur`, `omx-blur-wrap`, `omx-hide`, `omx-adult-blur`, `omx-adult-wrap`, `omx-adult-remove`
+
 ### VirusTotal Integration
 
 Real-time security scanning powered by VirusTotal's database of 70+ antivirus engines.

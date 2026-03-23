@@ -1,4 +1,52 @@
 document.addEventListener('DOMContentLoaded', async () => {
+
+  // ─────────────────────────────────────────────────────────────────────────
+  //  Adult content domain filter for search results
+  // ─────────────────────────────────────────────────────────────────────────
+  const ADULT_DOMAINS = [
+    'pornhub.com','xvideos.com','xhamster.com','xnxx.com','xnxxx.com',
+    'youporn.com','redtube.com','tube8.com','spankbang.com','tnaflix.com',
+    'slutload.com','heavy-r.com','drtuber.com','beeg.com','txxx.com',
+    'hclips.com','fuq.com','vjav.com','hdzog.com','pornone.com',
+    'anyporn.com','fullporner.com','cliphunter.com','inporn.com',
+    'bravotube.net','porndig.com','rexxx.com','tubxporn.com','pornktube.com',
+    'sexvid.xxx','empflix.com','porntrex.com','faphouse.com','fapality.com',
+    'sexu.com','pornrox.com','porn300.com','tubegalore.com','porngo.com',
+    'shesfreaky.com','gotporn.com','yourporn.sexy','jizzbo.com',
+    'javhd.com','javmost.com','javbus.com','javlibrary.com',
+    'brazzers.com','bangbros.com','realitykings.com','naughtyamerica.com',
+    'mofos.com','digitalplayground.com','kink.com','vixen.com','tushy.com',
+    'deeper.com','slayed.com','teamskeet.com','evilangel.com',
+    'chaturbate.com','myfreecams.com','cam4.com','camsoda.com',
+    'bongacams.com','stripchat.com','livejasmin.com','streamate.com',
+    'jerkmate.com','camversity.com','onlyfans.com','fansly.com','manyvids.com',
+    'xart.com','sexstories.com','literotica.com','hentaihaven.org',
+    'hentaiheroes.com','nhentai.net','hanime.tv','rule34.xxx',
+    'motherless.com','imagefap.com','erome.com','hclips.com','nuvid.com',
+    'porn.com','xxx.com','sex.com','porn.org','freeones.com',
+    'adultempire.com','porzo.com','whoreshub.com','eroprofile.com',
+    'badmovs.com','pornerbros.com','porntube.com','xtube.com'
+  ];
+
+  const ADULT_KEYWORDS = [
+    'porn','xxx','hentai','nsfw','erotic','nude','naked','adult','camgirl',
+    'sexvideo','sextape','onlyfan','chaturbat','brazzers','bangbros',
+    'xhamster','xvideo','xnxx','onlyfans','fansly','livejasmin'
+  ];
+
+  const isAdultDomain = (url = '') => {
+    try {
+      const host = new URL(url).hostname.toLowerCase().replace(/^www\./, '');
+      for (const d of ADULT_DOMAINS) {
+        if (host === d || host.endsWith('.' + d)) return true;
+      }
+      for (const kw of ADULT_KEYWORDS) {
+        if (host.includes(kw)) return true;
+      }
+    } catch (_) {}
+    return false;
+  };
+
   const formatLocalQuickBotResponse = (input, baseResponse, confidence = 0.7) => {
     const raw = String(baseResponse || '').trim();
     if (!raw) return '';
@@ -1127,7 +1175,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       imageRows.forEach((imgUrl) => {
         const safeImgUrl = escapeHtml(imgUrl || '');
         const card = document.createElement('div');
-        card.className = 'scraper-img-card';
+        const isBlocked = isAdultDomain(imgUrl);
+        card.className = isBlocked ? 'scraper-img-card adult-blocked' : 'scraper-img-card';
         card.innerHTML = `
           <img src="${safeImgUrl}" onerror="this.parentElement.style.display='none'" alt="Topic Image">
           <div class="scraper-card-meta">
@@ -1140,8 +1189,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             </div>
           </div>
         `;
-        card.querySelector('.btn-view-asset')?.addEventListener('click', (e) => { e.stopPropagation(); openViewer(imgUrl); });
-        card.querySelector('.btn-dl-asset')?.addEventListener('click', (e) => { e.stopPropagation(); window.browserAPI.downloads.start(imgUrl, { saveAs: true }); });
+        if (!isBlocked) {
+          card.querySelector('.btn-view-asset')?.addEventListener('click', (e) => { e.stopPropagation(); openViewer(imgUrl); });
+          card.querySelector('.btn-dl-asset')?.addEventListener('click', (e) => { e.stopPropagation(); window.browserAPI.downloads.start(imgUrl, { saveAs: true }); });
+        }
         els.scraperResults.appendChild(card);
       });
     }
@@ -2266,7 +2317,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             imagesToProcess.forEach((imgUrl) => {
               const safeImgUrl = escapeHtml(imgUrl || '');
               const card = document.createElement('div');
-              card.className = 'scraper-img-card';
+              const isBlocked = isAdultDomain(imgUrl);
+              card.className = isBlocked ? 'scraper-img-card adult-blocked' : 'scraper-img-card';
               card.innerHTML = `
                 <img src="${safeImgUrl}" onerror="this.parentElement.style.display='none'" alt="Image">
                 <div class="scraper-card-meta">
@@ -2279,10 +2331,14 @@ document.addEventListener('DOMContentLoaded', async () => {
                   </div>
                 </div>
               `;
-              card.querySelector('.btn-view-asset').onclick = (e) => { e.stopPropagation(); openViewer(imgUrl); };
-              card.querySelector('.btn-dl-asset').onclick = (e) => { e.stopPropagation(); window.browserAPI.downloads.start(imgUrl, { saveAs: true }); };
+              if (!isBlocked) {
+                card.querySelector('.btn-view-asset').onclick = (e) => { e.stopPropagation(); openViewer(imgUrl); };
+                card.querySelector('.btn-dl-asset').onclick = (e) => { e.stopPropagation(); window.browserAPI.downloads.start(imgUrl, { saveAs: true }); };
+              }
               els.scraperResults.appendChild(card);
-              currentScrapedImages.push({ data: imgUrl, name: `${query}-${Date.now()}.png` });
+              if (!isBlocked) {
+                currentScrapedImages.push({ data: imgUrl, name: `${query}-${Date.now()}.png` });
+              }
             });
           } else {
             const err = result?.error ? ` (${escapeHtml(result.error)})` : '';
@@ -2366,8 +2422,10 @@ document.addEventListener('DOMContentLoaded', async () => {
           setSaveAllButtonState({ visible: false });
 
           if (videos && videos.length > 0) {
-            const realVideos = videos.filter((v) => !v.isSearchLink);
-            const searchLinks = videos.filter((v) => v.isSearchLink);
+            // Filter out videos from adult domains
+            const filteredVideos = videos.filter((v) => !isAdultDomain(v.url));
+            const realVideos = filteredVideos.filter((v) => !v.isSearchLink);
+            const searchLinks = filteredVideos.filter((v) => v.isSearchLink);
 
             if (realVideos.length > 0) {
               els.resultsLabel.textContent = `${realVideos.length} VIDEO${realVideos.length > 1 ? 'S' : ''} FOUND`;
