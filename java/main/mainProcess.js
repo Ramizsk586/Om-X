@@ -5,6 +5,7 @@ const { spawn, exec, execFile } = require('child_process');
 const https = require('https');
 const net = require('net');
 const os = require('os');
+const { MongoClient } = require('mongodb');
 const { pathToFileURL, fileURLToPath } = require('url');
 const dotenv = require('dotenv');
 
@@ -1244,23 +1245,12 @@ async function startOmChatServerInternal(config = {}) {
   try {
     // Configure DB mode from settings - MUST be set BEFORE loading OmChat module
     const omchatSettings = cachedSettings?.omchat || {};
-    const dbMode = omchatSettings.dbMode === 'mongo' ? 'mongo' : 'local';
-    const hasMongoUri = Boolean(process.env.MONGODB_URI && process.env.MONGODB_URI.trim());
-
-    if (dbMode === 'mongo' && hasMongoUri) {
-      process.env.DB_MODE = 'mongo';
-      pushServerLog('omchat', 'info', 'Using MongoDB from .env configuration');
-    } else if (dbMode === 'mongo' && !hasMongoUri) {
-      // User selected MongoDB but no URI in .env — fall back to local
-      process.env.DB_MODE = 'local';
-      pushServerLog('omchat', 'warn', 'MongoDB selected but MONGODB_URI not set in .env — falling back to Local DB');
-    } else {
-      process.env.DB_MODE = 'local';
-      if (omchatSettings.localDbPath) {
-        process.env.LOCAL_DB_PATH = omchatSettings.localDbPath;
-      }
-      pushServerLog('omchat', 'info', `Using local DB${omchatSettings.localDbPath ? ' at ' + omchatSettings.localDbPath : ' (default location)'}`);
+    process.env.DB_MODE = 'local';
+    if (omchatSettings.localDbPath) {
+      process.env.LOCAL_DB_PATH = omchatSettings.localDbPath;
     }
+    const dbInfo = 'Using local DB' + (omchatSettings.localDbPath ? ' at ' + omchatSettings.localDbPath : ' (default location)');
+    pushServerLog('omchat', 'info', dbInfo);
 
     const moduleRef = await loadOmChatModule();
     const omChatApi = moduleRef?.default || moduleRef;
@@ -1331,6 +1321,393 @@ async function stopOmChatServerInternal() {
   serverConfigs.omchat = null;
   emitResolvedLanIp();
   return { success: true };
+}
+
+let omchatSyncRunning = false;
+
+function resolveOmChatLocalDbPath() {
+  const configured = String(cachedSettings?.omchat?.localDbPath || '').trim();
+  if (configured) return configured;
+  const envPath = String(process.env.LOCAL_DB_PATH || '').trim();
+  if (envPath) return envPath;
+  return path.join(process.cwd(), 'omchat-local-db');
+}
+
+function readJsonArray(filePath) {
+  try {
+    if (!fs.existsSync(filePath)) return [];
+    const raw = fs.readFileSync(filePath, 'utf8');
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    return [];
+  }
+}
+
+function writeJsonArray(filePath, data = []) {
+  const safe = Array.isArray(data) ? data : [];
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, JSON.stringify(safe, null, 0), 'utf8');
+}
+
+function buildKeyFromFields(doc, fields) {
+  if (!doc || typeof doc !== 'object') return null;
+  const parts = fields.map((field) => String(doc[field] ?? '').trim());
+  if (parts.some((part) => !part)) return null;
+  return parts.join('|');
+}
+
+function extractComparableTimestamp(doc) {
+  if (!doc || typeof doc !== 'object') return null;
+  const candidates = [
+    doc.updatedAt,
+    doc.lastActiveAt,
+    doc.createdAt,
+    doc.joinedAt,
+    doc.bannedAt,
+    doc.expiresAt
+  ];
+  for (const value of candidates) {
+    if (!value) continue;
+    const stamp = value instanceof Date ? value.getTime() : Date.parse(String(value));
+    if (Number.isFinite(stamp)) return stamp;
+  }
+  return null;
+}
+
+function stripMongoId(doc) {
+  if (!doc || typeof doc !== 'object') return doc;
+  const clone = { ...doc };
+  delete clone._id;
+  return clone;
+}
+
+function resolveSyncConflict(localDoc, mongoDoc) {
+  if (localDoc && !mongoDoc) return localDoc;
+  if (mongoDoc && !localDoc) return mongoDoc;
+  if (!localDoc || !mongoDoc) return localDoc || mongoDoc;
+
+  const localStamp = extractComparableTimestamp(localDoc);
+  const mongoStamp = extractComparableTimestamp(mongoDoc);
+  if (localStamp != null && mongoStamp != null) {
+    return localStamp >= mongoStamp ? localDoc : mongoDoc;
+  }
+  if (localStamp != null && mongoStamp == null) return localDoc;
+  if (mongoStamp != null && localStamp == null) return mongoDoc;
+  return mongoDoc;
+}
+
+async function syncOmChatDatabases(event) {
+  if (omchatSyncRunning) {
+    return { success: false, error: 'A backup is already running.' };
+  }
+  omchatSyncRunning = true;
+
+  const sendProgress = (payload) => {
+    try {
+      event?.sender?.send('omchat-sync-progress', payload);
+    } catch (_) {}
+  };
+
+  const sendDone = (payload) => {
+    try {
+      event?.sender?.send('omchat-sync-done', payload);
+    } catch (_) {}
+  };
+
+  const localDbDir = resolveOmChatLocalDbPath();
+  const mongoUri = String(process.env.MONGODB_URI || '').trim();
+  if (!mongoUri) {
+    const error = 'MongoDB URI is not configured in .env.';
+    sendDone({ success: false, error });
+    omchatSyncRunning = false;
+    return { success: false, error };
+  }
+
+  const collections = [
+    { local: 'users', mongo: 'users', key: ['id'] },
+    { local: 'servers', mongo: 'servers', key: ['id'] },
+    { local: 'channels', mongo: 'channels', key: ['id'] },
+    { local: 'roles', mongo: 'roles', key: ['id'] },
+    { local: 'members', mongo: 'members', key: ['userId', 'serverId'] },
+    { local: 'invites', mongo: 'invites', key: ['code'] },
+    { local: 'bans', mongo: 'bans', key: ['userId', 'serverId'] },
+    { local: 'chatMessages', mongo: 'chat_messages', key: ['id'] },
+    { local: 'dmConversations', mongo: 'dm_conversations', key: ['id'] },
+    { local: 'uploadBlobs', mongo: 'upload_blobs', key: ['sha256'] },
+    { local: 'refreshTokens', mongo: 'refresh_tokens', key: ['token'] },
+    { local: 'deviceTokens', mongo: 'device_tokens', key: ['token'] },
+    { local: 'sessionLogs', mongo: 'session_log', key: ['id'] },
+    { local: 'otpCodes', mongo: 'otpcodes', key: ['email'] }
+  ];
+
+  const client = new MongoClient(mongoUri, { ignoreUndefined: true });
+
+  try {
+    sendProgress({ status: 'Connecting to MongoDB...', percent: 2, message: 'Connecting to MongoDB...' });
+    await client.connect();
+    const db = client.db('omchat');
+    sendProgress({ status: 'MongoDB connected.', percent: 6, message: 'MongoDB connected.' });
+
+    const totalCollections = collections.length;
+    let completedCollections = 0;
+
+    for (const entry of collections) {
+      const percentBase = 6 + Math.round((completedCollections / totalCollections) * 88);
+      sendProgress({
+        status: `Backing up ${entry.local}...`,
+        percent: percentBase,
+        message: `Uploading ${entry.local} -> ${entry.mongo}`
+      });
+
+      const localPath = path.join(localDbDir, `${entry.local}.json`);
+      const localRows = readJsonArray(localPath);
+
+      const mongoCollection = db.collection(entry.mongo);
+      let upserted = 0;
+      for (const row of localRows) {
+        const key = buildKeyFromFields(row, entry.key);
+        if (!key) continue;
+        await mongoCollection.replaceOne(
+          buildMongoFilter(entry.key, row),
+          stripMongoId(row),
+          { upsert: true }
+        );
+        upserted += 1;
+      }
+
+      completedCollections += 1;
+      sendProgress({
+        status: `Backed up ${entry.local}.`,
+        percent: 6 + Math.round((completedCollections / totalCollections) * 88),
+        message: `${entry.local}: ${upserted} records uploaded`
+      });
+    }
+
+    sendProgress({ status: 'Finalizing backup...', percent: 98, message: 'Finalizing backup...' });
+    sendDone({ success: true, mode: 'backup' });
+    return { success: true };
+  } catch (error) {
+    const message = error?.message || 'Database backup failed.';
+    sendDone({ success: false, error: message, mode: 'backup' });
+    return { success: false, error: message };
+  } finally {
+    try {
+      await client.close();
+    } catch (_) {}
+    omchatSyncRunning = false;
+  }
+}
+
+async function importOmChatDatabases(event) {
+  if (omchatSyncRunning) {
+    return { success: false, error: 'A download is already running.' };
+  }
+  omchatSyncRunning = true;
+
+  const sendProgress = (payload) => {
+    try {
+      event?.sender?.send('omchat-sync-progress', payload);
+    } catch (_) {}
+  };
+
+  const sendDone = (payload) => {
+    try {
+      event?.sender?.send('omchat-sync-done', payload);
+    } catch (_) {}
+  };
+
+  const localDbDir = resolveOmChatLocalDbPath();
+  const mongoUri = String(process.env.MONGODB_URI || '').trim();
+  if (!mongoUri) {
+    const error = 'MongoDB URI is not configured in .env.';
+    sendDone({ success: false, error, mode: 'import' });
+    omchatSyncRunning = false;
+    return { success: false, error };
+  }
+
+  const collections = [
+    { local: 'users', mongo: 'users' },
+    { local: 'servers', mongo: 'servers' },
+    { local: 'channels', mongo: 'channels' },
+    { local: 'roles', mongo: 'roles' },
+    { local: 'members', mongo: 'members' },
+    { local: 'invites', mongo: 'invites' },
+    { local: 'bans', mongo: 'bans' },
+    { local: 'chatMessages', mongo: 'chat_messages' },
+    { local: 'dmConversations', mongo: 'dm_conversations' },
+    { local: 'uploadBlobs', mongo: 'upload_blobs' },
+    { local: 'refreshTokens', mongo: 'refresh_tokens' },
+    { local: 'deviceTokens', mongo: 'device_tokens' },
+    { local: 'sessionLogs', mongo: 'session_log' },
+    { local: 'otpCodes', mongo: 'otpcodes' }
+  ];
+
+  const client = new MongoClient(mongoUri, { ignoreUndefined: true });
+
+  try {
+    sendProgress({ status: 'Connecting to MongoDB...', percent: 2, message: 'Connecting to MongoDB...' });
+    await client.connect();
+    const db = client.db('omchat');
+    sendProgress({ status: 'MongoDB connected.', percent: 6, message: 'MongoDB connected.' });
+
+    const defaultName = `omchat-backup-${new Date().toISOString().replace(/[:.]/g, '-')}.zip`;
+    const saveResult = await dialog.showSaveDialog(mainWindow, {
+      title: 'Save OmChat Backup Zip',
+      defaultPath: path.join(app.getPath('downloads'), defaultName),
+      filters: [{ name: 'Zip Archive', extensions: ['zip'] }]
+    });
+    if (saveResult.canceled || !saveResult.filePath) {
+      const error = 'Download canceled.';
+      sendDone({ success: false, error, mode: 'import' });
+      return { success: false, error };
+    }
+
+    const output = fs.createWriteStream(saveResult.filePath);
+    const archive = require('archiver')('zip', { zlib: { level: 9 } });
+    const downloadId = `dl-omchat-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const downloadStart = Date.now();
+    const zipPromise = new Promise((resolve, reject) => {
+      output.on('close', resolve);
+      output.on('error', reject);
+      archive.on('error', reject);
+    });
+    archive.pipe(output);
+
+    const totalCollections = collections.length;
+    let completedCollections = 0;
+
+    for (const entry of collections) {
+      const percentBase = 6 + Math.round((completedCollections / totalCollections) * 88);
+      sendProgress({
+        status: `Downloading ${entry.local}...`,
+        percent: percentBase,
+        message: `Adding ${entry.mongo} -> ${entry.local}.json`
+      });
+
+      const mongoCollection = db.collection(entry.mongo);
+      const mongoRows = await mongoCollection.find({}).toArray();
+      const cleaned = Array.isArray(mongoRows)
+        ? mongoRows.map((row) => stripMongoId(row))
+        : [];
+      const payload = JSON.stringify(cleaned, null, 0);
+      archive.append(payload, { name: `${entry.local}.json` });
+
+      completedCollections += 1;
+      sendProgress({
+        status: `Added ${entry.local}.`,
+        percent: 6 + Math.round((completedCollections / totalCollections) * 88),
+        message: `${entry.local}: ${cleaned.length} records`
+      });
+    }
+
+    sendProgress({ status: 'Finalizing zip...', percent: 98, message: 'Finalizing zip...' });
+    await archive.finalize();
+    await zipPromise;
+
+    try {
+      const stat = fs.statSync(saveResult.filePath);
+      const data = {
+        id: downloadId,
+        filename: path.basename(saveResult.filePath),
+        totalBytes: stat.size,
+        receivedBytes: stat.size,
+        state: 'completed',
+        startTime: downloadStart,
+        url: 'omchat://backup',
+        speed: 0,
+        savePath: saveResult.filePath,
+        saveDir: path.dirname(saveResult.filePath)
+      };
+      const list = getStoredDownloads();
+      list.unshift(data);
+      downloadsStore.set(list);
+      downloadsStore.scheduleFlush();
+      broadcast('download-update', data);
+    } catch (_) {}
+    sendDone({ success: true, mode: 'import' });
+    return { success: true };
+  } catch (error) {
+    const message = error?.message || 'Database download failed.';
+    sendDone({ success: false, error: message, mode: 'import' });
+    return { success: false, error: message };
+  } finally {
+    try {
+      await client.close();
+    } catch (_) {}
+    omchatSyncRunning = false;
+  }
+}
+
+function buildMongoFilter(fields, doc) {
+  const filter = {};
+  for (const field of fields) {
+    filter[field] = doc?.[field];
+  }
+  return filter;
+}
+
+async function getOmChatMongoStats() {
+  const mongoUri = String(process.env.MONGODB_URI || '').trim();
+  if (!mongoUri) {
+    return { success: false, error: 'MongoDB URI is not configured in .env.' };
+  }
+  const client = new MongoClient(mongoUri, { ignoreUndefined: true });
+  try {
+    await client.connect();
+    const targetDbName = 'omchat';
+    const db = client.db(targetDbName);
+    const stats = await db.command({ dbStats: 1, scale: 1 });
+    const fsUsedSize = Number.isFinite(stats.fsUsedSize) ? stats.fsUsedSize : null;
+    const fsTotalSize = Number.isFinite(stats.fsTotalSize) ? stats.fsTotalSize : null;
+    const freeBytes = fsUsedSize != null && fsTotalSize != null ? Math.max(0, fsTotalSize - fsUsedSize) : null;
+    let clusterStats = null;
+    try {
+      const admin = client.db().admin();
+      const list = await admin.listDatabases();
+      const dbNames = (list?.databases || [])
+        .map((entry) => entry?.name)
+        .filter((name) => typeof name === 'string' && name && !['admin', 'local', 'config'].includes(name));
+      if (dbNames.length) {
+        let totalData = 0;
+        let totalStorage = 0;
+        let totalIndex = 0;
+        for (const name of dbNames) {
+          try {
+            const entryStats = await client.db(name).command({ dbStats: 1, scale: 1 });
+            if (Number.isFinite(entryStats.dataSize)) totalData += entryStats.dataSize;
+            if (Number.isFinite(entryStats.storageSize)) totalStorage += entryStats.storageSize;
+            if (Number.isFinite(entryStats.indexSize)) totalIndex += entryStats.indexSize;
+          } catch (_) {}
+        }
+        clusterStats = {
+          dataSize: totalData,
+          storageSize: totalStorage,
+          indexSize: totalIndex,
+          dbCount: dbNames.length
+        };
+      }
+    } catch (_) {}
+    return {
+      success: true,
+      stats: {
+        dataSize: Number.isFinite(stats.dataSize) ? stats.dataSize : null,
+        storageSize: Number.isFinite(stats.storageSize) ? stats.storageSize : null,
+        indexSize: Number.isFinite(stats.indexSize) ? stats.indexSize : null,
+        fsUsedSize,
+        fsTotalSize,
+        freeBytes,
+        dbName: targetDbName,
+        cluster: clusterStats
+      }
+    };
+  } catch (error) {
+    return { success: false, error: error?.message || 'Failed to read MongoDB stats.' };
+  } finally {
+    try {
+      await client.close();
+    } catch (_) {}
+  }
 }
 
 function wait(ms) {
@@ -2880,6 +3257,21 @@ ipcMain.handle('omchat:get-db-config', async (event) => {
     localDbPath: omchat.localDbPath || '',
     hasMongoUri: Boolean(process.env.MONGODB_URI && process.env.MONGODB_URI.trim())
   };
+});
+
+ipcMain.handle('omchat:sync-db', async (event) => {
+  ensureTrustedServerControlSender(event);
+  return syncOmChatDatabases(event);
+});
+
+ipcMain.handle('omchat:import-db', async (event) => {
+  ensureTrustedServerControlSender(event);
+  return importOmChatDatabases(event);
+});
+
+ipcMain.handle('omchat:get-mongo-stats', async (event) => {
+  ensureTrustedServerControlSender(event);
+  return getOmChatMongoStats();
 });
 
 ipcMain.handle('server:get-status', async (_event, name) => {
@@ -6156,3 +6548,6 @@ app.on('before-quit', (event) => {
 });
 
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
+
+
+

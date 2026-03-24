@@ -252,6 +252,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     const youtubeAddonToggleAdSkipper   = document.getElementById('youtube-addon-toggle-adskipper');
     const duckAiPanel                   = document.getElementById('duck-ai-panel');
     const duckAiToggleSidebar           = document.getElementById('duck-ai-toggle-sidebar');
+    const omchatLaunchOverlay           = document.getElementById('omchat-launch-overlay');
+    const omchatLaunchClose             = document.getElementById('omchat-launch-close');
+    const omchatLaunchStatus            = document.getElementById('omchat-launch-status');
+    const omchatLaunchLog               = document.getElementById('omchat-launch-log');
     const sessionGuardOverlay           = document.getElementById('sessionguard-overlay');
     const sessionGuardIframe            = document.getElementById('sessionguard-iframe');
     const SESSIONGUARD_POPUP_URL        = new URL('../../SessionGuard/popup/popup.html', import.meta.url).href;
@@ -275,6 +279,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     let pendingBookmarkTab    = null;
     const darkModeTabs        = new Set();
     let tabManager            = null;
+    let omchatLogPollTimer    = null;
+    let omchatLogLastCount    = 0;
     let _settingsLoading      = false;   // guard against parallel loadSettings calls
     let _ytSavePending        = false;   // guard against concurrent persist calls
     let _duckSavePending      = false;
@@ -1264,20 +1270,107 @@ document.addEventListener('DOMContentLoaded', async () => {
         return DUCK_AI_URL;
     };
 
+    const setOmChatLaunchVisible = (visible) => {
+        if (!omchatLaunchOverlay) return;
+        omchatLaunchOverlay.classList.toggle('hidden', !visible);
+    };
+
+    const resetOmChatLaunchLog = () => {
+        if (omchatLaunchLog) omchatLaunchLog.innerHTML = '';
+        omchatLogLastCount = 0;
+    };
+
+    const setOmChatLaunchStatus = (message, type = '') => {
+        if (!omchatLaunchStatus) return;
+        omchatLaunchStatus.textContent = message;
+        omchatLaunchStatus.className = `omchat-launch-status ${type}`.trim();
+    };
+
+    const appendOmChatLaunchLog = (message, type = 'info') => {
+        if (!omchatLaunchLog) return;
+        const line = document.createElement('div');
+        line.className = `line ${type}`;
+        line.textContent = message;
+        omchatLaunchLog.appendChild(line);
+        omchatLaunchLog.scrollTop = omchatLaunchLog.scrollHeight;
+    };
+
+    const stopOmChatLogPolling = () => {
+        if (omchatLogPollTimer) {
+            clearInterval(omchatLogPollTimer);
+            omchatLogPollTimer = null;
+        }
+    };
+
+    const pollOmChatLogs = async () => {
+        if (!window.browserAPI?.servers?.getLogs) return;
+        try {
+            const res = await window.browserAPI.servers.getLogs('omchat');
+            if (!res?.success || !Array.isArray(res.logs)) return;
+            const logs = res.logs;
+            if (logs.length <= omchatLogLastCount) return;
+            const fresh = logs.slice(omchatLogLastCount);
+            omchatLogLastCount = logs.length;
+            fresh.forEach((entry) => {
+                const ts = entry?.ts ? new Date(entry.ts).toLocaleTimeString() : '';
+                const label = entry?.type || 'info';
+                const prefix = ts ? `[${ts}] ` : '';
+                appendOmChatLaunchLog(`${prefix}${entry?.message || ''}`, label === 'warn' ? 'warn' : label);
+            });
+        } catch (_) {}
+    };
+
+    const startOmChatLogPolling = () => {
+        stopOmChatLogPolling();
+        omchatLogLastCount = 0;
+        pollOmChatLogs();
+        omchatLogPollTimer = setInterval(pollOmChatLogs, 600);
+    };
+
+    if (window.browserAPI?.omChat?.onOutput) {
+        window.browserAPI.omChat.onOutput((payload = {}) => {
+            const msg = String(payload?.data || '').trim();
+            if (!msg) return;
+            appendOmChatLaunchLog(msg, payload?.type || 'info');
+        });
+    }
+    if (window.browserAPI?.omChat?.onExit) {
+        window.browserAPI.omChat.onExit((payload = {}) => {
+            const code = payload?.code != null ? `code ${payload.code}` : 'unknown code';
+            const signal = payload?.signal ? `signal ${payload.signal}` : '';
+            const message = `OmChat process exited (${code}${signal ? `, ${signal}` : ''}).`;
+            setOmChatLaunchStatus(message, 'error');
+            appendOmChatLaunchLog(message, 'error');
+        });
+    }
+
     const launchOmChat = async () => {
         hideFeaturesHomePopup();
+        setOmChatLaunchVisible(true);
+        resetOmChatLaunchLog();
+        setOmChatLaunchStatus('Starting OmChat server...', '');
+        appendOmChatLaunchLog('Launching OmChat with ngrok...', 'info');
+        startOmChatLogPolling();
+        if (!cachedSettings?.omchat?.localDbPath) {
+            const message = 'OmChat local folder is not set. Please choose a folder in Settings > OmChat.';
+            setOmChatLaunchStatus(message, 'error');
+            appendOmChatLaunchLog(message, 'error');
+            return;
+        }
         try {
             const result = await window.browserAPI.omChat.startServer({ useNgrok: true });
             if (!result?.success) {
                 console.error('[Om Chat] Failed to start server:', result?.error || 'Unknown error');
-                window.alert(`Om Chat failed to start: ${result?.error || 'Unknown error'}`);
+                setOmChatLaunchStatus(result?.error || 'Om Chat failed to start.', 'error');
+                appendOmChatLaunchLog(result?.error || 'Om Chat failed to start.', 'error');
                 return;
             }
             const publicUrl = String(result?.publicUrl || result?.accessInfo?.publicUrl || '').trim().replace(/[/\\]+$/, '');
             if (!publicUrl) {
                 const message = result?.tunnelError || result?.error || 'ngrok public URL was not created.';
                 console.error('[Om Chat] Public tunnel unavailable:', message);
-                window.alert(`Om Chat public launch failed: ${message}`);
+                setOmChatLaunchStatus(message, 'error');
+                appendOmChatLaunchLog(message, 'error');
                 return;
             }
             window.__omxOmChatNetworkUrl = `${publicUrl}/`;
@@ -1286,9 +1379,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                 tabManager?.registerOmChatOrigin?.(omOrigin);
             } catch (_) {}
             openAppTab(window.__omxOmChatNetworkUrl, { isOmChat: true });
+            setOmChatLaunchStatus('Server online. Opening login page...', 'success');
+            appendOmChatLaunchLog(`Opened ${window.__omxOmChatNetworkUrl}`, 'success');
         } catch (error) {
             console.error('[Om Chat] Launcher failed:', error);
-            window.alert(`Om Chat failed to start: ${error?.message || error}`);
+            setOmChatLaunchStatus(error?.message || 'Om Chat failed to start.', 'error');
+            appendOmChatLaunchLog(error?.message || 'Om Chat failed to start.', 'error');
         }
     };
 
@@ -1296,6 +1392,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     const setBookmarkPanelVisible       = (v) => bookmarkTopPanel?.classList.toggle('hidden', !v);
     const setNavigationTopPanelVisible  = (v) => navigationTopPanel?.classList.toggle('hidden', !v);
     const setBookmarkEditorVisible      = (v) => bookmarkEditorOverlay?.classList.toggle('hidden', !v);
+    const setOmChatLaunchVisibleSafe    = (v) => {
+        setOmChatLaunchVisible(v);
+        if (!v) stopOmChatLogPolling();
+    };
 
     const setYouTubeAddonVisible = (visible) => {
         if (!youtubeAddonPanel) return;
@@ -2027,6 +2127,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     btnTopNavBack?.addEventListener('click',    () => handleNavigationTopAction('back'));
     btnTopNavForward?.addEventListener('click', () => handleNavigationTopAction('forward'));
+
+    omchatLaunchClose?.addEventListener('click', () => setOmChatLaunchVisibleSafe(false));
+    omchatLaunchOverlay?.addEventListener('mousedown', (event) => {
+        if (event.target === omchatLaunchOverlay) setOmChatLaunchVisibleSafe(false);
+    });
 
     // ── BOOKMARK EDITOR BINDINGS ───────────────────────────────────────────────
     bookmarkEditorCancel?.addEventListener('click', () => { setBookmarkEditorVisible(false); pendingBookmarkTab = null; });

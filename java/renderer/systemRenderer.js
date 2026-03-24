@@ -115,10 +115,19 @@ const applyThemeClass = (theme) => {
     statRepos: document.querySelector('.stat-box-compact:nth-child(1) .value'),
     statFollowers: document.querySelector('.stat-box-compact:nth-child(2) .value'),
     // OmChat Panel Elements
-    omchatUseMongo: document.getElementById('omchat-use-mongo'),
     omchatLocalSection: document.getElementById('omchat-local-section'),
     omchatLocalDbPath: document.getElementById('omchat-local-db-path'),
     omchatBrowseLocalDb: document.getElementById('omchat-browse-local-db'),
+    omchatSyncBtn: document.getElementById('omchat-sync-btn'),
+    omchatImportBtn: document.getElementById('omchat-import-btn'),
+    omchatSyncModal: document.getElementById('omchat-sync-modal'),
+    omchatSyncClose: document.getElementById('omchat-sync-close'),
+    omchatSyncStatus: document.getElementById('omchat-sync-status'),
+    omchatSyncLog: document.getElementById('omchat-sync-log'),
+    omchatSyncBar: document.getElementById('omchat-sync-bar'),
+    omchatMongoStats: document.getElementById('omchat-mongo-stats'),
+    omchatMongoStatsLine: document.getElementById('omchat-mongo-stats-line'),
+    omchatMongoStatsSub: document.getElementById('omchat-mongo-stats-sub'),
   };
 
   let currentSettings = {};
@@ -374,13 +383,97 @@ const applyThemeClass = (theme) => {
 
   // ─── OmChat MongoDB Toggle & Local Folder Browse ─────────────────
   function syncOmChatMongoToggle() {
-    const useMongo = els.omchatUseMongo?.checked ?? false;
     if (els.omchatLocalSection) {
-      els.omchatLocalSection.style.display = useMongo ? 'none' : '';
+      els.omchatLocalSection.style.display = '';
     }
+    if (els.omchatMongoStats) {
+      els.omchatMongoStats.style.display = '';
+    }
+    void refreshOmChatMongoStats();
   }
 
-  els.omchatUseMongo?.addEventListener('change', syncOmChatMongoToggle);
+  function setOmChatSyncModalVisible(visible) {
+    if (!els.omchatSyncModal) return;
+    const shouldShow = Boolean(visible);
+    els.omchatSyncModal.classList.toggle('hidden', !shouldShow);
+    els.omchatSyncModal.setAttribute('aria-hidden', String(!shouldShow));
+  }
+
+  function resetOmChatSyncLog() {
+    if (els.omchatSyncLog) els.omchatSyncLog.innerHTML = '';
+    if (els.omchatSyncBar) els.omchatSyncBar.style.width = '0%';
+    if (els.omchatSyncStatus) els.omchatSyncStatus.textContent = 'Preparing backup...';
+  }
+
+  function appendOmChatSyncLog(message = '') {
+    if (!els.omchatSyncLog) return;
+    const line = document.createElement('div');
+    line.textContent = message;
+    els.omchatSyncLog.appendChild(line);
+    els.omchatSyncLog.scrollTop = els.omchatSyncLog.scrollHeight;
+  }
+
+  function setOmChatSyncProgress(percent = 0) {
+    if (!els.omchatSyncBar) return;
+    const safe = Math.max(0, Math.min(100, Number(percent) || 0));
+    els.omchatSyncBar.style.width = `${safe}%`;
+  }
+
+  function formatBytes(value) {
+    const bytes = Number(value);
+    if (!Number.isFinite(bytes)) return 'N/A';
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    let size = bytes;
+    let unit = 0;
+    while (size >= 1024 && unit < units.length - 1) {
+      size /= 1024;
+      unit += 1;
+    }
+    return `${size.toFixed(size >= 10 || unit === 0 ? 0 : 1)} ${units[unit]}`;
+  }
+
+  async function refreshOmChatMongoStats() {
+    if (!window.browserAPI?.omChat?.getMongoStats) return;
+    if (!els.omchatMongoStatsLine || !els.omchatMongoStatsSub) return;
+    els.omchatMongoStatsLine.textContent = 'MongoDB storage: Loading...';
+    els.omchatMongoStatsSub.textContent = 'Free: --';
+    try {
+      const result = await window.browserAPI.omChat.getMongoStats();
+      if (!result?.success) {
+        els.omchatMongoStatsLine.textContent = result?.error || 'MongoDB stats unavailable.';
+        els.omchatMongoStatsSub.textContent = 'Free: --';
+        return;
+      }
+      const stats = result.stats || {};
+      const used = Number.isFinite(stats.fsUsedSize) ? stats.fsUsedSize : null;
+      const total = Number.isFinite(stats.fsTotalSize) ? stats.fsTotalSize : null;
+      const free = Number.isFinite(stats.freeBytes) ? stats.freeBytes : null;
+      const dataSize = Number.isFinite(stats.dataSize) ? stats.dataSize : null;
+      const storageSize = Number.isFinite(stats.storageSize) ? stats.storageSize : null;
+      const cluster = stats.cluster || {};
+      const clusterData = Number.isFinite(cluster.dataSize) ? cluster.dataSize : null;
+      const clusterStorage = Number.isFinite(cluster.storageSize) ? cluster.storageSize : null;
+      const dbName = String(stats.dbName || '').trim() || 'omchat';
+      const primaryText = used != null && total != null
+        ? `${formatBytes(used)} used of ${formatBytes(total)}`
+        : clusterData != null && clusterStorage != null
+          ? `${formatBytes(clusterData)} data, ${formatBytes(clusterStorage)} storage`
+          : storageSize != null && dataSize != null
+            ? `${formatBytes(dataSize)} data, ${formatBytes(storageSize)} storage`
+            : 'Usage details unavailable';
+      const freeText = free != null
+        ? `Free: ${formatBytes(free)}`
+        : dataSize != null && storageSize != null
+          ? `Database (${dbName}): ${formatBytes(dataSize)} data, ${formatBytes(storageSize)} storage`
+          : 'Free: N/A';
+      const label = clusterData != null && clusterStorage != null ? 'MongoDB storage (cluster)' : 'MongoDB storage';
+      els.omchatMongoStatsLine.textContent = `${label}: ${primaryText}`;
+      els.omchatMongoStatsSub.textContent = freeText;
+    } catch (error) {
+      els.omchatMongoStatsLine.textContent = error?.message || 'MongoDB stats unavailable.';
+      els.omchatMongoStatsSub.textContent = 'Free: --';
+    }
+  }
 
   els.omchatBrowseLocalDb?.addEventListener('click', async () => {
     if (!window.browserAPI?.omChat?.selectDbFolder) return;
@@ -389,6 +482,91 @@ const applyThemeClass = (theme) => {
       if (els.omchatLocalDbPath) els.omchatLocalDbPath.value = result.folderPath;
     }
   });
+
+  els.omchatSyncClose?.addEventListener('click', () => setOmChatSyncModalVisible(false));
+
+  async function runOmChatTransfer(kind = 'backup') {
+    const isBackup = kind === 'backup';
+    const invoke = isBackup ? window.browserAPI?.omChat?.syncDatabases : window.browserAPI?.omChat?.importDatabases;
+    if (!invoke) {
+      resetOmChatSyncLog();
+      setOmChatSyncModalVisible(true);
+      if (els.omchatSyncStatus) {
+        els.omchatSyncStatus.textContent = 'Sync service is unavailable. Restart the app.';
+      }
+      appendOmChatSyncLog('Sync API missing. Please restart Om-X to load the latest preload.');
+      setOmChatSyncProgress(0);
+      return;
+    }
+    resetOmChatSyncLog();
+    setOmChatSyncModalVisible(true);
+    const localPath = String(els.omchatLocalDbPath?.value || '').trim();
+    if (!localPath) {
+      if (els.omchatSyncStatus) els.omchatSyncStatus.textContent = 'Select a local folder first.';
+      appendOmChatSyncLog('Please choose a local database folder before backup/import.');
+      setOmChatSyncProgress(0);
+      return;
+    }
+    appendOmChatSyncLog(isBackup ? 'Starting backup...' : 'Starting download...');
+    setOmChatSyncProgress(5);
+    if (els.omchatSyncBtn) {
+      els.omchatSyncBtn.disabled = true;
+      els.omchatSyncBtn.textContent = 'Working...';
+    }
+    if (els.omchatImportBtn) {
+      els.omchatImportBtn.disabled = true;
+      els.omchatImportBtn.textContent = 'Working...';
+    }
+    try {
+      const result = await invoke();
+      if (!result?.success) {
+        if (els.omchatSyncStatus) els.omchatSyncStatus.textContent = result?.error || 'Operation failed.';
+        appendOmChatSyncLog(result?.error || 'Operation failed.');
+      }
+    } catch (error) {
+      if (els.omchatSyncStatus) els.omchatSyncStatus.textContent = error?.message || 'Operation failed.';
+      appendOmChatSyncLog(error?.message || 'Operation failed.');
+    } finally {
+      if (els.omchatSyncBtn) {
+        els.omchatSyncBtn.disabled = false;
+        els.omchatSyncBtn.textContent = 'Backup Now';
+      }
+      if (els.omchatImportBtn) {
+        els.omchatImportBtn.disabled = false;
+        els.omchatImportBtn.textContent = 'Download Zip';
+      }
+    }
+  }
+
+  els.omchatSyncBtn?.addEventListener('click', async () => runOmChatTransfer('backup'));
+  els.omchatImportBtn?.addEventListener('click', async () => runOmChatTransfer('import'));
+
+  if (window.browserAPI?.omChat?.onSyncProgress) {
+    window.browserAPI.omChat.onSyncProgress((payload = {}) => {
+      if (payload?.status && els.omchatSyncStatus) {
+        els.omchatSyncStatus.textContent = payload.status;
+      }
+      if (typeof payload?.percent === 'number') {
+        setOmChatSyncProgress(payload.percent);
+      }
+      if (payload?.message) {
+        appendOmChatSyncLog(payload.message);
+      }
+    });
+  }
+
+  if (window.browserAPI?.omChat?.onSyncDone) {
+    window.browserAPI.omChat.onSyncDone((payload = {}) => {
+      if (payload?.success) {
+        if (els.omchatSyncStatus) els.omchatSyncStatus.textContent = payload?.mode === 'import' ? 'Download completed.' : 'Backup completed.';
+        appendOmChatSyncLog(payload?.mode === 'import' ? 'Download completed.' : 'Backup completed.');
+        setOmChatSyncProgress(100);
+      } else if (payload?.error) {
+        if (els.omchatSyncStatus) els.omchatSyncStatus.textContent = payload.error;
+        appendOmChatSyncLog(payload.error);
+      }
+    });
+  }
   function setActivePanel(targetId) {
     const resolved = String(targetId || '').trim() || 'panel-system';
     const targetPanel = document.getElementById(resolved);
@@ -645,7 +823,6 @@ const applyThemeClass = (theme) => {
 
       // Load OmChat DB settings
       const omchatSettings = s.omchat || {};
-      if (els.omchatUseMongo) els.omchatUseMongo.checked = omchatSettings.dbMode === 'mongo';
       if (els.omchatLocalDbPath) els.omchatLocalDbPath.value = omchatSettings.localDbPath || '';
       syncOmChatMongoToggle();
 
@@ -664,6 +841,14 @@ const applyThemeClass = (theme) => {
     els.btnSave.onclick = async () => {
       const newShortcuts = {};
       document.querySelectorAll('.shortcut-input').forEach(i => newShortcuts[i.dataset.key] = i.value.trim());
+      const omchatPath = els.omchatLocalDbPath?.value.trim() || '';
+      if (!omchatPath) {
+        if (els.status) {
+          els.status.textContent = 'Select an OmChat local folder before saving.';
+          els.status.className = 'save-status visible error';
+        }
+        return;
+      }
 
       const nextSettings = {
         ...window.omniSettings,
@@ -714,8 +899,8 @@ const applyThemeClass = (theme) => {
             provider: selectedLlmProvider || 'google'
         },
         omchat: {
-            dbMode: els.omchatUseMongo?.checked ? 'mongo' : 'local',
-            localDbPath: els.omchatLocalDbPath?.value.trim() || ''
+            dbMode: 'local',
+            localDbPath: omchatPath
         },
         shortcuts: newShortcuts,
         blocklist: currentSettings.blocklist || [],

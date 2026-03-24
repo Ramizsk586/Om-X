@@ -183,6 +183,60 @@
       word-break: break-word;
     }
 
+    /* OmChat Launch Modal */
+    .omchat-launch-modal {
+      width: min(680px, calc(100vw - 56px));
+      max-height: min(78vh, 760px);
+      overflow: hidden;
+      gap: 14px;
+    }
+    .omchat-launch-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .omchat-launch-title {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 800;
+      font-size: 16px;
+      color: #fff;
+    }
+    .omchat-launch-status {
+      font-size: 12px;
+      font-weight: 700;
+      color: rgba(255,255,255,0.65);
+      min-height: 18px;
+    }
+    .omchat-launch-status.success { color: #22c55e; }
+    .omchat-launch-status.error { color: #ef4444; }
+    .omchat-launch-log {
+      flex: 1;
+      min-height: 160px;
+      max-height: min(52vh, 420px);
+      overflow: auto;
+      padding: 12px;
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,0.1);
+      background: rgba(0,0,0,0.35);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      color: rgba(255,255,255,0.78);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .omchat-launch-log .line {
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .omchat-launch-log .line.info { color: rgba(255,255,255,0.78); }
+    .omchat-launch-log .line.warn { color: #f59e0b; }
+    .omchat-launch-log .line.error { color: #ef4444; }
+    .omchat-launch-log .line.success { color: #22c55e; }
+
     /* Translator Popup Styling - Enhanced */
     .translator-popup {
       position: absolute; width: 420px; background: var(--glass-bg); backdrop-filter: var(--glass-blur);
@@ -938,8 +992,8 @@
 
     <!-- VirusTotal Link Scan Modal -->
     <div id="vt-link-scan-overlay" class="modal-overlay hidden">
-        <div class="shortcut-modal vt-scan-modal">
-            <div class="vt-scan-header">
+      <div class="shortcut-modal vt-scan-modal">
+        <div class="vt-scan-header">
                 <div class="modal-title">VirusTotal URL Scan</div>
                 <button id="btn-vt-close-top" class="modal-btn secondary" style="padding: 6px 12px;">Close</button>
             </div>
@@ -988,6 +1042,20 @@
             <!-- Window items will be injected here -->
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- OmChat Launch Modal -->
+    <div id="omchat-launch-overlay" class="modal-overlay hidden">
+      <div class="shortcut-modal omchat-launch-modal">
+        <div class="omchat-launch-header">
+          <div class="omchat-launch-title">
+            <span>OmChat Server</span>
+          </div>
+          <button id="omchat-launch-close" class="modal-btn secondary" type="button">Close</button>
+        </div>
+        <div id="omchat-launch-status" class="omchat-launch-status">Preparing to start server...</div>
+        <div id="omchat-launch-log" class="omchat-launch-log"></div>
       </div>
     </div>
     

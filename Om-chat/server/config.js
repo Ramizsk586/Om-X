@@ -114,8 +114,8 @@ function loadConfig(env = process.env) {
       dbName: 'omchat'
     },
     db: {
-      mode: hasDbMode ? parsed.DB_MODE : (hasMongoUri ? 'mongo' : parsed.DB_MODE),
-      modeExplicit: hasDbMode,
+      mode: 'local',
+      modeExplicit: true,
       localDbPath: parsed.LOCAL_DB_PATH || path.resolve(__dirname, '..', 'local-db')
     },
     rateLimit: {

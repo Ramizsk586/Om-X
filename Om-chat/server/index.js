@@ -795,7 +795,9 @@ async function startServer(config = {}) {
   const host = String(firstDefinedValue(config.host, readEnv('HOST', 'SERVE_HOST'), DEFAULT_HOST)).trim() || DEFAULT_HOST;
   const sessionSecret = String(firstDefinedValue(config.sessionSecret, readEnv('SESSION_SECRET'), appConfig.session.secret));
 
-  await connectMongo();
+  if (appConfig.db.mode === 'mongo') {
+    await connectMongo();
+  }
   await initDb();
 
   const tlsOptions = resolveTlsOptions();
