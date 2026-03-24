@@ -12,6 +12,7 @@ const {
   ensureOperatorRole,
   getServerById,
   getServerDataWithMembers,
+  hasPermission,
   isAdmin,
   isBanned,
   leaveServer,
@@ -215,7 +216,9 @@ router.post('/:id/kick', async (req, res, next) => {
     const { userId } = validateUserTargetPayload(req.body || {});
     const server = await getServerById(serverId);
     if (!server) return res.status(404).json({ error: 'server_not_found' });
-    if (!isAdmin(server, req.session.userId)) return res.status(403).json({ error: 'unauthorized' });
+    if (!isAdmin(server, req.session.userId) && !hasPermission(server, req.session.userId, 'kick_members')) {
+      return res.status(403).json({ error: 'unauthorized' });
+    }
     if (userId === server.ownerId) return res.status(400).json({ error: 'cannot_kick_owner' });
 
     const ok = await removeMember(serverId, req.session.userId, userId);

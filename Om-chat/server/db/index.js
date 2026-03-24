@@ -1513,7 +1513,18 @@ async function setMemberRole(serverId, userId, roleId, actorId) {
  */
 async function removeMember(serverId, actorId, targetUserId) {
   const server = await getServerById(serverId);
-  if (!server || !isAdmin(server, actorId)) return false;
+  if (!server) return false;
+  if (isAdmin(server, actorId)) {
+    return serverRepo.removeMember(targetUserId, serverId);
+  }
+  if (!hasPermission(server, actorId, 'kick_members')) return false;
+  if (!targetUserId || targetUserId === server.ownerId) return false;
+  const actorMember = getMember(server, actorId);
+  const targetMember = getMember(server, targetUserId);
+  if (!actorMember || !targetMember) return false;
+  const targetRole = roleById(server, targetMember.roleId);
+  const targetRoleName = String(targetRole?.name || '').toLowerCase();
+  if (targetRoleName === 'admin' || targetRoleName === 'operator') return false;
   return serverRepo.removeMember(targetUserId, serverId);
 }
 

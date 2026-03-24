@@ -422,6 +422,7 @@ module.exports = function initSockets(io) {
             return emitError(socket, 'not_member', 'You are not part of this direct message');
           }
 
+          const hasPrevious = getDmMessages(channelId, null, 1).length > 0;
           const user = getUser(userId);
           const message = await createMessage({
             serverId: null,
@@ -437,6 +438,20 @@ module.exports = function initSockets(io) {
           });
 
           io.to(channelRoom(channelId)).emit('new_message', { message });
+          if (!hasPrevious) {
+            const targetId = dm.participants.find((id) => id !== userId);
+            if (targetId) {
+              io.to(`user:${targetId}`).emit('dm_first_message', {
+                channelId,
+                from: {
+                  userId,
+                  username: user?.username || session.username || 'User',
+                  avatarColor: session.avatarColor || user?.avatarColor || '#5865F2',
+                  avatarUrl: session.avatarUrl || user?.avatarUrl || ''
+                }
+              });
+            }
+          }
           return;
         }
 

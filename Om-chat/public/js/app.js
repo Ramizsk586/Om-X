@@ -36,12 +36,14 @@ const el = {
   selfAvatarTrigger: $('#self-avatar-trigger'),
   statusBtn: $('#status-btn'),
   settingsBtn: $('#settings-btn'),
+  adminAlertDot: $('#admin-alert-dot'),
   statusPopover: $('#status-popover'),
   avatarInput: $('#avatar-input'),
   mobileNavToggle: $('#mobile-nav-toggle'),
   activeChannelName: $('#active-channel-name'),
   activeChannelTopic: $('#active-channel-topic'),
   searchToggle: $('#search-toggle'),
+  dmWallpaperBtn: $('#dm-wallpaper-btn'),
   pinToggle: $('#pin-toggle'),
   memberToggle: $('#member-toggle'),
   searchPanel: $('#search-panel'),
@@ -127,6 +129,8 @@ const el = {
   serverBannerInput: $('#server-banner-input'),
   serverThumbnailInput: $('#server-thumbnail-input'),
   serverChatBgInput: $('#server-chatbg-input')
+  ,
+  dmWallpaperInput: $('#dm-wallpaper-input')
 };
 
 const uiTimers = {
@@ -170,6 +174,7 @@ const state = {
   },
   mobileNavOpen: false,
   mobileMembersOpen: false,
+  announcementAlert: false,
   voice: {
     active: false,
     mediaRecorder: null,
@@ -1172,6 +1177,32 @@ function normalizeAssetUrl(value) {
   return raw;
 }
 
+function getDmWallpaperKey(channelId) {
+  return `omchat_dm_wallpaper:${channelId}`;
+}
+
+function getDmWallpaper(channelId) {
+  if (!channelId) return '';
+  try {
+    return localStorage.getItem(getDmWallpaperKey(channelId)) || '';
+  } catch (_) { return ''; }
+}
+
+function setDmWallpaper(channelId, url) {
+  if (!channelId) return;
+  const value = String(url || '').trim();
+  try {
+    if (value) localStorage.setItem(getDmWallpaperKey(channelId), value);
+    else localStorage.removeItem(getDmWallpaperKey(channelId));
+  } catch (_) {}
+}
+
+function applyChatBackground(serverUrl = '', dmUrl = '') {
+  if (!el.chatPane) return;
+  el.chatPane.style.setProperty('--server-chat-bg', serverUrl ? `url("${serverUrl}")` : 'none');
+  el.chatPane.style.setProperty('--dm-chat-bg', dmUrl ? `url("${dmUrl}")` : '');
+}
+
 function applyServerAppearance(server) {
   const iconUrl = normalizeAssetUrl(server?.iconUrl);
   const legacyBanner = normalizeAssetUrl(server?.bannerUrl);
@@ -1201,9 +1232,8 @@ function applyServerAppearance(server) {
     el.serverChatBgPreview.style.backgroundImage = chatBgUrl ? `url("${chatBgUrl}")` : '';
   }
 
-  if (el.chatPane) {
-    el.chatPane.style.setProperty('--server-banner-image', chatBgUrl ? `url("${chatBgUrl}")` : 'none');
-  }
+  const dmWallpaper = state.currentView === 'dm' ? normalizeAssetUrl(getDmWallpaper(state.currentChannelId || '')) : '';
+  applyChatBackground(chatBgUrl, dmWallpaper);
 
   if (el.serverSidebarBanner) {
     el.serverSidebarBanner.style.setProperty('--server-sidebar-banner', thumbnailUrl ? `url("${thumbnailUrl}")` : 'none');
@@ -1216,6 +1246,34 @@ function applyServerAppearance(server) {
 function getUserTag(userId) {
   const value = String(userId || state.user?.id || '0').replace(/\D/g, '');
   return '#' + value.slice(-4).padStart(4, '0');
+}
+
+function getMemberRoleName(userId) {
+  const member = state.members.find((entry) => entry.userId === userId);
+  const role = state.roles.find((entry) => entry.id === member?.roleId);
+  return role?.name || 'Member';
+}
+
+function getAnnouncementAlertKey(serverId) {
+  return `omchat_announcement_alert:${serverId}`;
+}
+
+function setAnnouncementAlert(active) {
+  if (!state.server?.id) return;
+  state.announcementAlert = Boolean(active);
+  if (state.announcementAlert) {
+    sessionStorage.setItem(getAnnouncementAlertKey(state.server.id), '1');
+  } else {
+    sessionStorage.removeItem(getAnnouncementAlertKey(state.server.id));
+  }
+  el.adminAlertDot?.classList.toggle('hidden', !state.announcementAlert);
+}
+
+function restoreAnnouncementAlert() {
+  if (!state.server?.id) return;
+  const stored = sessionStorage.getItem(getAnnouncementAlertKey(state.server.id));
+  state.announcementAlert = stored === '1';
+  el.adminAlertDot?.classList.toggle('hidden', !state.announcementAlert);
 }
 
 function getAvatarInitial(username) {
@@ -1485,8 +1543,11 @@ function updateActiveHeader() {
     el.activeChannelTopic.textContent = partnerStatus || (partner ? `Direct message with ${partner.username}` : 'Direct message');
     el.composerInput.placeholder = partner ? `Message @${partner.username}` : 'Message direct message';
     el.pinToggle.classList.add('hidden');
+    el.dmWallpaperBtn?.classList.remove('hidden');
     el.pinnedPanel.classList.add('hidden');
     el.pinnedBanner.classList.add('hidden');
+    const dmWallpaper = normalizeAssetUrl(getDmWallpaper(state.currentChannelId || ''));
+    applyChatBackground(normalizeAssetUrl(state.server?.chatBackgroundUrl || state.server?.bannerUrl || ''), dmWallpaper);
     // Refresh badge to show DM-specific encryption state
     updateE2EEIndicator();
     return;
@@ -1497,6 +1558,8 @@ function updateActiveHeader() {
   el.activeChannelTopic.textContent = channel?.topic || 'No topic';
   el.composerInput.placeholder = channel ? `Message #${channel.name}` : 'Message #channel';
   el.pinToggle.classList.remove('hidden');
+  el.dmWallpaperBtn?.classList.add('hidden');
+  applyChatBackground(normalizeAssetUrl(state.server?.chatBackgroundUrl || state.server?.bannerUrl || ''), '');
   // Refresh badge to show group encryption state
   updateE2EEIndicator();
 }
@@ -1784,10 +1847,11 @@ async function handleServerMenuAction(action) {
         if (!response.ok) return false;
         state.server = data.server || state.server;
         syncCachedServer(state.server);
-        renderSidebar();
-        updateActiveHeader();
-        return true;
-      }
+  renderSidebar();
+  updateActiveHeader();
+  restoreAnnouncementAlert();
+  return true;
+}
     });
     return;
   }
@@ -2129,7 +2193,7 @@ function renderSidebar() {
     avatarUrl: me.avatarUrl || state.user.avatarUrl
   });
   if (name) name.textContent = state.user.username || 'Unknown';
-  if (tag) tag.textContent = getUserTag(state.user.id);
+  if (tag) tag.textContent = getMemberRoleName(state.user.id);
   if (badge) badge.className = 'status-badge ' + status;
 }
 
@@ -2827,7 +2891,7 @@ function openMemberPopup(member, anchorRect) {
     '      <strong>' + escapeHtml(member.username) + '</strong>',
     '      <span class="popout-presence ' + status + '"><span class="popout-presence-dot ' + status + '"></span>' + escapeHtml(getStatusLabel(status)) + '</span>',
     '    </div>',
-    '    <div class="popout-meta">' + escapeHtml(getUserTag(member.userId)) + '</div>',
+    '    <div class="popout-meta">' + escapeHtml(getMemberRoleName(member.userId)) + '</div>',
     customStatus
       ? '    <div class="popout-status">' + escapeHtml(customStatus) + '</div>'
       : '',
@@ -2895,6 +2959,10 @@ function selectChannel(channelId) {
   state.editing.messageId = null;
   state.editing.draft = '';
   clearUnread(channelId);
+  if (channel.type === 'announcement') {
+    setAnnouncementAlert(false);
+  }
+  applyChatBackground(normalizeAssetUrl(state.server?.chatBackgroundUrl || state.server?.bannerUrl || ''), '');
   updateActiveHeader();
   applyAnnouncementLock();
   renderSidebar();
@@ -2908,11 +2976,16 @@ async function openDM(member) {
   const ids = [state.user?.id, member.userId].filter(Boolean).map(String).sort();
   const channelId = ids.length === 2 ? `dm_${ids[0]}_${ids[1]}` : '';
   if (channelId && isDMEncryptionEnabled(channelId)) {
-    await proceedOpenDM(member, true, channelId);
+    await proceedOpenDM(member, true, null);
     return;
   }
 
   openDMKeyPromptModal(member);
+}
+
+async function openDMFromList(member, channelId) {
+  if (!member || !channelId) return;
+  await proceedOpenDM(member, true, channelId);
 }
 
 async function handleSlashCommand(raw) {
@@ -3015,6 +3088,9 @@ async function proceedOpenDM(member, skipKey = false, existingChannelId = null) 
   state.dmPartner = member;
   state.messages = [];
   state.remoteTypingUsers = [];
+  await refreshDmList();
+  const dmWallpaper = normalizeAssetUrl(getDmWallpaper(channelId));
+  applyChatBackground(normalizeAssetUrl(state.server?.chatBackgroundUrl || state.server?.bannerUrl || ''), dmWallpaper);
   state.editing.messageId = null;
   state.editing.draft = '';
   clearUnread(channelId);
@@ -3396,7 +3472,7 @@ function bind() {
 
     const row = event.target.closest('.dm-item');
     const dm = state.dmChannels.find((item) => item.id === row?.dataset.channelId);
-    if (dm?.partner) await openDM(dm.partner);
+    if (dm?.partner) await openDMFromList(dm.partner, dm.id);
   });
 
   const handleMemberPreview = (event) => {
@@ -3449,7 +3525,11 @@ function bind() {
     if (item) handleServerMenuAction(item.dataset.action);
   });
 
-  el.settingsBtn.addEventListener('click', () => { if (state.isAdmin) openChatCleanupModal(); else openServerInfoModal(); });
+  el.settingsBtn.addEventListener('click', () => {
+    if (state.isAdmin) openChatCleanupModal();
+    else openServerInfoModal();
+    setAnnouncementAlert(false);
+  });
   el.userMicBtn?.addEventListener('click', () => showVoiceTooltip('Mute controls arrive with voice polish.'));
   el.userDeafenBtn?.addEventListener('click', () => showVoiceTooltip('Deafen controls arrive with voice polish.'));
   el.mobileNavToggle?.addEventListener('click', () => toggleMobileDrawer('nav'));
@@ -3583,6 +3663,35 @@ function bind() {
     el.pinnedPanel.classList.toggle('hidden', !willOpen);
     renderPinnedPanel();
   });
+
+  el.dmWallpaperBtn?.addEventListener('click', () => {
+    if (state.currentView !== 'dm' || !el.dmWallpaperInput) return;
+    el.dmWallpaperInput.value = '';
+    el.dmWallpaperInput.click();
+  });
+  el.dmWallpaperBtn?.addEventListener('contextmenu', (event) => {
+    event.preventDefault();
+    if (state.currentView !== 'dm') return;
+    setDmWallpaper(state.currentChannelId || '', '');
+    applyChatBackground(normalizeAssetUrl(state.server?.chatBackgroundUrl || state.server?.bannerUrl || ''), '');
+    showVoiceTooltip('DM wallpaper cleared');
+  });
+  el.dmWallpaperInput?.addEventListener('change', async () => {
+    if (state.currentView !== 'dm') return;
+    const file = el.dmWallpaperInput.files?.[0];
+    if (!file) return;
+    try {
+      const uploaded = await uploadFile(file);
+      const url = uploaded?.url || '';
+      setDmWallpaper(state.currentChannelId || '', url);
+      applyChatBackground(normalizeAssetUrl(state.server?.chatBackgroundUrl || state.server?.bannerUrl || ''), normalizeAssetUrl(url));
+      showVoiceTooltip('DM wallpaper updated');
+    } catch (error) {
+      showVoiceTooltip(error?.message || 'DM wallpaper upload failed');
+    } finally {
+      el.dmWallpaperInput.value = '';
+    }
+  });
   el.pinnedPanel.addEventListener('click', (event) => {
     const button = event.target.closest('.pinned-unpin-btn');
     if (button) socketActions.unpinMessage({ messageId: button.dataset.messageId });
@@ -3687,8 +3796,33 @@ function wireSocket() {
         }
       }
       if (String(decodedMessage.channelId).startsWith('dm_')) await refreshDmList();
-      if (decodedMessage.userId !== state.user.id && !state.hasFocus && 'Notification' in window && Notification.permission === 'granted') {
-        new Notification(decodedMessage.username, { body: decodedMessage.content || 'New message' });
+      const channelMeta = state.channels.find((item) => item.id === decodedMessage.channelId);
+      const isAnnouncement = channelMeta?.type === 'announcement';
+      if (decodedMessage.userId !== state.user.id) {
+        const content = String(decodedMessage.content || '');
+        const selfName = String(state.user?.username || '').trim();
+        const mentionHit = selfName
+          && new RegExp(`(^|\\s)@${selfName.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}\\b`, 'i').test(content);
+        if (mentionHit) {
+          if ('Notification' in window && Notification.permission === 'granted') {
+            new Notification(`Mentioned by ${decodedMessage.username}`, { body: content || 'You were mentioned' });
+          } else if (!state.hasFocus) {
+            showVoiceTooltip(`@${decodedMessage.username} mentioned you`);
+          }
+        }
+
+        if (isAnnouncement) {
+          if (state.currentChannelId !== decodedMessage.channelId || !state.hasFocus) {
+            setAnnouncementAlert(true);
+          }
+          if ('Notification' in window && Notification.permission === 'granted') {
+            new Notification(`Announcement in #${channelMeta?.name || 'channel'}`, { body: decodedMessage.content || 'New announcement' });
+          } else if (!state.hasFocus) {
+            showVoiceTooltip('New announcement posted.');
+          }
+        } else if (!state.hasFocus && 'Notification' in window && Notification.permission === 'granted') {
+          new Notification(decodedMessage.username, { body: decodedMessage.content || 'New message' });
+        }
       }
     },
     message_edited: async ({ messageId, content, editedAt }) => {
@@ -3731,6 +3865,17 @@ function wireSocket() {
         new Notification('New DM request', { body: `${label} started a DM` });
       } else {
         showVoiceTooltip(`${label} started a DM`);
+      }
+    },
+    dm_first_message: async ({ channelId, from }) => {
+      if (!from?.userId || from.userId === state.user?.id) return;
+      await refreshDmList();
+      if (state.currentView === 'dm' && state.currentChannelId === channelId) return;
+      const label = from.username ? `@${from.username}` : 'A user';
+      if ('Notification' in window && Notification.permission === 'granted') {
+        new Notification('New DM', { body: `${label} sent you a message` });
+      } else {
+        showVoiceTooltip(`${label} sent you a message`);
       }
     },
     profile_updated: ({ user }) => {

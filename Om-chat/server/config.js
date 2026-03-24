@@ -62,6 +62,8 @@ function loadConfig(env = process.env) {
   });
 
   const parsed = envSchema.parse(env);
+  const hasDbMode = Object.prototype.hasOwnProperty.call(env, 'DB_MODE') && String(env.DB_MODE || '').trim().length > 0;
+  const hasMongoUri = Object.prototype.hasOwnProperty.call(env, 'MONGODB_URI') && String(env.MONGODB_URI || '').trim().length > 0;
   const isProduction = parsed.NODE_ENV === 'production';
   const secureCookies = parseBoolean(parsed.SECURE_COOKIES) || parseBoolean(parsed.COOKIE_SECURE) || isProduction;
 
@@ -112,7 +114,8 @@ function loadConfig(env = process.env) {
       dbName: 'omchat'
     },
     db: {
-      mode: parsed.DB_MODE,
+      mode: hasDbMode ? parsed.DB_MODE : (hasMongoUri ? 'mongo' : parsed.DB_MODE),
+      modeExplicit: hasDbMode,
       localDbPath: parsed.LOCAL_DB_PATH || path.resolve(__dirname, '..', 'local-db')
     },
     rateLimit: {

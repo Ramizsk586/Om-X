@@ -33,11 +33,12 @@ async function connectMongo() {
     }).catch((error) => {
       connectPromise = null;
       logger.error('MongoDB connection failed', { message: error.message });
-
-      // Auto-fallback to local mode
-      logger.warn('MongoDB unavailable — falling back to local DB mode');
-      config.db.mode = 'local';
-      return null;
+      if (!config.db.modeExplicit) {
+        logger.warn('MongoDB unavailable — falling back to local DB mode');
+        config.db.mode = 'local';
+        return null;
+      }
+      throw error;
     });
   }
 
