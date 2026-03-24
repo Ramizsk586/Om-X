@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>CI/CD Pipeline</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #0f1117;
+      color: #e8eaf6;
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Header ── */
+    .fc-header {
+      padding: 28px 40px 20px;
+      border-bottom: 1px solid #2d3154;
+      background: #1a1d2e;
+      display: flex;
+      align-items: flex-start;
+      gap: 16px;
+    }
+    .fc-badge {
+      background: #3949ab;
+      border: 1px solid #5c6bc0;
+      color: #fff;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      padding: 4px 10px;
+      border-radius: 20px;
+      white-space: nowrap;
+      margin-top: 4px;
+    }
+    .fc-title { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; }
+    .fc-subtitle { color: #9fa8da; font-size: 14px; margin-top: 4px; }
+
+    /* ── Toolbar ── */
+    .fc-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 40px;
+      background: #1a1d2e;
+      border-bottom: 1px solid #2d3154;
+    }
+    .fc-btn {
+      background: transparent;
+      border: 1px solid #2d3154;
+      color: #9fa8da;
+      border-radius: 8px;
+      padding: 6px 14px;
+      font-size: 13px;
+      cursor: pointer;
+      transition: all 0.15s;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .fc-btn:hover { background: #2d3154; color: #e8eaf6; }
+    .fc-separator { width: 1px; height: 24px; background: #2d3154; margin: 0 4px; }
+    .fc-legend { margin-left: auto; display: flex; align-items: center; flex-wrap: wrap; }
+
+    /* ── Canvas ── */
+    .fc-canvas {
+      flex: 1;
+      overflow: auto;
+      position: relative;
+      padding: 20px;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+    }
+    #fc-svg {
+      cursor: grab;
+      user-select: none;
+      transition: filter 0.2s;
+      border-radius: 12px;
+      max-width: 100%;
+      height: auto;
+    }
+    #fc-svg:active { cursor: grabbing; }
+
+    /* ── Node hover ── */
+    .fc-node { transition: opacity 0.15s; }
+    .fc-node:hover { opacity: 0.85; filter: brightness(1.15); }
+
+    /* ── Tooltip ── */
+    #fc-tooltip {
+      position: fixed;
+      background: #1a1d2e;
+      border: 1px solid #2d3154;
+      color: #e8eaf6;
+      padding: 8px 14px;
+      border-radius: 8px;
+      font-size: 12px;
+      pointer-events: none;
+      display: none;
+      z-index: 9999;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+    }
+
+    /* ── Footer ── */
+    .fc-footer {
+      padding: 10px 40px;
+      border-top: 1px solid #2d3154;
+      background: #1a1d2e;
+      font-size: 12px;
+      color: #9fa8da;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    /* ── Export animation ── */
+    @keyframes fc-flash {
+      0%,100% { filter: none; }
+      50%      { filter: brightness(1.6); }
+    }
+    .fc-exporting { animation: fc-flash 0.4s ease; }
+
+    /* ── Scrollbar ── */
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: #0f1117; }
+    ::-webkit-scrollbar-thumb { background: #2d3154; border-radius: 4px; }
+  </style>
+</head>
+<body>
+
+<div class="fc-header">
+  <span class="fc-badge">Horizontal Flowchart</span>
+  <div>
+    <div class="fc-title">CI/CD Pipeline</div>
+    <div class="fc-subtitle">From source commit to production deployment</div>
+  </div>
+</div>
+
+<div class="fc-toolbar">
+  <button class="fc-btn" onclick="zoomIn()">＋ Zoom In</button>
+  <button class="fc-btn" onclick="zoomOut()">－ Zoom Out</button>
+  <button class="fc-btn" onclick="resetZoom()">↺ Reset</button>
+  <div class="fc-separator"></div>
+  <button class="fc-btn" onclick="exportSVG()">⬇ Export SVG</button>
+  <button class="fc-btn" onclick="exportPNG()">⬇ Export PNG</button>
+  <div class="fc-legend"><span style="display:inline-flex;align-items:center;gap:6px;margin-right:16px;">
+      <span style="width:14px;height:14px;border-radius:3px;background:#3949ab;border:1.5px solid #5c6bc0;display:inline-block;"></span>
+      <span style="color:#9fa8da;font-size:12px;">Terminal (Start/End)</span>
+    </span><span style="display:inline-flex;align-items:center;gap:6px;margin-right:16px;">
+      <span style="width:14px;height:14px;border-radius:3px;background:#1a237e;border:1.5px solid #3f51b5;display:inline-block;"></span>
+      <span style="color:#9fa8da;font-size:12px;">Process</span>
+    </span><span style="display:inline-flex;align-items:center;gap:6px;margin-right:16px;">
+      <span style="width:14px;height:14px;border-radius:3px;background:#4a148c;border:1.5px solid #9c27b0;display:inline-block;"></span>
+      <span style="color:#9fa8da;font-size:12px;">Decision</span>
+    </span><span style="display:inline-flex;align-items:center;gap:6px;margin-right:16px;">
+      <span style="width:14px;height:14px;border-radius:3px;background:#004d40;border:1.5px solid #009688;display:inline-block;"></span>
+      <span style="color:#9fa8da;font-size:12px;">Input / Output</span>
+    </span></div>
+</div>
+
+<div class="fc-canvas" id="fc-canvas">
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1728 640"
+     width="1728" height="640" id="fc-svg">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#3d5afe"/>
+    </marker>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M 40 0 L 0 0 0 40" fill="none" stroke="rgba(255,255,255,0.03)" stroke-width="1"/>
+    </pattern>
+  </defs>
+  <rect width="100%" height="100%" fill="#0f1117"/>
+  <rect width="100%" height="100%" fill="url(#grid)"/>
+  
+      <path d="M 236 268 C 256 268, 256 268, 276 268" fill="none" stroke="#3d5afe" stroke-width="2"
+            stroke-linecap="round" marker-end="url(#arrow)" opacity="0.85"/>
+      <path d="M 432 268 C 452 268, 452 268, 472 268" fill="none" stroke="#3d5afe" stroke-width="2"
+            stroke-linecap="round" marker-end="url(#arrow)" opacity="0.85"/>
+      <path d="M 628 268 C 648 268, 648 268, 668 268" fill="none" stroke="#3d5afe" stroke-width="2"
+            stroke-linecap="round" marker-end="url(#arrow)" opacity="0.85"/>
+      <path d="M 824 268 C 844 268, 844 268, 864 268" fill="none" stroke="#3d5afe" stroke-width="2"
+            stroke-linecap="round" marker-end="url(#arrow)" opacity="0.85"/>
+        <rect x="822" y="257" width="44" height="22" rx="4"
+              fill="#1a1d2e" opacity="0.9"/>
+        <text x="844" y="268" dominant-baseline="middle" text-anchor="middle"
+              fill="#9fa8da" font-size="11" font-family="'Segoe UI', system-ui, sans-serif">
+          Pass
+        </text>
+      <path d="M 824 268 C 550 268, 550 268, 276 268" fill="none" stroke="#3d5afe" stroke-width="2"
+            stroke-linecap="round" marker-end="url(#arrow)" opacity="0.85"/>
+        <rect x="528" y="257" width="44" height="22" rx="4"
+              fill="#1a1d2e" opacity="0.9"/>
+        <text x="550" y="268" dominant-baseline="middle" text-anchor="middle"
+              fill="#9fa8da" font-size="11" font-family="'Segoe UI', system-ui, sans-serif">
+          Fail
+        </text>
+      <path d="M 1020 268 C 1040 268, 1040 268, 1060 268" fill="none" stroke="#3d5afe" stroke-width="2"
+            stroke-linecap="round" marker-end="url(#arrow)" opacity="0.85"/>
+      <path d="M 1216 268 C 1236 268, 1236 268, 1256 268" fill="none" stroke="#3d5afe" stroke-width="2"
+            stroke-linecap="round" marker-end="url(#arrow)" opacity="0.85"/>
+        <rect x="1214" y="257" width="44" height="22" rx="4"
+              fill="#1a1d2e" opacity="0.9"/>
+        <text x="1236" y="268" dominant-baseline="middle" text-anchor="middle"
+              fill="#9fa8da" font-size="11" font-family="'Segoe UI', system-ui, sans-serif">
+          Yes
+        </text>
+      <path d="M 1216 268 C 1040 268, 1040 268, 864 268" fill="none" stroke="#3d5afe" stroke-width="2"
+            stroke-linecap="round" marker-end="url(#arrow)" opacity="0.85"/>
+        <rect x="1018" y="257" width="44" height="22" rx="4"
+              fill="#1a1d2e" opacity="0.9"/>
+        <text x="1040" y="268" dominant-baseline="middle" text-anchor="middle"
+              fill="#9fa8da" font-size="11" font-family="'Segoe UI', system-ui, sans-serif">
+          No
+        </text>
+      <path d="M 1412 268 C 1432 268, 1432 268, 1452 268" fill="none" stroke="#3d5afe" stroke-width="2"
+            stroke-linecap="round" marker-end="url(#arrow)" opacity="0.85"/>
+  
+      <g class="fc-node" data-id="commit" style="cursor:pointer">
+        
+    <rect x="80" y="240" width="156" height="56" rx="28" ry="28"
+          fill="#3949ab" stroke="#5c6bc0" stroke-width="2"/>
+    <text x="158" y="268" dominant-baseline="middle" text-anchor="middle"
+          fill="#fff" font-size="13" font-weight="700"
+          font-family="'Segoe UI', system-ui, sans-serif">
+      Commit
+    </text>
+      </g>
+      <g class="fc-node" data-id="build" style="cursor:pointer">
+        
+    <rect x="276" y="240" width="156" height="56" rx="10" ry="10"
+          fill="#1a237e" stroke="#3f51b5" stroke-width="2"/>
+    <text x="354" y="268" dominant-baseline="middle" text-anchor="middle"
+          fill="#c5cae9" font-size="13" font-weight="500"
+          font-family="'Segoe UI', system-ui, sans-serif">
+      Build
+    </text>
+      </g>
+      <g class="fc-node" data-id="test" style="cursor:pointer">
+        
+    <rect x="472" y="240" width="156" height="56" rx="10" ry="10"
+          fill="#1a237e" stroke="#3f51b5" stroke-width="2"/>
+    <text x="550" y="268" dominant-baseline="middle" text-anchor="middle"
+          fill="#c5cae9" font-size="13" font-weight="500"
+          font-family="'Segoe UI', system-ui, sans-serif">
+      Run Tests
+    </text>
+      </g>
+      <g class="fc-node" data-id="gate" style="cursor:pointer">
+        
+      <polygon points="746,240 824,268 746,296 668,268" fill="#4a148c" stroke="#9c27b0" stroke-width="2"/>
+      <text x="746" y="268" dominant-baseline="middle" text-anchor="middle"
+            fill="#e1bee7" font-size="13" font-weight="600"
+            font-family="'Segoe UI', system-ui, sans-serif">
+        Quality Gate?
+      </text>
+      </g>
+      <g class="fc-node" data-id="stage" style="cursor:pointer">
+        
+    <rect x="864" y="240" width="156" height="56" rx="10" ry="10"
+          fill="#1a237e" stroke="#3f51b5" stroke-width="2"/>
+    <text x="942" y="268" dominant-baseline="middle" text-anchor="middle"
+          fill="#c5cae9" font-size="13" font-weight="500"
+          font-family="'Segoe UI', system-ui, sans-serif">
+      Deploy Staging
+    </text>
+      </g>
+      <g class="fc-node" data-id="approve" style="cursor:pointer">
+        
+      <polygon points="1138,240 1216,268 1138,296 1060,268" fill="#4a148c" stroke="#9c27b0" stroke-width="2"/>
+      <text x="1138" y="268" dominant-baseline="middle" text-anchor="middle"
+            fill="#e1bee7" font-size="13" font-weight="600"
+            font-family="'Segoe UI', system-ui, sans-serif">
+        Approved?
+      </text>
+      </g>
+      <g class="fc-node" data-id="prod" style="cursor:pointer">
+        
+    <rect x="1256" y="240" width="156" height="56" rx="10" ry="10"
+          fill="#1a237e" stroke="#3f51b5" stroke-width="2"/>
+    <text x="1334" y="268" dominant-baseline="middle" text-anchor="middle"
+          fill="#c5cae9" font-size="13" font-weight="500"
+          font-family="'Segoe UI', system-ui, sans-serif">
+      Deploy Prod
+    </text>
+      </g>
+      <g class="fc-node" data-id="done" style="cursor:pointer">
+        
+    <rect x="1452" y="240" width="156" height="56" rx="28" ry="28"
+          fill="#3949ab" stroke="#5c6bc0" stroke-width="2"/>
+    <text x="1530" y="268" dominant-baseline="middle" text-anchor="middle"
+          fill="#fff" font-size="13" font-weight="700"
+          font-family="'Segoe UI', system-ui, sans-serif">
+      Live 🚀
+    </text>
+      </g>
+</svg>
+</div>
+
+<div id="fc-tooltip"></div>
+
+<div class="fc-footer">
+  <span>8 nodes · 9 edges · Horizontal Flowchart</span>
+  <span>Generated by MCP Flowchart Server</span>
+</div>
+
+<script>
+(function() {
+  const svg = document.getElementById("fc-svg");
+  const tooltip = document.getElementById("fc-tooltip");
+  let scale = 1;
+
+  const nodeData = {"commit":{"id":"commit","label":"Commit","type":"terminal"},"build":{"id":"build","label":"Build","type":"process"},"test":{"id":"test","label":"Run Tests","type":"process"},"gate":{"id":"gate","label":"Quality Gate?","type":"decision"},"stage":{"id":"stage","label":"Deploy Staging","type":"process"},"approve":{"id":"approve","label":"Approved?","type":"decision"},"prod":{"id":"prod","label":"Deploy Prod","type":"process"},"done":{"id":"done","label":"Live 🚀","type":"terminal"}};
+
+  // ── Zoom ──
+  function applyScale() {
+    svg.style.transform = "scale(" + scale + ")";
+    svg.style.transformOrigin = "top center";
+  }
+  window.zoomIn  = () => { scale = Math.min(scale + 0.15, 3); applyScale(); };
+  window.zoomOut = () => { scale = Math.max(scale - 0.15, 0.3); applyScale(); };
+  window.resetZoom = () => { scale = 1; applyScale(); };
+
+  svg.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    e.deltaY < 0 ? zoomIn() : zoomOut();
+  }, { passive: false });
+
+  // ── Tooltips ──
+  document.querySelectorAll(".fc-node").forEach(el => {
+    el.addEventListener("mouseenter", (e) => {
+      const id = el.dataset.id;
+      const n = nodeData[id];
+      if (!n) return;
+      tooltip.style.display = "block";
+      tooltip.innerHTML = "<strong>" + (n.label || id) + "</strong><br><span style='opacity:0.7'>" + (n.type || "node") + (n.description ? " · " + n.description : "") + "</span>";
+    });
+    el.addEventListener("mousemove", (e) => {
+      tooltip.style.left = (e.clientX + 14) + "px";
+      tooltip.style.top  = (e.clientY + 14) + "px";
+    });
+    el.addEventListener("mouseleave", () => { tooltip.style.display = "none"; });
+  });
+
+  // ── Export SVG ──
+  window.exportSVG = () => {
+    svg.classList.add("fc-exporting");
+    setTimeout(() => svg.classList.remove("fc-exporting"), 400);
+    const src = svg.outerHTML;
+    const blob = new Blob([src], { type: "image/svg+xml" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "ci/cd_pipeline.svg";
+    a.click();
+  };
+
+  // ── Export PNG ──
+  window.exportPNG = () => {
+    svg.classList.add("fc-exporting");
+    const src = new XMLSerializer().serializeToString(svg);
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = svg.viewBox.baseVal.width;
+      canvas.height = svg.viewBox.baseVal.height;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0);
+      const a = document.createElement("a");
+      a.href = canvas.toDataURL("image/png");
+      a.download = "ci/cd_pipeline.png";
+      a.click();
+      svg.classList.remove("fc-exporting");
+    };
+    img.src = "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(src)));
+  };
+})();
+</script>
+</body>
+</html>

@@ -1266,10 +1266,26 @@ document.addEventListener('DOMContentLoaded', async () => {
             : `http://${cleanedHost}:${port}/`;
     };
 
+    const resolveLlamaStatusUrl = (status = {}) => {
+        const cfg = status?.config || {};
+        const candidates = [
+            cfg.url,
+            cfg.publicUrl,
+            cfg.localUrl,
+            cfg.launchHost && cfg.port ? `http://${cfg.launchHost}:${cfg.port}` : '',
+            status?.host && status?.port ? `http://${status.host}:${status.port}` : ''
+        ].map((value) => String(value || '').trim()).filter(Boolean);
+        return candidates[0] || '';
+    };
+
     const getAiChatTargetUrl = async () => {
         try {
             const statusRes = await window.browserAPI?.servers?.getStatus?.('llama');
-            if (statusRes?.success && statusRes.status?.running) return getLlamaServerUrl();
+            if (statusRes?.success && statusRes.status?.running) {
+                const resolved = resolveLlamaStatusUrl(statusRes.status);
+                if (resolved) return resolved;
+                return getLlamaServerUrl();
+            }
         } catch (error) {
             console.warn('[AI Chat] Local AI status check failed:', error?.message || error);
         }

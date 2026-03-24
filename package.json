@@ -66,8 +66,8 @@
     "globals": "^15.14.0"
   },
   "build": {
-    "appId": "com.omx.browser",
-    "productName": "Om-X.browser",
+    "appId": "com.omx",
+    "productName": "Om-X",
     "protocols": [
       {
         "name": "HTTP Protocol",

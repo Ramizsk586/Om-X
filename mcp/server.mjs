@@ -6,6 +6,7 @@ import { z } from "zod";
 import { pathToFileURL } from "url";
 import { wikiSearch, wikiPage } from "../tools/wiki/mcp-wiki.mjs";
 import { ddgWebSearch, ddgImageSearch, ddgVideoSearch } from "../tools/ddg/mcp-ddg.mjs";
+import { buildFlowchartTools } from "../tools/diagram/flowchart-server.mjs";
 
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 3000;
@@ -15,7 +16,8 @@ const DEFAULT_ENABLED_TOOLS = Object.freeze({
   webSearch: true,
   duckduckgo: true,
   tavily: true,
-  news: true
+  news: true,
+  diagram: true
 });
 
 let activeHttpServer = null;
@@ -42,7 +44,8 @@ function normalizeEnabledTools(enabledTools = {}) {
     webSearch: enabledTools.webSearch !== false,
     duckduckgo: enabledTools.duckduckgo !== false,
     tavily: enabledTools.tavily !== false,
-    news: enabledTools.news !== false
+    news: enabledTools.news !== false,
+    diagram: enabledTools.diagram !== false
   };
 }
 
@@ -443,6 +446,10 @@ function buildServer() {
       },
       async (args) => sources(args)
     );
+  }
+
+  if (enabledTools.diagram) {
+    buildFlowchartTools(server);
   }
 
   return server;

@@ -1295,7 +1295,8 @@ class UnifiedMcpServerRenderer {
             webSearch: true,
             duckduckgo: true,
             tavily: true,
-            news: true
+            news: true,
+            diagram: true
         };
     }
 
@@ -1343,7 +1344,8 @@ class UnifiedMcpServerRenderer {
             ['mcp-tool-web-search', 'webSearch'],
             ['mcp-tool-ddg', 'duckduckgo'],
             ['mcp-tool-tavily', 'tavily'],
-            ['mcp-tool-news', 'news']
+            ['mcp-tool-news', 'news'],
+            ['mcp-tool-diagram', 'diagram']
         ].forEach(([id, key]) => {
             const input = document.getElementById(id);
             input?.addEventListener('change', () => {
@@ -1393,7 +1395,8 @@ class UnifiedMcpServerRenderer {
             'mcp-tool-web-search': 'webSearch',
             'mcp-tool-ddg': 'duckduckgo',
             'mcp-tool-tavily': 'tavily',
-            'mcp-tool-news': 'news'
+            'mcp-tool-news': 'news',
+            'mcp-tool-diagram': 'diagram'
         };
         Object.entries(toolInputMap).forEach(([id, key]) => {
             const input = document.getElementById(id);

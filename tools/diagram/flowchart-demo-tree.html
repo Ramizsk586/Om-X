@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Software Architecture</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #f5f6fa;
+      color: #1a1d2e;
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Header ── */
+    .fc-header {
+      padding: 28px 40px 20px;
+      border-bottom: 1px solid #e0e3f0;
+      background: #ffffff;
+      display: flex;
+      align-items: flex-start;
+      gap: 16px;
+    }
+    .fc-badge {
+      background: #e3f2fd;
+      border: 1px solid #1565c0;
+      color: #0d47a1;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      padding: 4px 10px;
+      border-radius: 20px;
+      white-space: nowrap;
+      margin-top: 4px;
+    }
+    .fc-title { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; }
+    .fc-subtitle { color: #5c6070; font-size: 14px; margin-top: 4px; }
+
+    /* ── Toolbar ── */
+    .fc-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 40px;
+      background: #ffffff;
+      border-bottom: 1px solid #e0e3f0;
+    }
+    .fc-btn {
+      background: transparent;
+      border: 1px solid #e0e3f0;
+      color: #5c6070;
+      border-radius: 8px;
+      padding: 6px 14px;
+      font-size: 13px;
+      cursor: pointer;
+      transition: all 0.15s;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .fc-btn:hover { background: #e0e3f0; color: #1a1d2e; }
+    .fc-separator { width: 1px; height: 24px; background: #e0e3f0; margin: 0 4px; }
+    .fc-legend { margin-left: auto; display: flex; align-items: center; flex-wrap: wrap; }
+
+    /* ── Canvas ── */
+    .fc-canvas {
+      flex: 1;
+      overflow: auto;
+      position: relative;
+      padding: 20px;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+    }
+    #fc-svg {
+      cursor: grab;
+      user-select: none;
+      transition: filter 0.2s;
+      border-radius: 12px;
+      max-width: 100%;
+      height: auto;
+    }
+    #fc-svg:active { cursor: grabbing; }
+
+    /* ── Node hover ── */
+    .fc-node { transition: opacity 0.15s; }
+    .fc-node:hover { opacity: 0.85; filter: brightness(1.15); }
+
+    /* ── Tooltip ── */
+    #fc-tooltip {
+      position: fixed;
+      background: #ffffff;
+      border: 1px solid #e0e3f0;
+      color: #1a1d2e;
+      padding: 8px 14px;
+      border-radius: 8px;
+      font-size: 12px;
+      pointer-events: none;
+      display: none;
+      z-index: 9999;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+    }
+
+    /* ── Footer ── */
+    .fc-footer {
+      padding: 10px 40px;
+      border-top: 1px solid #e0e3f0;
+      background: #ffffff;
+      font-size: 12px;
+      color: #5c6070;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    /* ── Export animation ── */
+    @keyframes fc-flash {
+      0%,100% { filter: none; }
+      50%      { filter: brightness(1.6); }
+    }
+    .fc-exporting { animation: fc-flash 0.4s ease; }
+
+    /* ── Scrollbar ── */
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: #f5f6fa; }
+    ::-webkit-scrollbar-thumb { background: #e0e3f0; border-radius: 4px; }
+  </style>
+</head>
+<body>
+
+<div class="fc-header">
+  <span class="fc-badge">Tree Diagram</span>
+  <div>
+    <div class="fc-title">Software Architecture</div>
+    <div class="fc-subtitle">High-level system components</div>
+  </div>
+</div>
+
+<div class="fc-toolbar">
+  <button class="fc-btn" onclick="zoomIn()">＋ Zoom In</button>
+  <button class="fc-btn" onclick="zoomOut()">－ Zoom Out</button>
+  <button class="fc-btn" onclick="resetZoom()">↺ Reset</button>
+  <div class="fc-separator"></div>
+  <button class="fc-btn" onclick="exportSVG()">⬇ Export SVG</button>
+  <button class="fc-btn" onclick="exportPNG()">⬇ Export PNG</button>
+  <div class="fc-legend"><span style="display:inline-flex;align-items:center;gap:6px;margin-right:16px;">
+      <span style="width:14px;height:14px;border-radius:3px;background:#e3f2fd;border:1.5px solid #1565c0;display:inline-block;"></span>
+      <span style="color:#5c6070;font-size:12px;">Terminal (Start/End)</span>
+    </span><span style="display:inline-flex;align-items:center;gap:6px;margin-right:16px;">
+      <span style="width:14px;height:14px;border-radius:3px;background:#fff8e1;border:1.5px solid #f9a825;display:inline-block;"></span>
+      <span style="color:#5c6070;font-size:12px;">Process</span>
+    </span><span style="display:inline-flex;align-items:center;gap:6px;margin-right:16px;">
+      <span style="width:14px;height:14px;border-radius:3px;background:#fce4ec;border:1.5px solid #c62828;display:inline-block;"></span>
+      <span style="color:#5c6070;font-size:12px;">Decision</span>
+    </span><span style="display:inline-flex;align-items:center;gap:6px;margin-right:16px;">
+      <span style="width:14px;height:14px;border-radius:3px;background:#e8f5e9;border:1.5px solid #2e7d32;display:inline-block;"></span>
+      <span style="color:#5c6070;font-size:12px;">Input / Output</span>
+    </span></div>
+</div>
+
+<div class="fc-canvas" id="fc-canvas">
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 740"
+     width="900" height="740" id="fc-svg">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#5c6bc0"/>
+    </marker>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M 40 0 L 0 0 0 40" fill="none" stroke="rgba(0,0,0,0.04)" stroke-width="1"/>
+    </pattern>
+  </defs>
+  <rect width="100%" height="100%" fill="#f5f6fa"/>
+  <rect width="100%" height="100%" fill="url(#grid)"/>
+  
+      <path d="M 450 116 C 450 156, 180 156, 180 196" fill="none" stroke="#5c6bc0" stroke-width="2"
+            stroke-linecap="round" marker-end="url(#arrow)" opacity="0.85"/>
+      <path d="M 450 116 C 450 156, 630 156, 630 196" fill="none" stroke="#5c6bc0" stroke-width="2"
+            stroke-linecap="round" marker-end="url(#arrow)" opacity="0.85"/>
+      <path d="M 180 252 C 180 292, 90 292, 90 332" fill="none" stroke="#5c6bc0" stroke-width="2"
+            stroke-linecap="round" marker-end="url(#arrow)" opacity="0.85"/>
+      <path d="M 180 252 C 180 292, 270 292, 270 332" fill="none" stroke="#5c6bc0" stroke-width="2"
+            stroke-linecap="round" marker-end="url(#arrow)" opacity="0.85"/>
+      <path d="M 630 252 C 630 292, 450 292, 450 332" fill="none" stroke="#5c6bc0" stroke-width="2"
+            stroke-linecap="round" marker-end="url(#arrow)" opacity="0.85"/>
+      <path d="M 630 252 C 630 292, 630 292, 630 332" fill="none" stroke="#5c6bc0" stroke-width="2"
+            stroke-linecap="round" marker-end="url(#arrow)" opacity="0.85"/>
+      <path d="M 630 252 C 630 292, 810 292, 810 332" fill="none" stroke="#5c6bc0" stroke-width="2"
+            stroke-linecap="round" marker-end="url(#arrow)" opacity="0.85"/>
+  
+      <g class="fc-node" data-id="app" style="cursor:pointer">
+        
+    <rect x="370" y="60" width="160" height="56" rx="28" ry="28"
+          fill="#e3f2fd" stroke="#1565c0" stroke-width="2"/>
+    <text x="450" y="88" dominant-baseline="middle" text-anchor="middle"
+          fill="#0d47a1" font-size="13" font-weight="700"
+          font-family="'Segoe UI', system-ui, sans-serif">
+      Application
+    </text>
+      </g>
+      <g class="fc-node" data-id="fe" style="cursor:pointer">
+        
+    <rect x="100" y="196" width="160" height="56" rx="10" ry="10"
+          fill="#fff8e1" stroke="#f9a825" stroke-width="2"/>
+    <text x="180" y="224" dominant-baseline="middle" text-anchor="middle"
+          fill="#5d4037" font-size="13" font-weight="500"
+          font-family="'Segoe UI', system-ui, sans-serif">
+      Frontend
+    </text>
+      </g>
+      <g class="fc-node" data-id="be" style="cursor:pointer">
+        
+    <rect x="550" y="196" width="160" height="56" rx="10" ry="10"
+          fill="#fff8e1" stroke="#f9a825" stroke-width="2"/>
+    <text x="630" y="224" dominant-baseline="middle" text-anchor="middle"
+          fill="#5d4037" font-size="13" font-weight="500"
+          font-family="'Segoe UI', system-ui, sans-serif">
+      Backend
+    </text>
+      </g>
+      <g class="fc-node" data-id="react" style="cursor:pointer">
+        
+    <rect x="10" y="332" width="160" height="56" rx="10" ry="10"
+          fill="#ffffff" stroke="#5c6bc0" stroke-width="2"/>
+    <text x="90" y="360" dominant-baseline="middle" text-anchor="middle"
+          fill="#283593" font-size="13" font-weight="500"
+          font-family="'Segoe UI', system-ui, sans-serif">
+      React
+    </text>
+      </g>
+      <g class="fc-node" data-id="redux" style="cursor:pointer">
+        
+    <rect x="190" y="332" width="160" height="56" rx="10" ry="10"
+          fill="#ffffff" stroke="#5c6bc0" stroke-width="2"/>
+    <text x="270" y="360" dominant-baseline="middle" text-anchor="middle"
+          fill="#283593" font-size="13" font-weight="500"
+          font-family="'Segoe UI', system-ui, sans-serif">
+      Redux
+    </text>
+      </g>
+      <g class="fc-node" data-id="api" style="cursor:pointer">
+        
+    <rect x="370" y="332" width="160" height="56" rx="10" ry="10"
+          fill="#fff8e1" stroke="#f9a825" stroke-width="2"/>
+    <text x="450" y="360" dominant-baseline="middle" text-anchor="middle"
+          fill="#5d4037" font-size="13" font-weight="500"
+          font-family="'Segoe UI', system-ui, sans-serif">
+      REST API
+    </text>
+      </g>
+      <g class="fc-node" data-id="db" style="cursor:pointer">
+        
+      <polygon points="564,332 710,332 696,388 550,388" fill="#e8f5e9" stroke="#2e7d32" stroke-width="2"/>
+      <text x="630" y="360" dominant-baseline="middle" text-anchor="middle"
+            fill="#1b5e20" font-size="13" font-family="'Segoe UI', system-ui, sans-serif">
+        Database
+      </text>
+      </g>
+      <g class="fc-node" data-id="cache" style="cursor:pointer">
+        
+      <polygon points="744,332 890,332 876,388 730,388" fill="#e8f5e9" stroke="#2e7d32" stroke-width="2"/>
+      <text x="810" y="360" dominant-baseline="middle" text-anchor="middle"
+            fill="#1b5e20" font-size="13" font-family="'Segoe UI', system-ui, sans-serif">
+        Cache
+      </text>
+      </g>
+</svg>
+</div>
+
+<div id="fc-tooltip"></div>
+
+<div class="fc-footer">
+  <span>8 nodes · 7 edges · Tree Diagram</span>
+  <span>Generated by MCP Flowchart Server</span>
+</div>
+
+<script>
+(function() {
+  const svg = document.getElementById("fc-svg");
+  const tooltip = document.getElementById("fc-tooltip");
+  let scale = 1;
+
+  const nodeData = {"app":{"id":"app","label":"Application","type":"terminal"},"fe":{"id":"fe","label":"Frontend","type":"process"},"be":{"id":"be","label":"Backend","type":"process"},"react":{"id":"react","label":"React","type":"default"},"redux":{"id":"redux","label":"Redux","type":"default"},"api":{"id":"api","label":"REST API","type":"process"},"db":{"id":"db","label":"Database","type":"io"},"cache":{"id":"cache","label":"Cache","type":"io"}};
+
+  // ── Zoom ──
+  function applyScale() {
+    svg.style.transform = "scale(" + scale + ")";
+    svg.style.transformOrigin = "top center";
+  }
+  window.zoomIn  = () => { scale = Math.min(scale + 0.15, 3); applyScale(); };
+  window.zoomOut = () => { scale = Math.max(scale - 0.15, 0.3); applyScale(); };
+  window.resetZoom = () => { scale = 1; applyScale(); };
+
+  svg.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    e.deltaY < 0 ? zoomIn() : zoomOut();
+  }, { passive: false });
+
+  // ── Tooltips ──
+  document.querySelectorAll(".fc-node").forEach(el => {
+    el.addEventListener("mouseenter", (e) => {
+      const id = el.dataset.id;
+      const n = nodeData[id];
+      if (!n) return;
+      tooltip.style.display = "block";
+      tooltip.innerHTML = "<strong>" + (n.label || id) + "</strong><br><span style='opacity:0.7'>" + (n.type || "node") + (n.description ? " · " + n.description : "") + "</span>";
+    });
+    el.addEventListener("mousemove", (e) => {
+      tooltip.style.left = (e.clientX + 14) + "px";
+      tooltip.style.top  = (e.clientY + 14) + "px";
+    });
+    el.addEventListener("mouseleave", () => { tooltip.style.display = "none"; });
+  });
+
+  // ── Export SVG ──
+  window.exportSVG = () => {
+    svg.classList.add("fc-exporting");
+    setTimeout(() => svg.classList.remove("fc-exporting"), 400);
+    const src = svg.outerHTML;
+    const blob = new Blob([src], { type: "image/svg+xml" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "software_architecture.svg";
+    a.click();
+  };
+
+  // ── Export PNG ──
+  window.exportPNG = () => {
+    svg.classList.add("fc-exporting");
+    const src = new XMLSerializer().serializeToString(svg);
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = svg.viewBox.baseVal.width;
+      canvas.height = svg.viewBox.baseVal.height;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0);
+      const a = document.createElement("a");
+      a.href = canvas.toDataURL("image/png");
+      a.download = "software_architecture.png";
+      a.click();
+      svg.classList.remove("fc-exporting");
+    };
+    img.src = "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(src)));
+  };
+})();
+</script>
+</body>
+</html>

@@ -1888,7 +1888,7 @@ async function shutdownManagedServers() {
   }
 }
 // Temporary debugging aid for main window only.
-const TEMP_MAIN_AUTO_OPEN_DEVTOOLS = true;
+const TEMP_MAIN_AUTO_OPEN_DEVTOOLS = false;
 const trustedFolders = new Set();  // Track user-selected trusted folders
 
 function getEventBrowserWindow(event) {
@@ -2094,6 +2094,8 @@ function resolveWindowIcon(...baseNames) {
   }
   return HAS_ICON ? DISPLAY_ICON : undefined;
 }
+
+const WINDOW_ICON = resolveWindowIcon('app');
 
 const MINECRAFT_WINDOW_ICON = (() => {
   const minecraftIconPath = ['ico', 'png', 'icns']
@@ -3176,7 +3178,8 @@ ipcMain.handle('mcp:start-server', async (_event, config = {}) => {
     webSearch: config?.enabledTools?.webSearch !== false,
     duckduckgo: config?.enabledTools?.duckduckgo !== false,
     tavily: config?.enabledTools?.tavily !== false,
-    news: config?.enabledTools?.news !== false
+    news: config?.enabledTools?.news !== false,
+    diagram: config?.enabledTools?.diagram !== false
   };
   if (!Object.values(enabledTools).some(Boolean)) {
     return { success: false, error: 'Enable at least one MCP tool before starting the server.' };
@@ -4884,7 +4887,7 @@ function createMainWindow() {
     frame: false, 
     titleBarStyle: 'hidden', 
     show: false,
-    icon: HAS_ICON ? DISPLAY_ICON : undefined,
+    icon: WINDOW_ICON,
     backgroundColor: '#18181b',
     webPreferences: { 
       preload: path.join(__dirname, '../preload.js'), 
@@ -5170,7 +5173,7 @@ function createPreviewWindow(url) {
     }
     previewWindow = new BrowserWindow({
         width: 860, height: 640, frame: false, transparent: true, alwaysToTop: true, parent: mainWindow, show: false,
-        icon: HAS_ICON ? DISPLAY_ICON : undefined,
+        icon: WINDOW_ICON,
         webPreferences: { preload: path.join(__dirname, '../preload.js'), webviewTag: true, contextIsolation: true, nodeIntegration: false, webSecurity: true, sandbox: true, devTools: false }
     });
     const theme = cachedSettings.theme || 'noir';
@@ -5424,6 +5427,7 @@ ipcMain.handle('electron-game:launch', async (event, gameConfig) => {
             title: windowConfig.title || name,
             resizable: windowConfig.resizable !== false,
             backgroundColor: windowConfig.backgroundColor || '#1a1a2e',
+            icon: WINDOW_ICON,
             webPreferences: {
                 preload: fullPreloadPath || undefined,
                 contextIsolation: true,

@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>User Login Flow</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #0f1117;
+      color: #e8eaf6;
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Header ── */
+    .fc-header {
+      padding: 28px 40px 20px;
+      border-bottom: 1px solid #2d3154;
+      background: #1a1d2e;
+      display: flex;
+      align-items: flex-start;
+      gap: 16px;
+    }
+    .fc-badge {
+      background: #3949ab;
+      border: 1px solid #5c6bc0;
+      color: #fff;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      padding: 4px 10px;
+      border-radius: 20px;
+      white-space: nowrap;
+      margin-top: 4px;
+    }
+    .fc-title { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; }
+    .fc-subtitle { color: #9fa8da; font-size: 14px; margin-top: 4px; }
+
+    /* ── Toolbar ── */
+    .fc-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 40px;
+      background: #1a1d2e;
+      border-bottom: 1px solid #2d3154;
+    }
+    .fc-btn {
+      background: transparent;
+      border: 1px solid #2d3154;
+      color: #9fa8da;
+      border-radius: 8px;
+      padding: 6px 14px;
+      font-size: 13px;
+      cursor: pointer;
+      transition: all 0.15s;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .fc-btn:hover { background: #2d3154; color: #e8eaf6; }
+    .fc-separator { width: 1px; height: 24px; background: #2d3154; margin: 0 4px; }
+    .fc-legend { margin-left: auto; display: flex; align-items: center; flex-wrap: wrap; }
+
+    /* ── Canvas ── */
+    .fc-canvas {
+      flex: 1;
+      overflow: auto;
+      position: relative;
+      padding: 20px;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+    }
+    #fc-svg {
+      cursor: grab;
+      user-select: none;
+      transition: filter 0.2s;
+      border-radius: 12px;
+      max-width: 100%;
+      height: auto;
+    }
+    #fc-svg:active { cursor: grabbing; }
+
+    /* ── Node hover ── */
+    .fc-node { transition: opacity 0.15s; }
+    .fc-node:hover { opacity: 0.85; filter: brightness(1.15); }
+
+    /* ── Tooltip ── */
+    #fc-tooltip {
+      position: fixed;
+      background: #1a1d2e;
+      border: 1px solid #2d3154;
+      color: #e8eaf6;
+      padding: 8px 14px;
+      border-radius: 8px;
+      font-size: 12px;
+      pointer-events: none;
+      display: none;
+      z-index: 9999;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+    }
+
+    /* ── Footer ── */
+    .fc-footer {
+      padding: 10px 40px;
+      border-top: 1px solid #2d3154;
+      background: #1a1d2e;
+      font-size: 12px;
+      color: #9fa8da;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    /* ── Export animation ── */
+    @keyframes fc-flash {
+      0%,100% { filter: none; }
+      50%      { filter: brightness(1.6); }
+    }
+    .fc-exporting { animation: fc-flash 0.4s ease; }
+
+    /* ── Scrollbar ── */
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: #0f1117; }
+    ::-webkit-scrollbar-thumb { background: #2d3154; border-radius: 4px; }
+  </style>
+</head>
+<body>
+
+<div class="fc-header">
+  <span class="fc-badge">Vertical Flowchart</span>
+  <div>
+    <div class="fc-title">User Login Flow</div>
+    <div class="fc-subtitle">Authentication &amp; session creation</div>
+  </div>
+</div>
+
+<div class="fc-toolbar">
+  <button class="fc-btn" onclick="zoomIn()">＋ Zoom In</button>
+  <button class="fc-btn" onclick="zoomOut()">－ Zoom Out</button>
+  <button class="fc-btn" onclick="resetZoom()">↺ Reset</button>
+  <div class="fc-separator"></div>
+  <button class="fc-btn" onclick="exportSVG()">⬇ Export SVG</button>
+  <button class="fc-btn" onclick="exportPNG()">⬇ Export PNG</button>
+  <div class="fc-legend"><span style="display:inline-flex;align-items:center;gap:6px;margin-right:16px;">
+      <span style="width:14px;height:14px;border-radius:3px;background:#3949ab;border:1.5px solid #5c6bc0;display:inline-block;"></span>
+      <span style="color:#9fa8da;font-size:12px;">Terminal (Start/End)</span>
+    </span><span style="display:inline-flex;align-items:center;gap:6px;margin-right:16px;">
+      <span style="width:14px;height:14px;border-radius:3px;background:#1a237e;border:1.5px solid #3f51b5;display:inline-block;"></span>
+      <span style="color:#9fa8da;font-size:12px;">Process</span>
+    </span><span style="display:inline-flex;align-items:center;gap:6px;margin-right:16px;">
+      <span style="width:14px;height:14px;border-radius:3px;background:#4a148c;border:1.5px solid #9c27b0;display:inline-block;"></span>
+      <span style="color:#9fa8da;font-size:12px;">Decision</span>
+    </span><span style="display:inline-flex;align-items:center;gap:6px;margin-right:16px;">
+      <span style="width:14px;height:14px;border-radius:3px;background:#004d40;border:1.5px solid #009688;display:inline-block;"></span>
+      <span style="color:#9fa8da;font-size:12px;">Input / Output</span>
+    </span></div>
+</div>
+
+<div class="fc-canvas" id="fc-canvas">
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 800"
+     width="900" height="800" id="fc-svg">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#3d5afe"/>
+    </marker>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M 40 0 L 0 0 0 40" fill="none" stroke="rgba(255,255,255,0.03)" stroke-width="1"/>
+    </pattern>
+  </defs>
+  <rect width="100%" height="100%" fill="#0f1117"/>
+  <rect width="100%" height="100%" fill="url(#grid)"/>
+  
+      <path d="M 450 136 C 450 181, 450 181, 450 226" fill="none" stroke="#3d5afe" stroke-width="2"
+            stroke-linecap="round" marker-end="url(#arrow)" opacity="0.85"/>
+      <path d="M 450 282 C 450 327, 450 327, 450 372" fill="none" stroke="#3d5afe" stroke-width="2"
+            stroke-linecap="round" marker-end="url(#arrow)" opacity="0.85"/>
+      <path d="M 450 428 C 450 473, 270 473, 270 518" fill="none" stroke="#3d5afe" stroke-width="2"
+            stroke-linecap="round" marker-end="url(#arrow)" opacity="0.85"/>
+        <rect x="338" y="462" width="44" height="22" rx="4"
+              fill="#1a1d2e" opacity="0.9"/>
+        <text x="360" y="473" dominant-baseline="middle" text-anchor="middle"
+              fill="#9fa8da" font-size="11" font-family="'Segoe UI', system-ui, sans-serif">
+          Yes
+        </text>
+      <path d="M 450 428 C 450 473, 630 473, 630 518" fill="none" stroke="#3d5afe" stroke-width="2"
+            stroke-linecap="round" marker-end="url(#arrow)" opacity="0.85"/>
+        <rect x="518" y="462" width="44" height="22" rx="4"
+              fill="#1a1d2e" opacity="0.9"/>
+        <text x="540" y="473" dominant-baseline="middle" text-anchor="middle"
+              fill="#9fa8da" font-size="11" font-family="'Segoe UI', system-ui, sans-serif">
+          No
+        </text>
+      <path d="M 270 574 C 270 619, 450 619, 450 664" fill="none" stroke="#3d5afe" stroke-width="2"
+            stroke-linecap="round" marker-end="url(#arrow)" opacity="0.85"/>
+      <path d="M 630 574 C 710 574, 710 226, 450 226" fill="none" stroke="#3d5afe" stroke-width="2"
+            stroke-linecap="round" marker-end="url(#arrow)" opacity="0.85"/>
+  
+      <g class="fc-node" data-id="s" style="cursor:pointer">
+        
+    <rect x="370" y="80" width="160" height="56" rx="28" ry="28"
+          fill="#3949ab" stroke="#5c6bc0" stroke-width="2"/>
+    <text x="450" y="108" dominant-baseline="middle" text-anchor="middle"
+          fill="#fff" font-size="13" font-weight="700"
+          font-family="'Segoe UI', system-ui, sans-serif">
+      Start
+    </text>
+      </g>
+      <g class="fc-node" data-id="i" style="cursor:pointer">
+        
+      <polygon points="384,226 530,226 516,282 370,282" fill="#004d40" stroke="#009688" stroke-width="2"/>
+      <text x="450" y="254" dominant-baseline="middle" text-anchor="middle"
+            fill="#b2dfdb" font-size="13" font-family="'Segoe UI', system-ui, sans-serif">
+        Enter Credentials
+      </text>
+      </g>
+      <g class="fc-node" data-id="v" style="cursor:pointer">
+        
+      <polygon points="450,372 530,400 450,428 370,400" fill="#4a148c" stroke="#9c27b0" stroke-width="2"/>
+      <text x="450" y="400" dominant-baseline="middle" text-anchor="middle"
+            fill="#e1bee7" font-size="13" font-weight="600"
+            font-family="'Segoe UI', system-ui, sans-serif">
+        Valid?
+      </text>
+      </g>
+      <g class="fc-node" data-id="sess" style="cursor:pointer">
+        
+    <rect x="190" y="518" width="160" height="56" rx="10" ry="10"
+          fill="#1a237e" stroke="#3f51b5" stroke-width="2"/>
+    <text x="270" y="546" dominant-baseline="middle" text-anchor="middle"
+          fill="#c5cae9" font-size="13" font-weight="500"
+          font-family="'Segoe UI', system-ui, sans-serif">
+      Create Session
+    </text>
+      </g>
+      <g class="fc-node" data-id="err" style="cursor:pointer">
+        
+    <rect x="550" y="518" width="160" height="56" rx="10" ry="10"
+          fill="#1a237e" stroke="#3f51b5" stroke-width="2"/>
+    <text x="630" y="546" dominant-baseline="middle" text-anchor="middle"
+          fill="#c5cae9" font-size="13" font-weight="500"
+          font-family="'Segoe UI', system-ui, sans-serif">
+      Show Error
+    </text>
+      </g>
+      <g class="fc-node" data-id="e" style="cursor:pointer">
+        
+    <rect x="370" y="664" width="160" height="56" rx="28" ry="28"
+          fill="#3949ab" stroke="#5c6bc0" stroke-width="2"/>
+    <text x="450" y="692" dominant-baseline="middle" text-anchor="middle"
+          fill="#fff" font-size="13" font-weight="700"
+          font-family="'Segoe UI', system-ui, sans-serif">
+      End
+    </text>
+      </g>
+</svg>
+</div>
+
+<div id="fc-tooltip"></div>
+
+<div class="fc-footer">
+  <span>6 nodes · 6 edges · Vertical Flowchart</span>
+  <span>Generated by MCP Flowchart Server</span>
+</div>
+
+<script>
+(function() {
+  const svg = document.getElementById("fc-svg");
+  const tooltip = document.getElementById("fc-tooltip");
+  let scale = 1;
+
+  const nodeData = {"s":{"id":"s","label":"Start","type":"terminal"},"i":{"id":"i","label":"Enter Credentials","type":"io"},"v":{"id":"v","label":"Valid?","type":"decision"},"sess":{"id":"sess","label":"Create Session","type":"process"},"err":{"id":"err","label":"Show Error","type":"process"},"e":{"id":"e","label":"End","type":"terminal"}};
+
+  // ── Zoom ──
+  function applyScale() {
+    svg.style.transform = "scale(" + scale + ")";
+    svg.style.transformOrigin = "top center";
+  }
+  window.zoomIn  = () => { scale = Math.min(scale + 0.15, 3); applyScale(); };
+  window.zoomOut = () => { scale = Math.max(scale - 0.15, 0.3); applyScale(); };
+  window.resetZoom = () => { scale = 1; applyScale(); };
+
+  svg.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    e.deltaY < 0 ? zoomIn() : zoomOut();
+  }, { passive: false });
+
+  // ── Tooltips ──
+  document.querySelectorAll(".fc-node").forEach(el => {
+    el.addEventListener("mouseenter", (e) => {
+      const id = el.dataset.id;
+      const n = nodeData[id];
+      if (!n) return;
+      tooltip.style.display = "block";
+      tooltip.innerHTML = "<strong>" + (n.label || id) + "</strong><br><span style='opacity:0.7'>" + (n.type || "node") + (n.description ? " · " + n.description : "") + "</span>";
+    });
+    el.addEventListener("mousemove", (e) => {
+      tooltip.style.left = (e.clientX + 14) + "px";
+      tooltip.style.top  = (e.clientY + 14) + "px";
+    });
+    el.addEventListener("mouseleave", () => { tooltip.style.display = "none"; });
+  });
+
+  // ── Export SVG ──
+  window.exportSVG = () => {
+    svg.classList.add("fc-exporting");
+    setTimeout(() => svg.classList.remove("fc-exporting"), 400);
+    const src = svg.outerHTML;
+    const blob = new Blob([src], { type: "image/svg+xml" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "user_login_flow.svg";
+    a.click();
+  };
+
+  // ── Export PNG ──
+  window.exportPNG = () => {
+    svg.classList.add("fc-exporting");
+    const src = new XMLSerializer().serializeToString(svg);
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = svg.viewBox.baseVal.width;
+      canvas.height = svg.viewBox.baseVal.height;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0);
+      const a = document.createElement("a");
+      a.href = canvas.toDataURL("image/png");
+      a.download = "user_login_flow.png";
+      a.click();
+      svg.classList.remove("fc-exporting");
+    };
+    img.src = "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(src)));
+  };
+})();
+</script>
+</body>
+</html>
