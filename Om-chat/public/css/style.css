@@ -563,6 +563,45 @@ mark {
   min-height: var(--header-h);
   padding: 0 12px;
   border-bottom: 1px solid var(--border-subtle);
+  overflow: hidden;
+  background: var(--bg-surface);
+}
+
+.server-head.has-banner {
+  min-height: 140px;
+  align-items: flex-end;
+  padding-bottom: 10px;
+  border-bottom: none;
+}
+
+.server-sidebar-banner {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 120px;
+  background-image: var(--server-sidebar-banner, none);
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+
+.server-head.has-banner .server-sidebar-banner {
+  opacity: 1;
+}
+
+.server-sidebar-banner::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(10, 10, 12, 0.05) 0%, rgba(10, 10, 12, 0.65) 65%, rgba(10, 10, 12, 0.85) 100%);
+}
+
+.server-head > *:not(.server-sidebar-banner) {
+  position: relative;
+  z-index: 1;
 }
 
 .server-title {
@@ -906,6 +945,11 @@ mark {
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
   z-index: 30;
+}
+
+.menu-popover {
+  position: fixed;
+  z-index: 60;
 }
 
 .status-popover {
@@ -2018,6 +2062,8 @@ blockquote {
   left: 12px;
   width: 220px;
   padding: 6px;
+  max-height: min(60vh, 420px);
+  overflow: auto;
 }
 
 .popover-panel {
@@ -3349,6 +3395,12 @@ body {
 .modal-inner {
   background: var(--popup-solid-strong);
   backdrop-filter: none;
+}
+
+/* Force the server menu to float above layout */
+#server-menu {
+  position: fixed !important;
+  z-index: 120 !important;
 }
 
 /* === CHANNEL SIDEBAR TOGGLE === */

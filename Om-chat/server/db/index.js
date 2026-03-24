@@ -667,6 +667,8 @@ async function createServer({ name, icon, owner }) {
     icon: icon || '??',
     iconUrl: '',
     bannerUrl: '',
+    thumbnailUrl: '',
+    chatBackgroundUrl: '',
     ownerId: owner.id,
     createdAt
   });
@@ -1593,6 +1595,12 @@ async function updateServerAppearance(serverId, actorId, payload = {}) {
   }
   if (Object.prototype.hasOwnProperty.call(payload, 'bannerUrl')) {
     changes.bannerUrl = String(payload.bannerUrl || '');
+  }
+  if (Object.prototype.hasOwnProperty.call(payload, 'thumbnailUrl')) {
+    changes.thumbnailUrl = String(payload.thumbnailUrl || '');
+  }
+  if (Object.prototype.hasOwnProperty.call(payload, 'chatBackgroundUrl')) {
+    changes.chatBackgroundUrl = String(payload.chatBackgroundUrl || '');
   }
   if (!Object.keys(changes).length) return server;
   return serverRepo.updateServer(serverId, changes);

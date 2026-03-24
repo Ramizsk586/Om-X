@@ -4,7 +4,7 @@ const crypto = require('crypto');
 const path = require('path');
 const multer = require('multer');
 const UploadBlob = require('../models/UploadBlob.model');
-const { getModel } = require('../db/getModel');
+const { getModel, isLocalMode } = require('../db/getModel');
 
 function getUploadBlobCollection() { return getModel('uploadBlobs', UploadBlob); }
 
@@ -235,8 +235,10 @@ router.post('/upload', (req, res) => {
       const originalName = cleanText(req.file.originalname || 'Attachment', { maxLength: 120, preserveWhitespace: true }) || 'Attachment';
       const mimeType = cleanText(req.file.mimetype || 'application/octet-stream', { maxLength: 120, preserveWhitespace: true }) || 'application/octet-stream';
       const buffer = Buffer.isBuffer(req.file.buffer) ? req.file.buffer : Buffer.from([]);
+      const localUploadId = isLocalMode() ? crypto.randomBytes(12).toString('hex') : undefined;
 
       const saved = await getUploadBlobCollection().create({
+        _id: localUploadId,
         ownerUserId: String(req.session?.userId || ''),
         originalName,
         mimeType,
@@ -247,8 +249,9 @@ router.post('/upload', (req, res) => {
         dayKey: createdAt.slice(0, 10)
       });
 
+      const uploadId = saved?._id || localUploadId;
       return res.json({
-        url: `/uploads/${saved._id}`,
+        url: `/uploads/${uploadId}`,
         name: originalName,
         size: saved.size,
         type: mimeType

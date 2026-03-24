@@ -25,6 +25,8 @@ const el = {
   serverMenu: $('#server-menu'),
   serverIcon: $('#server-icon'),
   serverName: $('#server-name'),
+  serverHead: $('#server-head'),
+  serverSidebarBanner: $('#server-sidebar-banner'),
   chatPane: document.querySelector('.chat-pane'),
   chatBackground: $('#chat-background'),
   dmBadge: $('#dm-section-badge'),
@@ -83,11 +85,14 @@ const el = {
   serverAppearanceTitle: $('#server-appearance-title'),
   serverAppearanceClose: $('#server-appearance-close'),
   serverIconPreview: $('#server-icon-preview'),
-  serverBannerPreview: $('#server-banner-preview'),
   serverIconUpload: $('#server-icon-upload'),
   serverIconClear: $('#server-icon-clear'),
-  serverBannerUpload: $('#server-banner-upload'),
-  serverBannerClear: $('#server-banner-clear'),
+  serverThumbnailPreview: $('#server-thumbnail-preview'),
+  serverChatBgPreview: $('#server-chatbg-preview'),
+  serverThumbnailUpload: $('#server-thumbnail-upload'),
+  serverThumbnailClear: $('#server-thumbnail-clear'),
+  serverChatBgUpload: $('#server-chatbg-upload'),
+  serverChatBgClear: $('#server-chatbg-clear'),
   createChannelModal: $('#create-channel-modal'),
   createChannelClose: $('#create-channel-close'),
   createChannelCancel: $('#create-channel-cancel'),
@@ -119,7 +124,9 @@ const el = {
   userMicBtn: $('#user-mic-btn'),
   userDeafenBtn: $('#user-deafen-btn'),
   serverIconInput: $('#server-icon-input'),
-  serverBannerInput: $('#server-banner-input')
+  serverBannerInput: $('#server-banner-input'),
+  serverThumbnailInput: $('#server-thumbnail-input'),
+  serverChatBgInput: $('#server-chatbg-input')
 };
 
 const uiTimers = {
@@ -170,7 +177,8 @@ const state = {
     chunks: [],
     startedAt: 0,
     timerId: null
-  }
+  },
+  serverMenuPortal: null
 };
 
 const MAX_UPLOAD_SIZE_BYTES = 20 * 1024 * 1024;
@@ -1131,6 +1139,8 @@ function syncCachedServer(server) {
     icon: server.icon || getServerBadge(server),
     iconUrl: server.iconUrl || '',
     bannerUrl: server.bannerUrl || '',
+    thumbnailUrl: server.thumbnailUrl || '',
+    chatBackgroundUrl: server.chatBackgroundUrl || '',
     ownerId: server.ownerId || null
   }));
 }
@@ -1154,12 +1164,19 @@ function getServerBadge(server) {
   return String(server?.icon || server?.name || 'OX').trim().slice(0, 2).toUpperCase() || 'OX';
 }
 
-function applyServerAppearance(server) {
-  const rawIconUrl = String(server?.iconUrl || '').trim();
-  const rawBannerUrl = String(server?.bannerUrl || '').trim();
+function normalizeAssetUrl(value) {
+  const raw = String(value || '').trim();
+  if (!raw || raw === 'undefined' || raw === 'null') return '';
   const origin = window.location.origin && window.location.origin !== 'null' ? window.location.origin : '';
-  const iconUrl = rawIconUrl && rawIconUrl.startsWith('/') && origin ? origin + rawIconUrl : rawIconUrl;
-  const bannerUrl = rawBannerUrl && rawBannerUrl.startsWith('/') && origin ? origin + rawBannerUrl : rawBannerUrl;
+  if (raw.startsWith('/') && origin) return origin + raw;
+  return raw;
+}
+
+function applyServerAppearance(server) {
+  const iconUrl = normalizeAssetUrl(server?.iconUrl);
+  const legacyBanner = normalizeAssetUrl(server?.bannerUrl);
+  const thumbnailUrl = normalizeAssetUrl(server?.thumbnailUrl) || legacyBanner;
+  const chatBgUrl = normalizeAssetUrl(server?.chatBackgroundUrl) || legacyBanner;
   const badge = getServerBadge(server);
 
   if (el.serverIcon) {
@@ -1174,13 +1191,25 @@ function applyServerAppearance(server) {
     el.serverIconPreview.style.backgroundImage = iconUrl ? `url("${iconUrl}")` : '';
   }
 
-  if (el.serverBannerPreview) {
-    el.serverBannerPreview.classList.toggle('has-image', Boolean(bannerUrl));
-    el.serverBannerPreview.style.backgroundImage = bannerUrl ? `url("${bannerUrl}")` : '';
+  if (el.serverThumbnailPreview) {
+    el.serverThumbnailPreview.classList.toggle('has-image', Boolean(thumbnailUrl));
+    el.serverThumbnailPreview.style.backgroundImage = thumbnailUrl ? `url("${thumbnailUrl}")` : '';
+  }
+
+  if (el.serverChatBgPreview) {
+    el.serverChatBgPreview.classList.toggle('has-image', Boolean(chatBgUrl));
+    el.serverChatBgPreview.style.backgroundImage = chatBgUrl ? `url("${chatBgUrl}")` : '';
   }
 
   if (el.chatPane) {
-    el.chatPane.style.setProperty('--server-banner-image', bannerUrl ? `url("${bannerUrl}")` : 'none');
+    el.chatPane.style.setProperty('--server-banner-image', chatBgUrl ? `url("${chatBgUrl}")` : 'none');
+  }
+
+  if (el.serverSidebarBanner) {
+    el.serverSidebarBanner.style.setProperty('--server-sidebar-banner', thumbnailUrl ? `url("${thumbnailUrl}")` : 'none');
+  }
+  if (el.serverHead) {
+    el.serverHead.classList.toggle('has-banner', Boolean(thumbnailUrl));
   }
 }
 
@@ -1306,7 +1335,7 @@ function renderServerRail() {
     button.setAttribute('aria-label', server.name || 'Server');
     button.title = server.name || 'Server';
     button.textContent = getServerBadge(server);
-    const iconUrl = String(server.iconUrl || '').trim();
+    const iconUrl = normalizeAssetUrl(server.iconUrl);
     if (iconUrl) {
       button.classList.add('has-image');
       button.style.backgroundImage = `url("${iconUrl}")`;
@@ -1540,8 +1569,10 @@ function openServerAppearanceModal(options = {}) {
   const allowEdits = Boolean(state.isAdmin);
   el.serverIconUpload?.toggleAttribute('disabled', !allowEdits);
   el.serverIconClear?.toggleAttribute('disabled', !allowEdits);
-  el.serverBannerUpload?.toggleAttribute('disabled', !allowEdits);
-  el.serverBannerClear?.toggleAttribute('disabled', !allowEdits);
+  el.serverThumbnailUpload?.toggleAttribute('disabled', !allowEdits);
+  el.serverThumbnailClear?.toggleAttribute('disabled', !allowEdits);
+  el.serverChatBgUpload?.toggleAttribute('disabled', !allowEdits);
+  el.serverChatBgClear?.toggleAttribute('disabled', !allowEdits);
   el.serverAppearanceModal?.classList.remove('hidden');
 }
 
@@ -1867,12 +1898,49 @@ function renderServerMenu() {
 function openServerMenu() {
   renderServerMenu();
   el.serverTitle.setAttribute('aria-expanded', 'true');
+  if (!state.serverMenuPortal) {
+    state.serverMenuPortal = {
+      parent: el.serverMenu.parentElement,
+      nextSibling: el.serverMenu.nextElementSibling
+    };
+    document.body.appendChild(el.serverMenu);
+  }
+
   el.serverMenu.classList.remove('hidden');
+  el.serverMenu.style.visibility = 'hidden';
+
+  requestAnimationFrame(() => {
+    const rect = el.serverTitle.getBoundingClientRect();
+    const menuRect = el.serverMenu.getBoundingClientRect();
+    const spacing = 8;
+    const viewportW = window.innerWidth || document.documentElement.clientWidth || 0;
+    const viewportH = window.innerHeight || document.documentElement.clientHeight || 0;
+
+    let left = rect.left;
+    let top = rect.bottom + spacing;
+    if (left + menuRect.width > viewportW - 8) {
+      left = Math.max(8, viewportW - menuRect.width - 8);
+    }
+    if (top + menuRect.height > viewportH - 8) {
+      top = Math.max(8, rect.top - menuRect.height - spacing);
+    }
+
+    el.serverMenu.style.left = `${left}px`;
+    el.serverMenu.style.top = `${top}px`;
+    el.serverMenu.style.visibility = 'visible';
+  });
 }
 
 function closeServerMenu() {
   el.serverTitle.setAttribute('aria-expanded', 'false');
   el.serverMenu.classList.add('hidden');
+  el.serverMenu.style.visibility = '';
+  if (state.serverMenuPortal?.parent) {
+    const { parent, nextSibling } = state.serverMenuPortal;
+    if (nextSibling && nextSibling.parentElement === parent) parent.insertBefore(el.serverMenu, nextSibling);
+    else parent.appendChild(el.serverMenu);
+    state.serverMenuPortal = null;
+  }
 }
 function updateDmBadge() {
   const totalUnread = state.dmChannels.reduce((sum, dm) => sum + (state.unread[dm.id] || 0), 0);
@@ -3415,18 +3483,27 @@ function bind() {
     el.serverIconInput.value = '';
     el.serverIconInput.click();
   });
-  el.serverBannerUpload?.addEventListener('click', () => {
-    if (!state.isAdmin || !el.serverBannerInput) return;
-    el.serverBannerInput.value = '';
-    el.serverBannerInput.click();
-  });
   el.serverIconClear?.addEventListener('click', () => {
     if (!state.isAdmin) return;
     void updateServerAppearance({ iconUrl: '' });
   });
-  el.serverBannerClear?.addEventListener('click', () => {
+  el.serverThumbnailUpload?.addEventListener('click', () => {
+    if (!state.isAdmin || !el.serverThumbnailInput) return;
+    el.serverThumbnailInput.value = '';
+    el.serverThumbnailInput.click();
+  });
+  el.serverChatBgUpload?.addEventListener('click', () => {
+    if (!state.isAdmin || !el.serverChatBgInput) return;
+    el.serverChatBgInput.value = '';
+    el.serverChatBgInput.click();
+  });
+  el.serverThumbnailClear?.addEventListener('click', () => {
     if (!state.isAdmin) return;
-    void updateServerAppearance({ bannerUrl: '' });
+    void updateServerAppearance({ thumbnailUrl: '' });
+  });
+  el.serverChatBgClear?.addEventListener('click', () => {
+    if (!state.isAdmin) return;
+    void updateServerAppearance({ chatBackgroundUrl: '' });
   });
   el.serverIconInput?.addEventListener('change', async () => {
     if (!state.isAdmin) return;
@@ -3442,18 +3519,32 @@ function bind() {
       el.serverIconInput.value = '';
     }
   });
-  el.serverBannerInput?.addEventListener('change', async () => {
+  el.serverThumbnailInput?.addEventListener('change', async () => {
     if (!state.isAdmin) return;
-    const file = el.serverBannerInput.files?.[0];
+    const file = el.serverThumbnailInput.files?.[0];
     if (!file) return;
     try {
       const uploaded = await uploadFile(file);
-      await updateServerAppearance({ bannerUrl: uploaded?.url || '' });
-      showVoiceTooltip('Server background updated');
+      await updateServerAppearance({ thumbnailUrl: uploaded?.url || '' });
+      showVoiceTooltip('Server thumbnail updated');
     } catch (error) {
-      showVoiceTooltip(error?.message || 'Server background upload failed');
+      showVoiceTooltip(error?.message || 'Thumbnail upload failed');
     } finally {
-      el.serverBannerInput.value = '';
+      el.serverThumbnailInput.value = '';
+    }
+  });
+  el.serverChatBgInput?.addEventListener('change', async () => {
+    if (!state.isAdmin) return;
+    const file = el.serverChatBgInput.files?.[0];
+    if (!file) return;
+    try {
+      const uploaded = await uploadFile(file);
+      await updateServerAppearance({ chatBackgroundUrl: uploaded?.url || '' });
+      showVoiceTooltip('Chat background updated');
+    } catch (error) {
+      showVoiceTooltip(error?.message || 'Chat background upload failed');
+    } finally {
+      el.serverChatBgInput.value = '';
     }
   });
 

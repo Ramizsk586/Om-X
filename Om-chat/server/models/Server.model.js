@@ -6,6 +6,8 @@ const serverSchema = new Schema({
   icon: { type: String, default: '??' },
   iconUrl: { type: String, default: '' },
   bannerUrl: { type: String, default: '' },
+  thumbnailUrl: { type: String, default: '' },
+  chatBackgroundUrl: { type: String, default: '' },
   ownerId: { type: String, required: true, trim: true },
   createdAt: { type: String, required: true },
   e2eShown: { type: Boolean, default: false }

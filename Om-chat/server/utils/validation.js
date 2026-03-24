@@ -358,6 +358,12 @@ function validateServerAppearancePayload(payload = {}) {
   if (Object.prototype.hasOwnProperty.call(payload, 'bannerUrl')) {
     updates.bannerUrl = ensureUrl(payload.bannerUrl, 'bannerUrl', { optional: true, allowRelative: true, allowDataImage: true });
   }
+  if (Object.prototype.hasOwnProperty.call(payload, 'thumbnailUrl')) {
+    updates.thumbnailUrl = ensureUrl(payload.thumbnailUrl, 'thumbnailUrl', { optional: true, allowRelative: true, allowDataImage: true });
+  }
+  if (Object.prototype.hasOwnProperty.call(payload, 'chatBackgroundUrl')) {
+    updates.chatBackgroundUrl = ensureUrl(payload.chatBackgroundUrl, 'chatBackgroundUrl', { optional: true, allowRelative: true, allowDataImage: true });
+  }
   if (!Object.keys(updates).length) {
     throw createValidationError('empty_server_update', 'No appearance changes provided');
   }

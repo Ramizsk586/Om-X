@@ -40,7 +40,8 @@
       </nav>
 
       <aside class="channel-sidebar">
-        <header class="server-head">
+        <header class="server-head" id="server-head">
+          <div id="server-sidebar-banner" class="server-sidebar-banner"></div>
           <button id="server-title" class="server-title" type="button" aria-haspopup="menu" aria-expanded="false">
             <span class="server-title-copy">
               <span id="server-icon" class="server-title-icon">OX</span>
@@ -283,13 +284,23 @@
             </div>
           </div>
           <div class="server-appearance-block">
-            <span class="section-label">Server Background</span>
-            <div id="server-banner-preview" class="server-banner-preview">
+            <span class="section-label">Server Thumbnail</span>
+            <div id="server-thumbnail-preview" class="server-banner-preview">
+              <span class="appearance-hint">No thumbnail set</span>
+            </div>
+            <div class="appearance-actions">
+              <button id="server-thumbnail-upload" type="button" class="btn-secondary">Upload</button>
+              <button id="server-thumbnail-clear" type="button" class="btn-secondary">Clear</button>
+            </div>
+          </div>
+          <div class="server-appearance-block">
+            <span class="section-label">Chat Background</span>
+            <div id="server-chatbg-preview" class="server-banner-preview">
               <span class="appearance-hint">No background set</span>
             </div>
             <div class="appearance-actions">
-              <button id="server-banner-upload" type="button" class="btn-secondary">Upload</button>
-              <button id="server-banner-clear" type="button" class="btn-secondary">Clear</button>
+              <button id="server-chatbg-upload" type="button" class="btn-secondary">Upload</button>
+              <button id="server-chatbg-clear" type="button" class="btn-secondary">Clear</button>
             </div>
           </div>
         </div>
@@ -298,6 +309,8 @@
 
     <input id="server-icon-input" type="file" accept="image/*" hidden />
     <input id="server-banner-input" type="file" accept="image/*" hidden />
+    <input id="server-thumbnail-input" type="file" accept="image/*" hidden />
+    <input id="server-chatbg-input" type="file" accept="image/*" hidden />
 
     <div id="create-channel-modal" class="modal hidden">
       <div class="modal-inner create-channel-modal-inner">
