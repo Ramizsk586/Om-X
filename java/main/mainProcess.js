@@ -1222,10 +1222,15 @@ async function startOmChatServerInternal(config = {}) {
 
   if (useNgrok && !process.env.TRUST_PROXY) {
     process.env.TRUST_PROXY = '1';
+  } else if (!useNgrok) {
+    process.env.TRUST_PROXY = '0';
   }
 
   if (isServerProcessActive(omChatServerProcess)) {
     const currentStatus = await getOmChatStatusPayload();
+    if (!useNgrok && isServerProcessActive(omChatNgrokProcess)) {
+      await stopOmChatNgrokTunnelInternal().catch(() => {});
+    }
     if (useNgrok) {
       try {
         return await ensureOmChatNgrokTunnel({ ...config, host, port }, currentStatus);
@@ -1251,6 +1256,9 @@ async function startOmChatServerInternal(config = {}) {
     }
     const dbInfo = 'Using local DB' + (omchatSettings.localDbPath ? ' at ' + omchatSettings.localDbPath : ' (default location)');
     pushServerLog('omchat', 'info', dbInfo);
+    if (!useNgrok) {
+      await clearOmChatPublicBaseUrl().catch(() => {});
+    }
 
     const moduleRef = await loadOmChatModule();
     const omChatApi = moduleRef?.default || moduleRef;
@@ -1880,7 +1888,7 @@ async function shutdownManagedServers() {
   }
 }
 // Temporary debugging aid for main window only.
-const TEMP_MAIN_AUTO_OPEN_DEVTOOLS = false;
+const TEMP_MAIN_AUTO_OPEN_DEVTOOLS = true;
 const trustedFolders = new Set();  // Track user-selected trusted folders
 
 function getEventBrowserWindow(event) {
@@ -2253,7 +2261,8 @@ const DEFAULT_SETTINGS = {
   },
   omchat: {
     dbMode: 'local',
-    localDbPath: ''
+    localDbPath: '',
+    useLocalIpOnly: false
   }
 };
 
@@ -5759,7 +5768,8 @@ ipcMain.handle('settings-save', async (e, s) => {
       ...(cachedSettings?.omchat || {}),
       ...(incoming?.omchat || {}),
       dbMode: String(incoming?.omchat?.dbMode ?? cachedSettings?.omchat?.dbMode ?? 'local') === 'mongo' ? 'mongo' : 'local',
-      localDbPath: String(incoming?.omchat?.localDbPath ?? cachedSettings?.omchat?.localDbPath ?? '').trim()
+      localDbPath: String(incoming?.omchat?.localDbPath ?? cachedSettings?.omchat?.localDbPath ?? '').trim(),
+      useLocalIpOnly: Boolean(incoming?.omchat?.useLocalIpOnly ?? cachedSettings?.omchat?.useLocalIpOnly ?? DEFAULT_SETTINGS.omchat.useLocalIpOnly)
     }
   });
   normalizedSettings.aiConfig = normalizePersistedAiConfig(normalizedSettings.aiConfig);

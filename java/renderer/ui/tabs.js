@@ -203,6 +203,7 @@ export class TabManager {
     this.tabs.forEach((tab) => {
       if (!tab?.webview) return;
       tab.webview.setAttribute('allowpopups', 'yes');
+      if (!tab.domReady) return;
       this.applyGlobalWebsiteCss(tab.webview);
       this.applyYouTubeAddon(tab.webview);
       this.applyFloatingAdBlocker(tab.webview);
@@ -5020,6 +5021,7 @@ body[class*="overflow-hidden"]:not([data-legit]) {
     webview.src = tabState.url;
     tabState.webview = webview;
     tabState.suspended = false;
+    tabState.domReady = false;
     tabState.tabItem.classList.remove('suspended');
 
     // Dev tools no longer open automatically - user can open manually if needed
@@ -5085,6 +5087,7 @@ body[class*="overflow-hidden"]:not([data-legit]) {
 
     webview.addEventListener('dom-ready', async () => {
         try {
+            tabState.domReady = true;
             await this.applyGlobalWebsiteCss(webview);
             await this.applyYouTubeAddon(webview);
             await this.applyFloatingAdBlocker(webview);

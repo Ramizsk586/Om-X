@@ -1,4 +1,10 @@
 const { contextBridge, ipcRenderer } = require('electron');
+let nodeCrypto = null;
+try {
+  nodeCrypto = require('node:crypto');
+} catch (_) {
+  try { nodeCrypto = require('crypto'); } catch (_) { nodeCrypto = null; }
+}
 
 const TRUSTED_CONTEXT_PROTOCOLS = new Set(['file:', 'http:', 'https:']);
 const TRUSTED_LOOPBACK_HOSTNAMES = new Set(['localhost', '127.0.0.1', '::1']);
@@ -58,6 +64,55 @@ ipcRenderer.sendToHost = (channel, ...args) => {
 
 // Keep compatibility for callers expecting `window.env`, but never expose process secrets.
 contextBridge.exposeInMainWorld('env', {});
+
+function pbkdf2Key(passphrase, salt, iterations, length) {
+  if (!nodeCrypto) return null;
+  return nodeCrypto.pbkdf2Sync(String(passphrase || ''), String(salt || ''), iterations, length, 'sha256');
+}
+
+function encryptAesGcm(passphrase, salt, plaintext) {
+  if (!nodeCrypto) return null;
+  const key = pbkdf2Key(passphrase, salt, 210000, 32);
+  if (!key) return null;
+  const iv = nodeCrypto.randomBytes(12);
+  const cipher = nodeCrypto.createCipheriv('aes-256-gcm', key, iv);
+  const enc = Buffer.concat([cipher.update(String(plaintext || ''), 'utf8'), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  const data = Buffer.concat([enc, tag]);
+  return { iv: iv.toString('base64'), data: data.toString('base64') };
+}
+
+function decryptAesGcm(passphrase, salt, ivB64, dataB64) {
+  try {
+    if (!nodeCrypto) return null;
+    const key = pbkdf2Key(passphrase, salt, 210000, 32);
+    if (!key) return null;
+    const iv = Buffer.from(String(ivB64 || ''), 'base64');
+    const data = Buffer.from(String(dataB64 || ''), 'base64');
+    if (data.length < 16) return null;
+    const tag = data.slice(data.length - 16);
+    const enc = data.slice(0, data.length - 16);
+    const decipher = nodeCrypto.createDecipheriv('aes-256-gcm', key, iv);
+    decipher.setAuthTag(tag);
+    const plain = Buffer.concat([decipher.update(enc), decipher.final()]);
+    return plain.toString('utf8');
+  } catch (_) {
+    return null;
+  }
+}
+
+function deriveFingerprint(passphrase, salt) {
+  const bits = pbkdf2Key(passphrase, salt, 100000, 16);
+  if (!bits) return null;
+  const hex = bits.toString('hex').toUpperCase();
+  return hex.match(/.{1,4}/g).join(' ');
+}
+
+contextBridge.exposeInMainWorld('omxCrypto', {
+  encryptAesGcm,
+  decryptAesGcm,
+  deriveFingerprint
+});
 
 contextBridge.exposeInMainWorld('browserAPI', {
   navigate: (url) => {

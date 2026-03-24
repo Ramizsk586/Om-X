@@ -1221,6 +1221,12 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (options.isOmChat) {
                 existing.isOmChat = true;
                 existing.noSuspend = true;
+                if (existing.url !== url) {
+                    existing.url = url;
+                    if (existing.webview) {
+                        existing.webview.src = url;
+                    }
+                }
             }
             tabManager.setActiveTab(existing.id);
         } else {
@@ -1349,7 +1355,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         setOmChatLaunchVisible(true);
         resetOmChatLaunchLog();
         setOmChatLaunchStatus('Starting OmChat server...', '');
-        appendOmChatLaunchLog('Launching OmChat with ngrok...', 'info');
+        const useLocalIpOnly = Boolean(cachedSettings?.omchat?.useLocalIpOnly);
+        appendOmChatLaunchLog(useLocalIpOnly ? 'Launching OmChat on local IP...' : 'Launching OmChat with ngrok...', 'info');
         startOmChatLogPolling();
         if (!cachedSettings?.omchat?.localDbPath) {
             const message = 'OmChat local folder is not set. Please choose a folder in Settings > OmChat.';
@@ -1358,11 +1365,35 @@ document.addEventListener('DOMContentLoaded', async () => {
             return;
         }
         try {
-            const result = await window.browserAPI.omChat.startServer({ useNgrok: true });
+            const result = await window.browserAPI.omChat.startServer({ useNgrok: !useLocalIpOnly });
             if (!result?.success) {
                 console.error('[Om Chat] Failed to start server:', result?.error || 'Unknown error');
                 setOmChatLaunchStatus(result?.error || 'Om Chat failed to start.', 'error');
                 appendOmChatLaunchLog(result?.error || 'Om Chat failed to start.', 'error');
+                return;
+            }
+            if (useLocalIpOnly) {
+                let localUrl = String(result?.networkUrl || result?.localUrl || '').trim().replace(/[/\\]+$/, '');
+                if (!localUrl) {
+                    const message = result?.error || 'Local OmChat URL was not created.';
+                    console.error('[Om Chat] Local URL unavailable:', message);
+                    setOmChatLaunchStatus(message, 'error');
+                    appendOmChatLaunchLog(message, 'error');
+                    return;
+                }
+                if (!/^https?:\/\//i.test(localUrl)) {
+                    localUrl = `http://${localUrl}`;
+                } else if (/^https:\/\//i.test(localUrl)) {
+                    localUrl = localUrl.replace(/^https:/i, 'http:');
+                }
+                window.__omxOmChatNetworkUrl = `${localUrl}/`;
+                try {
+                    const omOrigin = new URL(window.__omxOmChatNetworkUrl).origin;
+                    tabManager?.registerOmChatOrigin?.(omOrigin);
+                } catch (_) {}
+                openAppTab(window.__omxOmChatNetworkUrl, { isOmChat: true });
+                setOmChatLaunchStatus('Server online on local IP. Opening login page...', 'success');
+                appendOmChatLaunchLog(`Opened ${window.__omxOmChatNetworkUrl}`, 'success');
                 return;
             }
             const publicUrl = String(result?.publicUrl || result?.accessInfo?.publicUrl || '').trim().replace(/[/\\]+$/, '');

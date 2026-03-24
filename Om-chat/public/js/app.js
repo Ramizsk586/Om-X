@@ -186,6 +186,20 @@ const state = {
   serverMenuPortal: null
 };
 
+let notificationPermissionRequested = false;
+function canUseNotifications() {
+  return typeof Notification !== 'undefined' && Notification.permission === 'granted';
+}
+function requestNotificationPermissionOnce() {
+  if (notificationPermissionRequested) return;
+  notificationPermissionRequested = true;
+  if (typeof Notification === 'undefined') return;
+  if (Notification.permission === 'default') {
+    try { Notification.requestPermission().catch(() => {}); } catch (_) {}
+  }
+}
+document.addEventListener('click', () => requestNotificationPermissionOnce(), { once: true });
+
 const MAX_UPLOAD_SIZE_BYTES = 20 * 1024 * 1024;
 const MAX_AVATAR_SIZE_BYTES = 5 * 1024 * 1024;
 
@@ -392,10 +406,73 @@ async function generateRandomKey(length = 24) {
   return bytesToHex(bytes).toUpperCase();
 }
 
+function sha256HexFallback(message) {
+  const msg = String(message || '');
+  const utf8 = new TextEncoder().encode(msg);
+  const K = [
+    0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
+    0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
+    0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,
+    0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,
+    0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,
+    0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
+    0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,
+    0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2
+  ];
+  const H = [0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19];
+  const l = utf8.length * 8;
+  const withOne = new Uint8Array(utf8.length + 1);
+  withOne.set(utf8);
+  withOne[utf8.length] = 0x80;
+  let paddedLen = withOne.length;
+  while ((paddedLen % 64) !== 56) paddedLen++;
+  const padded = new Uint8Array(paddedLen + 8);
+  padded.set(withOne);
+  const view = new DataView(padded.buffer);
+  view.setUint32(padded.length - 4, l >>> 0, false);
+  view.setUint32(padded.length - 8, Math.floor(l / 0x100000000), false);
+  const w = new Uint32Array(64);
+  for (let i = 0; i < padded.length; i += 64) {
+    for (let j = 0; j < 16; j++) {
+      w[j] = view.getUint32(i + j * 4, false);
+    }
+    for (let j = 16; j < 64; j++) {
+      const s0 = (w[j - 15] >>> 7 | w[j - 15] << 25) ^ (w[j - 15] >>> 18 | w[j - 15] << 14) ^ (w[j - 15] >>> 3);
+      const s1 = (w[j - 2] >>> 17 | w[j - 2] << 15) ^ (w[j - 2] >>> 19 | w[j - 2] << 13) ^ (w[j - 2] >>> 10);
+      w[j] = (w[j - 16] + s0 + w[j - 7] + s1) >>> 0;
+    }
+    let a = H[0], b = H[1], c = H[2], d = H[3], e = H[4], f = H[5], g = H[6], h = H[7];
+    for (let j = 0; j < 64; j++) {
+      const S1 = (e >>> 6 | e << 26) ^ (e >>> 11 | e << 21) ^ (e >>> 25 | e << 7);
+      const ch = (e & f) ^ (~e & g);
+      const temp1 = (h + S1 + ch + K[j] + w[j]) >>> 0;
+      const S0 = (a >>> 2 | a << 30) ^ (a >>> 13 | a << 19) ^ (a >>> 22 | a << 10);
+      const maj = (a & b) ^ (a & c) ^ (b & c);
+      const temp2 = (S0 + maj) >>> 0;
+      h = g; g = f; f = e; e = (d + temp1) >>> 0;
+      d = c; c = b; b = a; a = (temp1 + temp2) >>> 0;
+    }
+    H[0] = (H[0] + a) >>> 0;
+    H[1] = (H[1] + b) >>> 0;
+    H[2] = (H[2] + c) >>> 0;
+    H[3] = (H[3] + d) >>> 0;
+    H[4] = (H[4] + e) >>> 0;
+    H[5] = (H[5] + f) >>> 0;
+    H[6] = (H[6] + g) >>> 0;
+    H[7] = (H[7] + h) >>> 0;
+  }
+  return Array.from(H).map(x => x.toString(16).padStart(8, '0')).join('').toUpperCase();
+}
+
 async function sha256Hash(message) {
-  const msgBuffer = new TextEncoder().encode(message);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
-  return bytesToHex(new Uint8Array(hashBuffer)).toUpperCase();
+  try {
+    if (crypto?.subtle?.digest) {
+      const msgBuffer = new TextEncoder().encode(message);
+      const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+      return bytesToHex(new Uint8Array(hashBuffer)).toUpperCase();
+    }
+  } catch (_) {}
+  return sha256HexFallback(message);
 }
 
 function formatKey(key, groupLength = 4, separator = '-') {
@@ -495,13 +572,11 @@ async function openDMDualKeyModal(member) {
     const continueBtn = document.getElementById('dm-final-key-continue');
 
     if (copyBtn) {
-      copyBtn.onclick = () => {
-        navigator.clipboard.writeText(finalKey).then(() => {
-          copyBtn.textContent = '✓ Copied!';
-          setTimeout(() => {
-            copyBtn.innerHTML = '&#128203; Copy Key';
-          }, 2000);
-        }).catch(() => {});
+      copyBtn.onclick = async () => {
+        await copyText(finalKey, copyBtn, '? Copied!');
+        setTimeout(() => {
+          copyBtn.innerHTML = '&#128203; Copy Key';
+        }, 2000);
       };
     }
 
@@ -558,6 +633,31 @@ function bytesToHex(bytes) {
   return Array.from(bytes).map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
+function hasWebCrypto() {
+  return Boolean(crypto?.subtle?.encrypt && crypto?.subtle?.decrypt && crypto?.subtle?.deriveKey);
+}
+
+function getE2EEContext(channelId = '') {
+  const cacheKey = String(channelId || 'global');
+  const isGroupCh = !isDmChannel(channelId);
+  let passphrase;
+  let saltNamespace;
+
+  if (isDmChannel(channelId)) {
+    passphrase = getDMPassphrase(channelId);
+    saltNamespace = 'omchat-e2ee-dm-v1';
+  } else {
+    passphrase = e2ee.passphrase;
+    saltNamespace = 'omchat-e2ee-group-v1';
+  }
+
+  return {
+    isGroupCh,
+    passphrase,
+    salt: `${saltNamespace}:${cacheKey}`
+  };
+}
+
 // ─── Key derivation ───────────────────────────────────────────────────────────
 
 /**
@@ -565,6 +665,9 @@ function bytesToHex(bytes) {
  * Internal helper — always use getE2EEKey() externally.
  */
 async function deriveAESKey(passphrase, saltString) {
+  if (!hasWebCrypto()) {
+    throw new Error('WebCrypto unavailable');
+  }
   const baseKey = await crypto.subtle.importKey(
     'raw',
     e2ee.textEncoder.encode(passphrase),
@@ -599,20 +702,10 @@ async function getE2EEKey(channelId = '') {
   const cacheKey = String(channelId || 'global');
   if (e2ee.keyCache.has(cacheKey)) return e2ee.keyCache.get(cacheKey);
 
-  let passphrase;
-  let saltNamespace;
+  const ctx = getE2EEContext(channelId);
+  if (!ctx.passphrase) return null; // encryption not configured for this channel
 
-  if (isDmChannel(channelId)) {
-    passphrase = getDMPassphrase(channelId);
-    saltNamespace = 'omchat-e2ee-dm-v1'; // ← distinct namespace — group key can't touch this
-  } else {
-    passphrase = e2ee.passphrase;
-    saltNamespace = 'omchat-e2ee-group-v1';
-  }
-
-  if (!passphrase) return null; // encryption not configured for this channel
-
-  const key = await deriveAESKey(passphrase, `${saltNamespace}:${cacheKey}`);
+  const key = await deriveAESKey(ctx.passphrase, ctx.salt);
   e2ee.keyCache.set(cacheKey, key);
   return key;
 }
@@ -620,6 +713,12 @@ async function getE2EEKey(channelId = '') {
 // ─── Fingerprints ─────────────────────────────────────────────────────────────
 
 async function deriveFingerprint(passphrase, saltString) {
+  if (!hasWebCrypto()) {
+    if (window.omxCrypto?.deriveFingerprint) {
+      return window.omxCrypto.deriveFingerprint(passphrase, saltString);
+    }
+    throw new Error('WebCrypto unavailable');
+  }
   const baseKey = await crypto.subtle.importKey(
     'raw',
     e2ee.textEncoder.encode(passphrase),
@@ -678,20 +777,29 @@ async function encryptMessageText(content, channelId = '') {
   if (!text || text.startsWith(E2EE_PREFIX)) return text;
 
   // Check if encryption is enabled for this channel type
-  const isGroupCh = !isDmChannel(channelId);
-  if (isGroupCh && !isE2EEEnabled()) return text;
-  if (!isGroupCh && !isDMEncryptionEnabled(channelId)) return text;
+  const ctx = getE2EEContext(channelId);
+  if (ctx.isGroupCh && !isE2EEEnabled()) return text;
+  if (!ctx.isGroupCh && !isDMEncryptionEnabled(channelId)) return text;
 
   try {
-    const key = await getE2EEKey(channelId);
-    if (!key) return text;
+    if (hasWebCrypto()) {
+      const key = await getE2EEKey(channelId);
+      if (!key) return text;
 
-    const iv = crypto.getRandomValues(new Uint8Array(12));
-    const plain = e2ee.textEncoder.encode(text);
-    const encrypted = new Uint8Array(
-      await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, plain)
-    );
-    return `${E2EE_PREFIX}${bytesToBase64(iv)}.${bytesToBase64(encrypted)}`;
+      const iv = crypto.getRandomValues(new Uint8Array(12));
+      const plain = e2ee.textEncoder.encode(text);
+      const encrypted = new Uint8Array(
+        await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, plain)
+      );
+      return `${E2EE_PREFIX}${bytesToBase64(iv)}.${bytesToBase64(encrypted)}`;
+    }
+    if (window.omxCrypto?.encryptAesGcm && ctx.passphrase) {
+      const payload = await window.omxCrypto.encryptAesGcm(ctx.passphrase, ctx.salt, text);
+      if (payload?.iv && payload?.data) {
+        return `${E2EE_PREFIX}${payload.iv}.${payload.data}`;
+      }
+    }
+    return text;
   } catch (err) {
     console.error('[Om Chat] E2EE encrypt failed:', err);
     e2ee.status = 'error';
@@ -709,22 +817,31 @@ async function decryptMessageText(content, channelId = '') {
   if (!text.startsWith(E2EE_PREFIX)) return text;
 
   // Check if the relevant key exists
-  const isGroupCh = !isDmChannel(channelId);
-  if (isGroupCh && !isE2EEEnabled())           return E2EE_FAILURE_TEXT;
-  if (!isGroupCh && !isDMEncryptionEnabled(channelId)) return E2EE_FAILURE_TEXT;
+  const ctx = getE2EEContext(channelId);
+  if (ctx.isGroupCh && !isE2EEEnabled())           return E2EE_FAILURE_TEXT;
+  if (!ctx.isGroupCh && !isDMEncryptionEnabled(channelId)) return E2EE_FAILURE_TEXT;
 
   const payload = text.slice(E2EE_PREFIX.length);
   const dot = payload.indexOf('.');
   if (dot < 1) return E2EE_FAILURE_TEXT;
 
   try {
-    const iv        = base64ToBytes(payload.slice(0, dot));
-    const encrypted = base64ToBytes(payload.slice(dot + 1));
-    const key       = await getE2EEKey(channelId);
-    if (!key) return E2EE_FAILURE_TEXT;
+    const ivPart = payload.slice(0, dot);
+    const dataPart = payload.slice(dot + 1);
+    if (hasWebCrypto()) {
+      const iv        = base64ToBytes(ivPart);
+      const encrypted = base64ToBytes(dataPart);
+      const key       = await getE2EEKey(channelId);
+      if (!key) return E2EE_FAILURE_TEXT;
 
-    const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, encrypted);
-    return e2ee.textDecoder.decode(decrypted);
+      const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, encrypted);
+      return e2ee.textDecoder.decode(decrypted);
+    }
+    if (window.omxCrypto?.decryptAesGcm && ctx.passphrase) {
+      const plain = await window.omxCrypto.decryptAesGcm(ctx.passphrase, ctx.salt, ivPart, dataPart);
+      if (typeof plain === 'string') return plain;
+    }
+    return E2EE_FAILURE_TEXT;
   } catch (_) {
     e2ee.status = 'error';
     updateE2EEIndicator();
@@ -1815,7 +1932,19 @@ function openActionModal({ title, description = '', value = '', placeholder = ''
 
 async function copyText(text, button, successLabel = 'Copied') {
   try {
-    await navigator.clipboard.writeText(text);
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      const temp = document.createElement('textarea');
+      temp.value = text;
+      temp.setAttribute('readonly', 'true');
+      temp.style.position = 'absolute';
+      temp.style.left = '-9999px';
+      document.body.appendChild(temp);
+      temp.select();
+      document.execCommand('copy');
+      document.body.removeChild(temp);
+    }
     const previous = button.textContent;
     button.textContent = successLabel;
     setTimeout(() => {
@@ -3798,13 +3927,15 @@ function wireSocket() {
       if (String(decodedMessage.channelId).startsWith('dm_')) await refreshDmList();
       const channelMeta = state.channels.find((item) => item.id === decodedMessage.channelId);
       const isAnnouncement = channelMeta?.type === 'announcement';
+      const isDmChannel = String(decodedMessage.channelId || '').startsWith('dm_');
+      const notificationAllowed = canUseNotifications();
       if (decodedMessage.userId !== state.user.id) {
         const content = String(decodedMessage.content || '');
         const selfName = String(state.user?.username || '').trim();
         const mentionHit = selfName
           && new RegExp(`(^|\\s)@${selfName.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}\\b`, 'i').test(content);
         if (mentionHit) {
-          if ('Notification' in window && Notification.permission === 'granted') {
+          if (notificationAllowed) {
             new Notification(`Mentioned by ${decodedMessage.username}`, { body: content || 'You were mentioned' });
           } else if (!state.hasFocus) {
             showVoiceTooltip(`@${decodedMessage.username} mentioned you`);
@@ -3815,13 +3946,18 @@ function wireSocket() {
           if (state.currentChannelId !== decodedMessage.channelId || !state.hasFocus) {
             setAnnouncementAlert(true);
           }
-          if ('Notification' in window && Notification.permission === 'granted') {
+          if (notificationAllowed) {
             new Notification(`Announcement in #${channelMeta?.name || 'channel'}`, { body: decodedMessage.content || 'New announcement' });
           } else if (!state.hasFocus) {
             showVoiceTooltip('New announcement posted.');
           }
-        } else if (!state.hasFocus && 'Notification' in window && Notification.permission === 'granted') {
+        } else if (!state.hasFocus && notificationAllowed) {
           new Notification(decodedMessage.username, { body: decodedMessage.content || 'New message' });
+        } else if (!state.hasFocus) {
+          const channelLabel = isDmChannel
+            ? `New DM from ${decodedMessage.username}`
+            : `New message in #${channelMeta?.name || 'channel'}`;
+          showVoiceTooltip(channelLabel);
         }
       }
     },
@@ -3997,3 +4133,5 @@ async function bootstrap() {
 }
 
 bootstrap().catch((error) => console.error(error));
+
+

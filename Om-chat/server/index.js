@@ -524,9 +524,14 @@ function applyPublicBaseUrl(targetRuntime, publicBaseUrl) {
   const normalized = normalizeBaseUrl(publicBaseUrl);
   targetRuntime.accessInfo.publicUrl = normalized || '';
   targetRuntime.accessInfo.joinBaseUrl = normalized || targetRuntime.accessInfo.localUrl;
+  // Rebuild the full allowed-origin set so the new public URL is immediately
+  // accepted by CORS and CSRF checks without requiring a restart.
   targetRuntime.originState.allowedOrigins = collectAllowedOrigins(targetRuntime.accessInfo, targetRuntime.configuredOrigins);
   targetRuntime.app.locals.omChatAccess = targetRuntime.accessInfo;
   targetRuntime.io.omChatAccess = targetRuntime.accessInfo;
+  if (normalized) {
+    console.log(`[Om Chat] Public base URL set to: ${normalized}`);
+  }
   return targetRuntime.accessInfo;
 }
 
@@ -555,7 +560,14 @@ function createRuntime({ host, port, sessionSecret, tlsOptions, trustProxySettin
       methods: ['GET', 'POST'],
       credentials: true
     },
-    transports: ['websocket', 'polling']
+    transports: ['websocket', 'polling'],
+    // Generous timeouts so brief ngrok hiccups or slow LAN hops don't trigger
+    // spurious disconnects that cascade into reconnect storms.
+    pingInterval: 25000,   // how often the server pings each client (ms)
+    pingTimeout: 30000,    // how long to wait for a pong before disconnecting
+    connectTimeout: 45000, // handshake deadline (covers slow ngrok cold-starts)
+    // 1 MB cap matches the express.json limit and accommodates image previews.
+    maxHttpBufferSize: 1e6
   });
 
   app.set('io', io);
@@ -577,9 +589,31 @@ function createRuntime({ host, port, sessionSecret, tlsOptions, trustProxySettin
         objectSrc: ["'none'"],
         frameAncestors: ["'none'"],
         formAction: ["'self'"],
-        baseUri: ["'self'"]
+        baseUri: ["'self'"],
+        // Helmet v5+ silently injects upgrade-insecure-requests even when a
+        // custom directives object is provided. That directive tells browsers
+        // to rewrite every http:// sub-resource URL to https://, so CSS, JS,
+        // images and API fetches all fail with ERR_SSL_PROTOCOL_ERROR when the
+        // server is accessed over plain HTTP (direct-IP / LAN mode). Setting
+        // it to null explicitly removes the directive; ngrok and native-HTTPS
+        // modes are unaffected because those connections are already HTTPS.
+        upgradeInsecureRequests: null
       }
     },
+    // Only emit HSTS when the server itself terminates TLS. Sending HSTS over
+    // plain HTTP causes some browsers to permanently force HTTPS for the
+    // origin, silently breaking future direct-IP and localhost access until
+    // the max-age expires (up to a year by default).
+    hsts: tlsOptions ? { maxAge: 31536000, includeSubDomains: true } : false,
+    // Cross-Origin-Opener-Policy is only meaningful on secure origins. On
+    // plain HTTP the browser ignores it and emits a console warning. Disable
+    // when not using TLS so the log stays clean in IP-only mode.
+    crossOriginOpenerPolicy: tlsOptions ? { policy: 'same-origin' } : false,
+    // Origin-Agent-Cluster: browsers complain when the same origin was
+    // previously placed in a site-keyed cluster (e.g. after switching between
+    // a ngrok HTTPS session and a direct-IP HTTP session). Disabling avoids
+    // the "could not be origin-keyed" console noise entirely.
+    originAgentCluster: false,
     crossOriginResourcePolicy: { policy: 'cross-origin' },
     referrerPolicy: { policy: 'no-referrer' }
   }));
@@ -596,7 +630,14 @@ function createRuntime({ host, port, sessionSecret, tlsOptions, trustProxySettin
   app.use(sessionMiddleware);
   app.use(ensureSessionCsrf);
   app.use((req, _res, next) => {
+    const prevPublicUrl = accessInfo.publicUrl;
     rememberRequestOrigin(req, originState.allowedOrigins, accessInfo);
+    // Log the first time a new tunnelled/proxied origin is detected so the
+    // operator knows the server has auto-accepted the ngrok or reverse-proxy
+    // URL without needing to set PUBLIC_BASE_URL manually.
+    if (accessInfo.publicUrl && accessInfo.publicUrl !== prevPublicUrl) {
+      console.log(`[Om Chat] Auto-detected public URL via proxy headers: ${accessInfo.publicUrl}`);
+    }
     next();
   });
   app.use(createAccessMiddleware(accessConfig));
@@ -779,6 +820,12 @@ async function listenServer(server, port, host) {
 async function closeServer(server) {
   if (!server) return;
 
+  // Force-close any lingering keep-alive connections so server.close()
+  // resolves immediately instead of waiting for every client to time out.
+  // closeAllConnections() was added in Node 18.2; the optional-chain makes
+  // this a safe no-op on older runtimes.
+  server.closeAllConnections?.();
+
   await new Promise((resolve) => {
     try {
       server.close(() => resolve());
@@ -862,6 +909,10 @@ async function stopServer() {
   runtime = null;
 
   try {
+    // Disconnect all active sockets first so clients receive a clean
+    // disconnect event and can show a "server stopped" UI instead of
+    // an abrupt transport error or an infinite reconnect loop.
+    current.io?.disconnectSockets?.(true);
     current.io?.close?.();
   } catch (_) {}
 
@@ -881,10 +932,39 @@ module.exports = {
 };
 
 if (require.main === module) {
+  // Prevent unhandled async errors from silently killing mid-session state.
+  process.on('unhandledRejection', (reason) => {
+    console.error('[Om Chat] Unhandled promise rejection:', reason?.stack || reason);
+  });
+
+  process.on('uncaughtException', (error) => {
+    console.error('[Om Chat] Uncaught exception:', error?.stack || error?.message || String(error));
+  });
+
+  // Graceful shutdown on SIGTERM (Docker / PM2 / systemd) and SIGINT (Ctrl+C).
+  // Disconnecting sockets and draining the HTTP server cleanly prevents clients
+  // from seeing abrupt transport errors when the process is restarted.
+  async function gracefulShutdown(signal) {
+    console.log(`\n[Om Chat] Received ${signal}, shutting down…`);
+    try {
+      await stopServer();
+      console.log('[Om Chat] Server stopped cleanly.');
+    } catch (err) {
+      console.error('[Om Chat] Error during shutdown:', err?.message || err);
+    }
+    process.exit(0);
+  }
+
+  process.once('SIGTERM', () => gracefulShutdown('SIGTERM'));
+  process.once('SIGINT',  () => gracefulShutdown('SIGINT'));
+
   startServer().then((status) => {
     const accessInfo = status.accessInfo;
     console.log('\n[Om Chat] Server ready');
     console.log(`[Om Chat] Local:   ${accessInfo.localUrl}`);
+    if (accessInfo.networkUrl) {
+      console.log(`[Om Chat] Network: ${accessInfo.networkUrl}`);
+    }
     if (accessInfo.publicUrl) {
       console.log(`[Om Chat] Public:  ${accessInfo.publicUrl}`);
     }
@@ -892,16 +972,12 @@ if (require.main === module) {
       console.log(`[Om Chat] Redirect: http://${accessInfo.localHost}:${status.redirectPort} -> ${accessInfo.localUrl}`);
     }
     console.log(`[Om Chat] Listening at ${status.host}:${status.port}`);
+    // Remind the operator how to make proxy/ngrok mode fully stable.
+    if (!accessInfo.publicUrl) {
+      console.log('[Om Chat] Tip: set PUBLIC_BASE_URL=https://your-ngrok-url in .env to enable stable tunnel/proxy support.');
+    }
   }).catch((error) => {
-    console.error(error?.stack || error?.message || String(error));
+    console.error('[Om Chat] Failed to start:', error?.stack || error?.message || String(error));
     process.exitCode = 1;
   });
 }
-
-
-
-
-
-
-
-

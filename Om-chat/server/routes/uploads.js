@@ -38,6 +38,20 @@ router.get('/:id', async (req, res) => {
   }
   const body = toNodeBuffer(file?.data);
   if (!file || !body) {
+    const accept = String(req.headers.accept || '');
+    if (isLocalMode() && accept.includes('image/')) {
+      const safeId = id.replace(/[^a-zA-Z0-9]/g, '');
+      const svg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360">
+  <rect width="100%" height="100%" fill="#111827"/>
+  <rect x="24" y="24" width="592" height="312" rx="18" fill="#0f172a" stroke="#1f2937" stroke-width="2"/>
+  <text x="50%" y="48%" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="20" fill="#e5e7eb">Attachment missing in local storage</text>
+  <text x="50%" y="60%" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="14" fill="#9ca3af">${safeId}</text>
+</svg>`;
+      res.setHeader('Cache-Control', 'no-store');
+      res.setHeader('Content-Type', 'image/svg+xml; charset=utf-8');
+      return res.status(200).end(svg);
+    }
     return res.status(404).end();
   }
 
