@@ -6,6 +6,7 @@ const {
   getDmMessages,
   hasPermission,
   isAdmin,
+  isMemberMuted,
   getMember,
   userMembers,
   addReaction,
@@ -279,7 +280,9 @@ module.exports = function initSockets(io) {
       return;
     }
 
-    registerUserSocket(userId, socket.id);
+    registerUserSocket(userId, socket.id, {
+      userAgent: socket.handshake?.headers?.['user-agent'] || ''
+    });
     socket.join(`user:${userId}`);
 
     let activeServerId = session.currentServerId || null;
@@ -466,6 +469,9 @@ module.exports = function initSockets(io) {
         const member = getMember(server, userId);
         if (!member) {
           return emitError(socket, 'not_member', 'You are not a member of this server');
+        }
+        if (isMemberMuted(member)) {
+          return emitError(socket, 'member_muted', 'You are muted in this server');
         }
 
         if (channel.type === 'voice-placeholder') {

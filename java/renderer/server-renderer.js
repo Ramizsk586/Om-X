@@ -44,7 +44,7 @@ function hydrateLogOutput(outputEl, logs) {
     if (!logs.length) {
         outputEl.innerHTML = `
             <div class="terminal-line empty info">
-                <span class="terminal-line-message">No server logs yet. Start one of the MCP servers to begin streaming structured output.</span>
+                <span class="terminal-line-message">No important llama events yet. Start the server to see errors, start/stop activity, and server links.</span>
             </div>
         `;
         return;
@@ -55,6 +55,26 @@ function hydrateLogOutput(outputEl, logs) {
     requestAnimationFrame(() => {
         outputEl.scrollTop = outputEl.scrollHeight;
     });
+}
+
+function isLlamaOperatorLogEntry(entry = {}) {
+    const type = String(entry?.type || '').trim().toLowerCase();
+    const message = String(entry?.message || '').trim();
+    if (!message) return false;
+
+    if (type === 'error') return true;
+
+    if (/https?:\/\/\S+/i.test(message)) return true;
+
+    if (/(^|\b)(starting llama server|llama server started successfully|stopping llama server|llama server stopped|server exited with code|server listening on|api endpoint:|public url:|llama public url:)(\b|$)/i.test(message)) {
+        return true;
+    }
+
+    if (/(^|\b)(failed|error|exception|timed out|cannot|unable|denied|invalid|triggered|ejected)(\b|$)/i.test(message)) {
+        return true;
+    }
+
+    return false;
 }
 
 function escapeHtml(value) {
@@ -136,6 +156,10 @@ class LlamaServerRenderer {
         this.selectedModel = null;
         this.startTime = null;
         this.uptimeInterval = null;
+        this.guardStatusInterval = null;
+        this.latestModelInfo = null;
+        this.latestSystemProfile = null;
+        this.latestCompatibility = null;
         this.initialized = false;
         this.launchCommand = '';
         console.log('[LlamaServer] Constructor called');
@@ -156,6 +180,7 @@ class LlamaServerRenderer {
         this.loadRuntimeState();
         this.updateGPUDisplay();
         this.updateManualCommand();
+        this.startGuardStatusPolling();
         this.log('Llama Server Manager initialized', 'info');
         console.log('[LlamaServer] Initialization complete');
     }
@@ -166,6 +191,7 @@ class LlamaServerRenderer {
 
         const available = await this.getAvailableGPUMemory();
         memoryEl.textContent = `${available} MB`;
+        this.updateCompatibilityCalculator();
     }
 
     setupIPCListeners() {
@@ -176,7 +202,7 @@ class LlamaServerRenderer {
                     .split('\n')
                     .map((line) => line.trim())
                     .filter(Boolean)
-                    .forEach((line) => this.log(line, type));
+                    .forEach((line) => this.log(line, type, { forceDisplay: false }));
             });
             window.browserAPI.llama.onExit((data) => {
                 this.log(`Server exited with code: ${data.code}`, 'error');
@@ -195,6 +221,7 @@ class LlamaServerRenderer {
                     stopBtn.textContent = 'Stop Server';
                 }
                 this.updateEndpoint();
+                this.refreshGuardStatus({ silent: true });
             });
         }
     }
@@ -281,7 +308,19 @@ class LlamaServerRenderer {
             input.addEventListener('input', () => this.onPathInputChanged(id, input.value, { save: false }));
         });
 
-        const inputs = ['context-length', 'gpu-layers', 'llama-port', 'llama-threads', 'llama-host'];
+        const inputs = [
+            'context-length',
+            'gpu-layers',
+            'llama-port',
+            'llama-threads',
+            'llama-host',
+            'llama-system-prompt',
+            'llama-guard-enabled',
+            'llama-guard-warn-percent',
+            'llama-guard-stop-percent',
+            'llama-guard-min-free-mb',
+            'llama-guard-consecutive-hits'
+        ];
         inputs.forEach(id => {
             const input = document.getElementById(id);
             if (input) {
@@ -291,6 +330,9 @@ class LlamaServerRenderer {
                     if (id === 'llama-port' || id === 'llama-host') {
                         this.updateEndpoint();
                     }
+                    if (id === 'context-length' || id === 'gpu-layers') {
+                        this.updateCompatibilityCalculator();
+                    }
                 });
             }
         });
@@ -299,6 +341,11 @@ class LlamaServerRenderer {
         const copyBtn = document.getElementById('btn-copy-llama-command');
         if (copyBtn) {
             copyBtn.addEventListener('click', () => this.copyLlamaCommand());
+        }
+
+        const copyServerBtn = document.getElementById('btn-copy-llama-server-command');
+        if (copyServerBtn) {
+            copyServerBtn.addEventListener('click', () => this.copyLlamaServerCommand());
         }
 
         console.log('[LlamaServer] Event listeners setup complete');
@@ -318,6 +365,455 @@ class LlamaServerRenderer {
         return `& "${cliPath}" -m "${modelPath}" -c ${contextLength} -ngl ${gpuLayers} -t ${threads} --color auto`;
     }
 
+    getSystemPrompt() {
+        return String(document.getElementById('llama-system-prompt')?.value || '').trim();
+    }
+
+    getGuardSettings() {
+        return {
+            enabled: (document.getElementById('llama-guard-enabled')?.value || 'enabled') !== 'disabled',
+            warnRamPercent: Number(document.getElementById('llama-guard-warn-percent')?.value || '88'),
+            stopRamPercent: Number(document.getElementById('llama-guard-stop-percent')?.value || '93'),
+            minFreeRamMB: Number(document.getElementById('llama-guard-min-free-mb')?.value || '2048'),
+            consecutiveHits: Number(document.getElementById('llama-guard-consecutive-hits')?.value || '2')
+        };
+    }
+
+    applyGuardSettings(settings = {}) {
+        const enabledInput = document.getElementById('llama-guard-enabled');
+        if (enabledInput) enabledInput.value = settings.enabled === false ? 'disabled' : 'enabled';
+
+        const warnInput = document.getElementById('llama-guard-warn-percent');
+        if (warnInput && Number.isFinite(Number(settings.warnRamPercent))) warnInput.value = String(settings.warnRamPercent);
+
+        const stopInput = document.getElementById('llama-guard-stop-percent');
+        if (stopInput && Number.isFinite(Number(settings.stopRamPercent))) stopInput.value = String(settings.stopRamPercent);
+
+        const freeInput = document.getElementById('llama-guard-min-free-mb');
+        if (freeInput && Number.isFinite(Number(settings.minFreeRamMB))) freeInput.value = String(settings.minFreeRamMB);
+
+        const hitsInput = document.getElementById('llama-guard-consecutive-hits');
+        if (hitsInput && Number.isFinite(Number(settings.consecutiveHits))) hitsInput.value = String(settings.consecutiveHits);
+    }
+
+    updateGuardStatus(guard = null) {
+        const statusEl = document.getElementById('llama-guard-status');
+        const usedEl = document.getElementById('llama-guard-ram-used');
+        const freeEl = document.getElementById('llama-guard-ram-free');
+        const actionEl = document.getElementById('llama-guard-last-action');
+
+        const pressureLabels = {
+            idle: 'Idle',
+            safe: 'Protected',
+            warning: 'Warning',
+            critical: 'Critical',
+            tripped: 'Model Ejected',
+            disabled: 'Disabled'
+        };
+
+        const pressure = String(guard?.pressure || 'idle').trim().toLowerCase();
+        if (statusEl) statusEl.textContent = pressureLabels[pressure] || 'Idle';
+        if (usedEl) {
+            usedEl.textContent = Number.isFinite(Number(guard?.lastSample?.usedPercent))
+                ? `${guard.lastSample.usedPercent}% (${guard.lastSample.usedMB} MB)`
+                : '--';
+        }
+        if (freeEl) {
+            freeEl.textContent = Number.isFinite(Number(guard?.lastSample?.freeMB))
+                ? `${guard.lastSample.freeMB} MB`
+                : '--';
+        }
+        if (actionEl) {
+            actionEl.textContent = String(guard?.lastAction || 'Watching system memory.');
+        }
+    }
+
+    startGuardStatusPolling() {
+        if (this.guardStatusInterval) {
+            clearInterval(this.guardStatusInterval);
+        }
+        this.guardStatusInterval = setInterval(() => {
+            this.refreshGuardStatus({ silent: true });
+        }, 4000);
+    }
+
+    escapePowerShellDoubleQuotedString(value) {
+        return String(value || '').replace(/`/g, '``').replace(/"/g, '`"');
+    }
+
+    formatGB(value) {
+        const numeric = Number(value || 0);
+        if (!Number.isFinite(numeric) || numeric <= 0) return '0.00 GB';
+        if (numeric < 10) return `${numeric.toFixed(2)} GB`;
+        return `${numeric.toFixed(1)} GB`;
+    }
+
+    getColorForPercent(percent) {
+        if (percent < 60) return 'var(--success)';
+        if (percent < 90) return 'var(--warning)';
+        return 'var(--danger)';
+    }
+
+    parseModelMetadata(modelName, info = null) {
+        const raw = String(modelName || '').trim();
+        const lower = raw.toLowerCase();
+        const sizeMB = Number(info?.size || 0);
+
+        const paramPatterns = [
+            /(\d+(?:\.\d+)?)\s*x\s*(\d+(?:\.\d+)?)b/i,
+            /(\d+(?:\.\d+)?)b/i,
+            /(\d+(?:\.\d+)?)m/i
+        ];
+
+        let paramsB = null;
+        for (const pattern of paramPatterns) {
+            const match = lower.match(pattern);
+            if (!match) continue;
+            if (pattern.source.includes('x')) {
+                paramsB = Number(match[1]) * Number(match[2]);
+            } else if (match[0].endsWith('m')) {
+                paramsB = Number(match[1]) / 1000;
+            } else {
+                paramsB = Number(match[1]);
+            }
+            break;
+        }
+        if (!Number.isFinite(paramsB) || paramsB <= 0) {
+            paramsB = sizeMB > 0 ? Math.max(1, Math.round((sizeMB / 1024) * 1.8)) : 7;
+        }
+
+        const quantMap = [
+            { pattern: /q2[_-]?k/i, name: 'Q2_K', bits: 2 },
+            { pattern: /q3[_-]?(k|km|ks|m)/i, name: 'Q3_K_M', bits: 3 },
+            { pattern: /q4[_-]?(k[_-]?m|km|k|0|1|m)/i, name: 'Q4_K_M', bits: 4 },
+            { pattern: /q5[_-]?(k[_-]?m|km|k|m)/i, name: 'Q5_K_M', bits: 5 },
+            { pattern: /q6[_-]?k/i, name: 'Q6_K', bits: 6 },
+            { pattern: /q8[_-]?0|q8/i, name: 'Q8_0', bits: 8 },
+            { pattern: /fp16|f16/i, name: 'FP16', bits: 16 },
+            { pattern: /fp32|f32/i, name: 'FP32', bits: 32 },
+            { pattern: /gptq/i, name: 'GPTQ-4', bits: 4.5 },
+            { pattern: /awq/i, name: 'AWQ', bits: 8 },
+            { pattern: /iq4/i, name: 'IQ4', bits: 4 },
+            { pattern: /iq3/i, name: 'IQ3', bits: 3 },
+            { pattern: /iq2/i, name: 'IQ2', bits: 2 }
+        ];
+
+        let quant = { name: 'Q4_K_M', bits: 4 };
+        for (const candidate of quantMap) {
+            if (candidate.pattern.test(lower)) {
+                quant = { name: candidate.name, bits: candidate.bits };
+                break;
+            }
+        }
+
+        let arch = 'transformer';
+        if (/mixtral|moe|8x\d+b|experts?/i.test(lower)) arch = 'moe';
+        else if (/mamba/i.test(lower)) arch = 'mamba';
+        else if (/qwen/i.test(lower)) arch = 'qwen';
+        else if (/llama|mistral|gemma|phi|deepseek/i.test(lower)) arch = 'transformer';
+
+        return {
+            modelName: raw,
+            paramsB,
+            quantName: quant.name,
+            bits: quant.bits,
+            arch,
+            actualSizeGB: sizeMB > 0 ? sizeMB / 1024 : 0
+        };
+    }
+
+    estimateLayers(paramsB, arch) {
+        if (arch === 'moe') return Math.round(Math.max(16, Math.log2(paramsB * 8) * 8));
+        if (arch === 'mamba') return Math.round(paramsB * 5.5 + 12);
+        const layerMap = [[0.5, 12], [1, 16], [3, 26], [7, 32], [13, 40], [30, 60], [70, 80], [120, 96], [180, 112], [405, 128]];
+        for (const [params, layers] of layerMap) {
+            if (paramsB <= params) return layers;
+        }
+        return Math.round(paramsB * 0.32);
+    }
+
+    estimateHiddenSize(paramsB, arch) {
+        if (arch === 'mamba') return Math.round(Math.sqrt(paramsB * 1e9 / 12));
+        const sizeMap = [[0.5, 1024], [1, 2048], [3, 3200], [7, 4096], [13, 5120], [30, 6656], [70, 8192], [120, 9216], [180, 10240], [405, 16384]];
+        for (const [params, hidden] of sizeMap) {
+            if (paramsB <= params) return hidden;
+        }
+        return Math.round(Math.sqrt(paramsB * 1e9 / 64));
+    }
+
+    calcModelWeightsGB(paramsB, bits, actualSizeGB = 0) {
+        if (actualSizeGB > 0) return actualSizeGB;
+        const overhead = bits < 8 ? 1.05 : 1.02;
+        return (paramsB * 1e9 * bits / 8 / 1e9) * overhead;
+    }
+
+    calcKVCacheGB(paramsB, contextLength, arch, bits) {
+        const layers = this.estimateLayers(paramsB, arch);
+        const hidden = this.estimateHiddenSize(paramsB, arch);
+        const dtypeBytes = Math.max(2, bits / 8);
+        const kvBytes = 2 * layers * hidden * contextLength * dtypeBytes;
+        return kvBytes / 1e9;
+    }
+
+    calcOverheadGB(modelGB) {
+        return Math.max(0.5, modelGB * 0.08);
+    }
+
+    async getSystemMemoryProfile() {
+        if (window.browserAPI?.servers?.getStatus) {
+            try {
+                const statusRes = await window.browserAPI.servers.getStatus('llama');
+                const sample = statusRes?.status?.guard?.lastSample;
+                if (sample) {
+                    const profile = {
+                        totalRamGB: Number(sample.totalMB || 0) / 1024,
+                        freeRamGB: Number(sample.freeMB || 0) / 1024,
+                        usedRamGB: Number(sample.usedMB || 0) / 1024,
+                        usedPercent: Number(sample.usedPercent || 0)
+                    };
+                    this.latestSystemProfile = profile;
+                    return profile;
+                }
+            } catch (_) {}
+        }
+
+        return this.latestSystemProfile || {
+            totalRamGB: 16,
+            freeRamGB: 8,
+            usedRamGB: 8,
+            usedPercent: 50
+        };
+    }
+
+    buildCompatibilityRecommendations(summary) {
+        const recos = [];
+        const {
+            runMode,
+            totalRequiredGB,
+            availableVramGB,
+            availableRamGB,
+            paramsB,
+            bits,
+            contextLength,
+            quantName,
+            modelWeightsGB,
+            kvCacheGB,
+            layers,
+            gpuLayers
+        } = summary;
+
+        if (runMode === 'none') {
+            recos.push({ tone: 'danger', text: `This model needs about ${this.formatGB(totalRequiredGB * 1.1)} of usable memory, but the system currently has only ${this.formatGB(availableVramGB + availableRamGB)} available.` });
+            recos.push({ tone: 'warning', text: `Try a smaller model or a stronger quantization. A Q4 or Q3 variant of roughly ${Math.max(1, Math.floor(paramsB / 2))}B would be much safer on this machine.` });
+            return recos;
+        }
+
+        if (bits <= 3) {
+            recos.push({ tone: 'warning', text: `Low-bit quantization (${bits}-bit) should fit more easily, but quality loss is noticeable. Q4_K_M is usually the better balance when it fits.` });
+        } else if (quantName === 'Q4_K_M' || bits === 4) {
+            recos.push({ tone: 'success', text: `Q4-class quantization is usually the sweet spot here: much smaller than FP16 while keeping strong quality.` });
+        } else if (bits >= 8) {
+            recos.push({ tone: 'info', text: `This is a higher-precision file. If memory gets tight, a Q5_K_M or Q4_K_M build would save a lot of space with small quality loss.` });
+        }
+
+        if (kvCacheGB > modelWeightsGB * 0.5) {
+            recos.push({ tone: 'warning', text: `KV cache is heavy at the current context length. Dropping context from ${contextLength} to ${Math.max(1024, Math.round(contextLength / 2 / 512) * 512)} would noticeably reduce memory pressure.` });
+        }
+
+        if (runMode === 'partial') {
+            recos.push({ tone: 'warning', text: `This should run in hybrid GPU+RAM mode with about ${gpuLayers}/${layers} layers on GPU. It will work, but speed will be limited by CPU/RAM offload.` });
+        } else if (runMode === 'cpu') {
+            recos.push({ tone: 'warning', text: `This looks CPU-only on current free resources. It may still run, but expect slow generation compared with full GPU fit.` });
+        } else if (runMode === 'full') {
+            recos.push({ tone: 'success', text: `This model should fully fit in current GPU memory. You have headroom for this setup and can likely increase context moderately if needed.` });
+        }
+
+        return recos;
+    }
+
+    async updateCompatibilityCalculator(info = this.latestModelInfo) {
+        const labelEl = document.getElementById('llama-compat-label');
+        const descEl = document.getElementById('llama-compat-desc');
+        const setText = (id, value) => {
+            const el = document.getElementById(id);
+            if (el) el.textContent = value;
+        };
+
+        if (!this.selectedModel) {
+            this.latestCompatibility = null;
+            setText('llama-compat-params', '--');
+            setText('llama-compat-quant', '--');
+            setText('llama-compat-mode', '--');
+            setText('llama-compat-gpu-layers', '--');
+            setText('llama-compat-weights', '--');
+            setText('llama-compat-kv', '--');
+            setText('llama-compat-total', '--');
+            setText('llama-compat-arch', '--');
+            const metersEl = document.getElementById('llama-compat-meters');
+            if (metersEl) metersEl.innerHTML = '';
+            const configBody = document.getElementById('llama-compat-config-body');
+            if (configBody) {
+                configBody.innerHTML = '<tr><td style="padding: 10px 12px; color: var(--text-dim); border-bottom: 1px solid var(--border);">Status</td><td style="padding: 10px 12px; color: var(--text); border-bottom: 1px solid var(--border);">Select a model to calculate</td></tr>';
+            }
+            const recosEl = document.getElementById('llama-compat-recos');
+            if (recosEl) recosEl.innerHTML = '';
+            if (labelEl) labelEl.textContent = 'Waiting for model selection';
+            if (descEl) descEl.textContent = 'Choose a `.gguf` model and Om-X will estimate params, quantization, KV cache, memory overhead, and whether it fits your current system.';
+            return;
+        }
+
+        const metadata = this.parseModelMetadata(this.selectedModel, info || null);
+        const system = await this.getSystemMemoryProfile();
+        const availableVramGB = (await this.getAvailableGPUMemory()) / 1024;
+        const availableRamGB = Math.max(0.5, Number(system.freeRamGB || 0));
+        const contextLength = Number(document.getElementById('context-length')?.value || 4096);
+        const layers = this.estimateLayers(metadata.paramsB, metadata.arch);
+        const modelWeightsGB = this.calcModelWeightsGB(metadata.paramsB, metadata.bits, metadata.actualSizeGB);
+        const kvCacheGB = this.calcKVCacheGB(metadata.paramsB, contextLength, metadata.arch, metadata.bits);
+        const overheadGB = this.calcOverheadGB(modelWeightsGB);
+        const totalRequiredGB = modelWeightsGB + kvCacheGB + overheadGB;
+
+        const canGpuFull = availableVramGB > 0 && availableVramGB >= totalRequiredGB;
+        const canGpuPartial = availableVramGB > 0 && availableVramGB >= modelWeightsGB * 0.35 && availableRamGB >= Math.max(1, (totalRequiredGB - availableVramGB) * 1.1);
+        const canCpuOnly = availableRamGB >= totalRequiredGB * 1.1;
+
+        let runMode = 'none';
+        let label = 'Not Compatible';
+        let desc = `This setup needs about ${this.formatGB(totalRequiredGB)} before safety margin, which is beyond current free memory.`;
+        if (canGpuFull) {
+            runMode = 'full';
+            label = 'Compatible on GPU';
+            desc = `The selected model should fit fully in current GPU memory with this context length.`;
+        } else if (canGpuPartial) {
+            runMode = 'partial';
+            label = 'Compatible with GPU + RAM Offload';
+            desc = `The model should run in hybrid mode by placing some layers on GPU and the rest in system RAM.`;
+        } else if (canCpuOnly) {
+            runMode = 'cpu';
+            label = 'Compatible on CPU RAM Only';
+            desc = `The model should run from system RAM only, but inference will be slower than a full GPU fit.`;
+        }
+
+        let gpuLayers = 0;
+        if (runMode === 'full') gpuLayers = layers;
+        else if (runMode === 'partial') gpuLayers = Math.max(1, Math.min(layers, Math.floor((availableVramGB / Math.max(totalRequiredGB, 0.01)) * layers)));
+
+        this.latestCompatibility = {
+            runMode,
+            totalRequiredGB,
+            availableVramGB,
+            availableRamGB,
+            modelWeightsGB,
+            kvCacheGB,
+            layers,
+            gpuLayers
+        };
+
+        setText('llama-compat-params', `${metadata.paramsB.toFixed(metadata.paramsB < 10 ? 1 : 0)}B`);
+        setText('llama-compat-quant', `${metadata.quantName} (${metadata.bits}-bit)`);
+        setText('llama-compat-mode', runMode === 'full' ? 'Full GPU' : runMode === 'partial' ? 'Hybrid' : runMode === 'cpu' ? 'CPU Only' : 'Insufficient');
+        setText('llama-compat-gpu-layers', `${gpuLayers} / ${layers}`);
+        setText('llama-compat-weights', this.formatGB(modelWeightsGB));
+        setText('llama-compat-kv', this.formatGB(kvCacheGB));
+        setText('llama-compat-total', this.formatGB(totalRequiredGB));
+        setText('llama-compat-arch', `${String(metadata.arch).toUpperCase()} (~${layers} layers)`);
+
+        if (labelEl) labelEl.textContent = label;
+        if (descEl) descEl.textContent = desc;
+
+        const statusEl = document.getElementById('model-status');
+        if (statusEl) {
+            statusEl.textContent = runMode === 'full'
+                ? 'Compatible'
+                : runMode === 'partial'
+                    ? 'Hybrid Fit'
+                    : runMode === 'cpu'
+                        ? 'CPU Only'
+                        : 'Not Compatible';
+        }
+
+        const warningEl = document.getElementById('model-warning');
+        const warningTextEl = document.getElementById('model-warning-text');
+        if (warningEl) {
+            if (runMode === 'none') warningEl.classList.remove('hidden');
+            else warningEl.classList.add('hidden');
+        }
+        if (warningTextEl) {
+            warningTextEl.textContent = runMode === 'none'
+                ? `This model needs about ${this.formatGB(totalRequiredGB)} plus safety margin, which is higher than current free GPU + RAM capacity.`
+                : runMode === 'partial'
+                    ? 'This model should work with GPU + RAM offload. Expect slower performance than a full VRAM fit.'
+                    : runMode === 'cpu'
+                        ? 'This model should work from system RAM only. It is compatible, but generation speed will be limited.'
+                        : 'Model should fit the current system.';
+        }
+
+        const metersEl = document.getElementById('llama-compat-meters');
+        if (metersEl) {
+            const vramPercent = Math.min(100, (totalRequiredGB / Math.max(availableVramGB, 0.1)) * 100);
+            const ramPercent = Math.min(100, (totalRequiredGB / Math.max(availableRamGB, 0.1)) * 100);
+            metersEl.innerHTML = [
+                { label: 'Available GPU Memory', value: `${this.formatGB(Math.min(totalRequiredGB, availableVramGB))} / ${this.formatGB(availableVramGB)}`, pct: vramPercent },
+                { label: 'Free System RAM', value: `${this.formatGB(totalRequiredGB)} / ${this.formatGB(availableRamGB)}`, pct: ramPercent }
+            ].map((item) => `
+                <div style="margin-bottom: 12px;">
+                    <div style="display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 6px;">
+                        <span style="color: var(--text-dim);">${item.label}</span>
+                        <span style="color: var(--text);">${item.value}</span>
+                    </div>
+                    <div style="height: 8px; background: rgba(255,255,255,0.08); border-radius: 999px; overflow: hidden;">
+                        <div style="height: 100%; width: ${Math.min(100, item.pct)}%; background: ${this.getColorForPercent(item.pct)}; border-radius: 999px;"></div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        const configBody = document.getElementById('llama-compat-config-body');
+        if (configBody) {
+            const rows = [
+                ['Detected model file', metadata.modelName],
+                ['Current context', `${contextLength} tokens`],
+                ['Recommended GPU layers', runMode === 'none' ? '0' : runMode === 'full' ? 'All layers' : `${gpuLayers} of ${layers}`],
+                ['Suggested threads', runMode === 'cpu' ? `${Math.min(navigator.hardwareConcurrency || 8, 8)}` : `${Math.min(navigator.hardwareConcurrency || 4, 4)}`],
+                ['Suggested quant', runMode === 'none' ? 'Try Q4_K_M / Q3_K_M / smaller model' : metadata.quantName],
+                ['Current system RAM', `${this.formatGB(system.totalRamGB)} total, ${this.formatGB(system.freeRamGB)} free`]
+            ];
+            configBody.innerHTML = rows.map(([key, value]) => `
+                <tr>
+                    <td style="padding: 10px 12px; color: var(--text-dim); border-bottom: 1px solid var(--border); white-space: nowrap;">${escapeHtml(key)}</td>
+                    <td style="padding: 10px 12px; color: var(--text); border-bottom: 1px solid var(--border);">${escapeHtml(String(value))}</td>
+                </tr>
+            `).join('');
+        }
+
+        const recosEl = document.getElementById('llama-compat-recos');
+        if (recosEl) {
+            const recommendations = this.buildCompatibilityRecommendations({
+                runMode,
+                totalRequiredGB,
+                availableVramGB,
+                availableRamGB,
+                paramsB: metadata.paramsB,
+                bits: metadata.bits,
+                contextLength,
+                quantName: metadata.quantName,
+                modelWeightsGB,
+                kvCacheGB,
+                layers,
+                gpuLayers
+            });
+            recosEl.innerHTML = recommendations.map((item) => {
+                const color = item.tone === 'success' ? 'var(--success)' : item.tone === 'warning' ? 'var(--warning)' : item.tone === 'danger' ? 'var(--danger)' : 'var(--accent-light)';
+                return `
+                    <div style="display: flex; gap: 10px; align-items: flex-start; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: rgba(255,255,255,0.02);">
+                        <div style="width: 8px; height: 8px; border-radius: 999px; margin-top: 6px; background: ${color}; flex: 0 0 auto;"></div>
+                        <div style="font-size: 12px; line-height: 1.6; color: var(--text);">${item.text}</div>
+                    </div>
+                `;
+            }).join('');
+        }
+    }
+
     generateServerCommand() {
         if (!this.llamaPath || !this.selectedModel) {
             return '';
@@ -330,14 +826,23 @@ class LlamaServerRenderer {
         const threads = document.getElementById('llama-threads')?.value || '4';
         const serverType = this.normalizeServerType(document.getElementById('llama-host')?.value || 'local');
         const host = this.resolveBindHost(serverType);
+        const systemPrompt = this.getSystemPrompt();
+        const systemPromptArg = systemPrompt
+            ? ` --system-prompt "${this.escapePowerShellDoubleQuotedString(systemPrompt)}"`
+            : '';
 
-        return `& "${this.llamaPath}" -m "${modelPath}" -c ${contextLength} -ngl ${gpuLayers} --port ${port} -t ${threads} --host ${host}`;
+        return `& "${this.llamaPath}" -m "${modelPath}" -c ${contextLength} -ngl ${gpuLayers} --port ${port} -t ${threads} --host ${host}${systemPromptArg}`;
     }
 
     updateManualCommand() {
-        const commandEl = document.getElementById('llama-manual-command');
-        if (commandEl) {
-            commandEl.textContent = this.generateManualCommand();
+        const cliCommandEl = document.getElementById('llama-manual-command');
+        if (cliCommandEl) {
+            cliCommandEl.textContent = this.generateManualCommand();
+        }
+
+        const serverCommandEl = document.getElementById('llama-server-command');
+        if (serverCommandEl) {
+            serverCommandEl.textContent = this.generateServerCommand() || 'Configure server executable and model to generate llama-server command...';
         }
     }
 
@@ -352,6 +857,20 @@ class LlamaServerRenderer {
             });
         } else {
             this.log('Configure executable and model first', 'warning');
+        }
+    }
+
+    copyLlamaServerCommand() {
+        const command = this.generateServerCommand();
+        if (command) {
+            navigator.clipboard.writeText(command).then(() => {
+                this.log('Server command copied to clipboard!', 'success');
+            }).catch(err => {
+                console.error('[LlamaServer] Failed to copy server command:', err);
+                this.log('Failed to copy server command', 'error');
+            });
+        } else {
+            this.log('Configure server executable and model first', 'warning');
         }
     }
 
@@ -674,9 +1193,11 @@ class LlamaServerRenderer {
         this.saveSettings();
 
         if (!modelName) {
+            this.latestModelInfo = null;
             this.updateModelInfo(null);
             const modelEl = document.getElementById('llama-status-model');
             if (modelEl) modelEl.textContent = 'Model: --';
+            await this.updateCompatibilityCalculator(null);
             return;
         }
 
@@ -688,6 +1209,7 @@ class LlamaServerRenderer {
         if (modelEl) modelEl.textContent = `Model: ${modelName}`;
         
         await this.checkModelRequirements(modelName);
+        await this.updateCompatibilityCalculator(this.latestModelInfo);
     }
 
     async checkModelRequirements(modelName) {
@@ -699,13 +1221,17 @@ class LlamaServerRenderer {
         if (window.browserAPI && window.browserAPI.llama) {
             try {
                 const info = await window.browserAPI.llama.checkModelSize(this.modelsPath, modelName);
+                this.latestModelInfo = info;
                 this.updateModelInfo(info);
             } catch (err) {
                 console.error('[LlamaServer] Error checking model:', err);
+                this.latestModelInfo = null;
             }
         } else {
+            this.latestModelInfo = null;
             this.estimateModelSize(modelName);
         }
+        await this.updateCompatibilityCalculator(this.latestModelInfo);
     }
 
     estimateModelSize(modelName) {
@@ -813,6 +1339,7 @@ class LlamaServerRenderer {
         if (statusEl && info) {
             statusEl.textContent = info.canLoad ? 'Compatible' : 'Too Large';
         }
+        this.updateCompatibilityCalculator(info || this.latestModelInfo);
     }
 
     async startServer() {
@@ -833,10 +1360,9 @@ class LlamaServerRenderer {
             return;
         }
 
-        const modelSizeEl = document.getElementById('model-size');
-        const statusEl = document.getElementById('model-status');
-        if (statusEl && statusEl.textContent === 'Too Large') {
-            this.log('Cannot load model: it exceeds GPU memory limit', 'error');
+        await this.updateCompatibilityCalculator(this.latestModelInfo);
+        if (this.latestCompatibility?.runMode === 'none') {
+            this.log('Cannot load model: current system compatibility check says it does not fit available GPU + RAM.', 'error');
             return;
         }
 
@@ -846,6 +1372,8 @@ class LlamaServerRenderer {
         const threads = document.getElementById('llama-threads').value || '4';
         const serverType = this.normalizeServerType(document.getElementById('llama-host').value || 'local');
         const bindHost = this.resolveBindHost(serverType);
+        const systemPrompt = this.getSystemPrompt();
+        const guardSettings = this.getGuardSettings();
 
         this.log('Starting Llama Server...', 'info');
         this.launchCommand = this.generateServerCommand();
@@ -870,6 +1398,8 @@ class LlamaServerRenderer {
                     gpuLayers,
                     port,
                     threads,
+                    systemPrompt,
+                    guardSettings,
                     host: bindHost,
                     serverType
                 });
@@ -896,6 +1426,7 @@ class LlamaServerRenderer {
                     // Update status bar
                     const modelEl = document.getElementById('llama-status-model');
                     if (modelEl) modelEl.textContent = `Model: ${this.selectedModel}`;
+                    this.refreshGuardStatus({ silent: true });
                 } else {
                     this.isRunning = false;
                     this.startTime = null;
@@ -1008,17 +1539,24 @@ class LlamaServerRenderer {
         }
     }
 
-    log(message, type = 'info') {
+    log(message, type = 'info', options = {}) {
         const text = String(message ?? '');
+        const { forceDisplay = true } = options;
         const level = type === 'error' ? 'error' : type === 'warning' ? 'warn' : 'log';
         console[level](`[LlamaServer] ${text}`);
 
         const output = document.getElementById('llama-terminal-output');
         if (!output) return;
-        appendTerminalLine(output, {
+        const entry = {
             type,
             source: 'Llama',
             message: text
+        };
+        if (!forceDisplay && !isLlamaOperatorLogEntry(entry)) {
+            return;
+        }
+        appendTerminalLine(output, {
+            ...entry
         });
 
         while (output.children.length > 1000) {
@@ -1114,7 +1652,9 @@ class LlamaServerRenderer {
                 gpuLayers: document.getElementById('gpu-layers')?.value || '-1',
                 port: document.getElementById('llama-port')?.value || '8080',
                 threads: document.getElementById('llama-threads')?.value || '4',
-                host: document.getElementById('llama-host')?.value || '127.0.0.1'
+                host: document.getElementById('llama-host')?.value || '127.0.0.1',
+                systemPrompt: document.getElementById('llama-system-prompt')?.value || '',
+                guardSettings: this.getGuardSettings()
             };
             localStorage.setItem('llama-server-settings', JSON.stringify(settings));
             console.log('[LlamaServer] Settings saved');
@@ -1186,6 +1726,17 @@ class LlamaServerRenderer {
                     if (input) input.value = savedHost;
                 }
 
+                if (typeof settings.systemPrompt === 'string') {
+                    const input = document.getElementById('llama-system-prompt');
+                    if (input) input.value = settings.systemPrompt;
+                }
+
+                if (settings.guardSettings && typeof settings.guardSettings === 'object') {
+                    this.applyGuardSettings(settings.guardSettings);
+                } else {
+                    this.applyGuardSettings();
+                }
+
                 this.updateManualCommand();
                 this.updateEndpoint({
                     port: settings.port || '8080',
@@ -1231,16 +1782,52 @@ class LlamaServerRenderer {
                     stopBtn.disabled = false;
                     stopBtn.style.opacity = '1';
                 }
+                this.applyGuardSettings(status?.guard?.settings || status?.config?.guardSettings || this.getGuardSettings());
+                this.updateGuardStatus(status?.guard || null);
             } else {
                 this.isRunning = false;
                 this.startTime = null;
                 this.setStatus('offline');
                 this.updateEndpoint();
+                this.updateGuardStatus(statusRes?.status?.guard || null);
             }
 
             await this.refreshLogs({ silent: true });
+            await this.refreshGuardStatus({ silent: true });
         } catch (e) {
             console.warn('[LlamaServer] Failed to load runtime state:', e);
+        }
+    }
+
+    async refreshGuardStatus(options = {}) {
+        if (!window.browserAPI?.servers) return;
+
+        const { silent = false } = options;
+        try {
+            const statusRes = await window.browserAPI.servers.getStatus('llama');
+            if (statusRes?.success) {
+                const sample = statusRes.status?.guard?.lastSample;
+                if (sample) {
+                    this.latestSystemProfile = {
+                        totalRamGB: Number(sample.totalMB || 0) / 1024,
+                        freeRamGB: Number(sample.freeMB || 0) / 1024,
+                        usedRamGB: Number(sample.usedMB || 0) / 1024,
+                        usedPercent: Number(sample.usedPercent || 0)
+                    };
+                }
+                this.updateGuardStatus(statusRes.status?.guard || null);
+                this.updateCompatibilityCalculator(this.latestModelInfo);
+                return;
+            }
+
+            if (!silent) {
+                this.log(`Failed to refresh protection status: ${statusRes?.error || 'Unknown error'}`, 'error');
+            }
+        } catch (e) {
+            console.warn('[LlamaServer] Failed to refresh protection status:', e);
+            if (!silent) {
+                this.log(`Failed to refresh protection status: ${e.message || e}`, 'error');
+            }
         }
     }
 
@@ -1261,7 +1848,7 @@ class LlamaServerRenderer {
             const logsRes = await window.browserAPI.servers.getLogs('llama');
             if (logsRes?.success) {
                 if (output) {
-                    hydrateLogOutput(output, logsRes.logs);
+                    hydrateLogOutput(output, (logsRes.logs || []).filter((entry) => isLlamaOperatorLogEntry(entry)));
                 }
                 return;
             }

@@ -14,7 +14,8 @@ const {
   getMember,
   getServerAndChannel,
   hasPermission,
-  isAdmin
+  isAdmin,
+  isMemberMuted
 } = require('../db');
 const {
   cleanText,
@@ -173,6 +174,7 @@ router.post('/channels/:channelId/messages', async (req, res, next) => {
     const { server, channel } = found;
     const member = getMember(server, req.session.userId);
     if (!member) return res.status(403).json({ error: 'not_member' });
+    if (isMemberMuted(member)) return res.status(403).json({ error: 'member_muted' });
 
     if (channel.type === 'voice-placeholder') {
       return res.status(400).json({ error: 'cannot_send_to_voice_channel' });

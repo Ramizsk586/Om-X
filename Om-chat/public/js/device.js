@@ -39,6 +39,7 @@ function normalizeCachedServer(server) {
     name: String(server.name || server.id).slice(0, 80),
     icon: typeof server.icon === 'string' ? server.icon : '',
     iconUrl: typeof server.iconUrl === 'string' ? server.iconUrl : '',
+    railIconUrl: typeof server.railIconUrl === 'string' ? server.railIconUrl : '',
     bannerUrl: typeof server.bannerUrl === 'string' ? server.bannerUrl : '',
     thumbnailUrl: typeof server.thumbnailUrl === 'string' ? server.thumbnailUrl : '',
     chatBackgroundUrl: typeof server.chatBackgroundUrl === 'string' ? server.chatBackgroundUrl : '',

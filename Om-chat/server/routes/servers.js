@@ -18,6 +18,8 @@ const {
   leaveServer,
   listServersForUser,
   removeMember,
+  setMemberGender,
+  setMemberMuteState,
   renameServer,
   setMemberRole,
   updateServerAppearance,
@@ -28,6 +30,7 @@ const { updateServer } = require('../db/serverRepo');
 const {
   ensureServerId,
   validateInvitePayload,
+  validateGenderPayload,
   validateOperatorPayload,
   validateRolePayload,
   validateServerClearPayload,
@@ -317,6 +320,43 @@ router.post('/:id/operator', async (req, res, next) => {
     if (!ok) return res.status(403).json({ error: 'unauthorized' });
 
     return res.json({ success: true, role });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.post('/:id/mute', async (req, res, next) => {
+  try {
+    const serverId = ensureServerId(req.params.id, 'id');
+    const { userId } = validateUserTargetPayload(req.body || {});
+    const muted = req.body?.muted !== false;
+    const server = await getServerById(serverId);
+    if (!server) return res.status(404).json({ error: 'server_not_found' });
+
+    const updatedMember = await setMemberMuteState(serverId, req.session.userId, userId, muted);
+    if (updatedMember === false) return res.status(403).json({ error: 'unauthorized' });
+    if (!updatedMember) return res.status(404).json({ error: 'member_not_found' });
+
+    await announceMemberUpdate(req, serverId);
+    return res.json({ success: true, member: updatedMember, muted });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.post('/:id/gender', async (req, res, next) => {
+  try {
+    const serverId = ensureServerId(req.params.id, 'id');
+    const { userId, genderCode } = validateGenderPayload(req.body || {});
+    const server = await getServerById(serverId);
+    if (!server) return res.status(404).json({ error: 'server_not_found' });
+
+    const updatedMember = await setMemberGender(serverId, req.session.userId, userId, genderCode);
+    if (updatedMember === false) return res.status(403).json({ error: 'unauthorized' });
+    if (!updatedMember) return res.status(404).json({ error: 'member_not_found' });
+
+    await announceMemberUpdate(req, serverId);
+    return res.json({ success: true, member: updatedMember });
   } catch (error) {
     return next(error);
   }

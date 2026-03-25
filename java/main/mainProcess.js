@@ -335,18 +335,44 @@ async function getCachedGpuInfoPayload() {
     }
 
     if (!app.isReady()) await app.whenReady();
-    let availableMemory = 0;
-    let source = 'fallback';
+    let value = {
+      availableMemory: 0,
+      totalMemoryMB: 0,
+      dedicatedMemoryMB: 0,
+      sharedMemoryMB: 0,
+      isIntegrated: false,
+      name: '',
+      source: 'unknown'
+    };
     try {
         const info = await app.getGPUInfo('complete');
-        availableMemory = extractGpuMemoryMB(info);
-        if (availableMemory > 0) source = 'electron';
+        const electronInfo = extractGpuInfoPayload(info);
+        if (electronInfo.availableMemory > 0) {
+          value = electronInfo;
+        }
     } catch (_) {
         // ignore and fall back
     }
-    if (!availableMemory) availableMemory = 8000;
 
-    const value = { availableMemory, source };
+    if (process.platform === 'win32') {
+      try {
+        const dxdiagInfo = await getWindowsDxdiagGpuInfoPayload();
+        if (
+          dxdiagInfo.availableMemory > 0
+          && (
+            !value.availableMemory
+            || value.availableMemory <= 0
+            || dxdiagInfo.isIntegrated
+            || Math.abs(dxdiagInfo.availableMemory - value.availableMemory) > 512
+          )
+        ) {
+          value = dxdiagInfo;
+        }
+      } catch (_) {
+        // ignore and return best-known value
+      }
+    }
+
     gpuInfoCache = { value, timestamp: now };
     return { ...value };
 }
@@ -438,6 +464,23 @@ const goApp = !isStandaloneLaunch ? require('../../game/electron/go electron/jav
 let llamaServerProcess = null;
 let llamaNgrokProcess = null;
 let llamaMemoryGuardInterval = null;
+const LLAMA_GUARD_DEFAULTS = Object.freeze({
+  enabled: true,
+  warnRamPercent: 88,
+  stopRamPercent: 93,
+  minFreeRamMB: 2048,
+  consecutiveHits: 2,
+  sampleIntervalMs: 2000
+});
+let llamaMemoryGuardState = {
+  enabled: LLAMA_GUARD_DEFAULTS.enabled,
+  pressure: 'idle',
+  criticalHits: 0,
+  lastSample: null,
+  lastAction: 'Watching system memory.',
+  lastWarningAt: 0,
+  lastTriggeredAt: 0
+};
 let lanServerProcess = null;
 let mcpServerProcess = null;
 let omChatServerProcess = null;
@@ -847,6 +890,8 @@ function syncLlamaServerConfig(config = {}) {
     contextLength: String(config.contextLength || serverConfigs.llama?.contextLength || '4096'),
     gpuLayers: String(config.gpuLayers || serverConfigs.llama?.gpuLayers || '-1'),
     threads: String(config.threads || serverConfigs.llama?.threads || '4'),
+    systemPrompt: String(config.systemPrompt ?? serverConfigs.llama?.systemPrompt ?? ''),
+    guardSettings: normalizeLlamaGuardSettings(config.guardSettings || serverConfigs.llama?.guardSettings || {}),
     serverType: safeType,
     host: safeHost,
     launchHost,
@@ -874,7 +919,12 @@ async function getLlamaStatusPayload() {
     tunnelPid: llamaNgrokProcess?.pid || null,
     ngrokRunning: isServerProcessActive(llamaNgrokProcess),
     startedAt: serverStarts.llama || null,
-    config
+    config,
+    guard: {
+      ...llamaMemoryGuardState,
+      settings: normalizeLlamaGuardSettings(config?.guardSettings || {}),
+      lastSample: llamaMemoryGuardState.lastSample || sampleLlamaMemoryGuard()
+    }
   };
 }
 
@@ -1433,7 +1483,7 @@ async function syncOmChatDatabases(event) {
   }
 
   const collections = [
-    { local: 'users', mongo: 'users', key: ['id'] },
+    { local: 'users', mongo: 'users', key: ['email'] },
     { local: 'servers', mongo: 'servers', key: ['id'] },
     { local: 'channels', mongo: 'channels', key: ['id'] },
     { local: 'roles', mongo: 'roles', key: ['id'] },
@@ -1778,12 +1828,21 @@ function clearLlamaMemoryGuard() {
     clearInterval(llamaMemoryGuardInterval);
     llamaMemoryGuardInterval = null;
   }
+  llamaMemoryGuardState.criticalHits = 0;
+  if (llamaMemoryGuardState.pressure !== 'tripped') {
+    llamaMemoryGuardState.pressure = isServerProcessActive(llamaServerProcess) ? 'safe' : 'idle';
+  }
+  invalidateServerStatusCache('llama');
 }
 
 function forceStopLlamaServer(reason = 'Llama server stopped.') {
   if (!isServerProcessActive(llamaServerProcess)) return;
   pushServerLog('llama', 'error', reason);
   mainWindow?.webContents?.send('llama-server-output', { type: 'error', data: `${reason}\n` });
+  llamaMemoryGuardState.pressure = 'tripped';
+  llamaMemoryGuardState.lastAction = reason;
+  llamaMemoryGuardState.lastTriggeredAt = Date.now();
+  invalidateServerStatusCache('llama');
   clearLlamaMemoryGuard();
   try {
     llamaServerProcess.kill();
@@ -1796,24 +1855,117 @@ function forceStopLlamaServer(reason = 'Llama server stopped.') {
   }
 }
 
+function clampNumber(value, fallback, min, max) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return fallback;
+  return Math.min(max, Math.max(min, numeric));
+}
+
+function normalizeLlamaGuardSettings(settings = {}) {
+  const source = settings && typeof settings === 'object' ? settings : {};
+  const enabledRaw = String(source.enabled ?? LLAMA_GUARD_DEFAULTS.enabled).trim().toLowerCase();
+  const enabled = enabledRaw === 'false' || enabledRaw === 'disabled' || enabledRaw === '0'
+    ? false
+    : Boolean(source.enabled ?? LLAMA_GUARD_DEFAULTS.enabled);
+
+  const warnRamPercent = clampNumber(source.warnRamPercent, LLAMA_GUARD_DEFAULTS.warnRamPercent, 60, 99);
+  const stopRamPercent = clampNumber(source.stopRamPercent, LLAMA_GUARD_DEFAULTS.stopRamPercent, warnRamPercent + 1, 99);
+  const minFreeRamMB = clampNumber(source.minFreeRamMB, LLAMA_GUARD_DEFAULTS.minFreeRamMB, 256, 32768);
+  const consecutiveHits = Math.round(clampNumber(source.consecutiveHits, LLAMA_GUARD_DEFAULTS.consecutiveHits, 1, 10));
+  const sampleIntervalMs = Math.round(clampNumber(source.sampleIntervalMs, LLAMA_GUARD_DEFAULTS.sampleIntervalMs, 1000, 10000));
+
+  return {
+    enabled,
+    warnRamPercent,
+    stopRamPercent,
+    minFreeRamMB,
+    consecutiveHits,
+    sampleIntervalMs
+  };
+}
+
+function sampleLlamaMemoryGuard() {
+  const totalRam = Number(os.totalmem() || 0);
+  const freeRam = Number(os.freemem() || 0);
+  const usedRam = Math.max(0, totalRam - freeRam);
+  const totalMB = totalRam > 0 ? Math.round(totalRam / (1024 * 1024)) : 0;
+  const freeMB = freeRam > 0 ? Math.round(freeRam / (1024 * 1024)) : 0;
+  const usedMB = usedRam > 0 ? Math.round(usedRam / (1024 * 1024)) : 0;
+  const usedPercent = totalRam > 0 ? Number(((usedRam / totalRam) * 100).toFixed(1)) : 0;
+
+  return {
+    ts: Date.now(),
+    totalMB,
+    freeMB,
+    usedMB,
+    usedPercent
+  };
+}
+
 function startLlamaMemoryGuard() {
   clearLlamaMemoryGuard();
+  const settings = normalizeLlamaGuardSettings(serverConfigs.llama?.guardSettings || {});
+  llamaMemoryGuardState = {
+    ...llamaMemoryGuardState,
+    enabled: settings.enabled,
+    pressure: settings.enabled ? 'safe' : 'disabled',
+    criticalHits: 0,
+    lastSample: sampleLlamaMemoryGuard(),
+    lastAction: settings.enabled ? 'Watching system memory.' : 'Protection is disabled.',
+    lastWarningAt: 0
+  };
+  invalidateServerStatusCache('llama');
+
   llamaMemoryGuardInterval = setInterval(() => {
     if (!isServerProcessActive(llamaServerProcess)) {
       clearLlamaMemoryGuard();
       return;
     }
     try {
-      const totalRam = Number(os.totalmem() || 0);
-      const freeRam = Number(os.freemem() || 0);
-      if (totalRam <= 0) return;
-      const usedRatio = (totalRam - freeRam) / totalRam;
-      if (usedRatio >= 0.95) {
-        const usedPercent = (usedRatio * 100).toFixed(1);
-        forceStopLlamaServer(`Llama RAM guard triggered: system memory usage reached ${usedPercent}% of total RAM. Model unloaded and server stopped.`);
+      const nextSettings = normalizeLlamaGuardSettings(serverConfigs.llama?.guardSettings || settings);
+      const sample = sampleLlamaMemoryGuard();
+      llamaMemoryGuardState.enabled = nextSettings.enabled;
+      llamaMemoryGuardState.lastSample = sample;
+
+      if (!nextSettings.enabled) {
+        llamaMemoryGuardState.pressure = 'disabled';
+        llamaMemoryGuardState.criticalHits = 0;
+        llamaMemoryGuardState.lastAction = 'Protection is disabled.';
+        invalidateServerStatusCache('llama');
+        return;
+      }
+
+      const warning = sample.usedPercent >= nextSettings.warnRamPercent || sample.freeMB <= nextSettings.minFreeRamMB;
+      const critical = sample.usedPercent >= nextSettings.stopRamPercent || sample.freeMB <= nextSettings.minFreeRamMB;
+
+      if (critical) {
+        llamaMemoryGuardState.criticalHits += 1;
+      } else {
+        llamaMemoryGuardState.criticalHits = 0;
+      }
+
+      llamaMemoryGuardState.pressure = critical ? 'critical' : warning ? 'warning' : 'safe';
+
+      if (warning && !critical) {
+        const now = Date.now();
+        if ((now - Number(llamaMemoryGuardState.lastWarningAt || 0)) >= 15000) {
+          const warningMessage = `Llama protection warning: system RAM is at ${sample.usedPercent}% used with ${sample.freeMB} MB free. Om-X is watching to avoid a freeze.`;
+          llamaMemoryGuardState.lastWarningAt = now;
+          llamaMemoryGuardState.lastAction = warningMessage;
+          pushServerLog('llama', 'warning', warningMessage);
+          mainWindow?.webContents?.send('llama-server-output', { type: 'stderr', data: `${warningMessage}\n` });
+        }
+      } else if (!warning) {
+        llamaMemoryGuardState.lastAction = 'Watching system memory.';
+      }
+
+      invalidateServerStatusCache('llama');
+
+      if (critical && llamaMemoryGuardState.criticalHits >= nextSettings.consecutiveHits) {
+        forceStopLlamaServer(`Llama protection manager ejected the model because system RAM reached ${sample.usedPercent}% used with only ${sample.freeMB} MB free. Server stopped to prevent a system freeze.`);
       }
     } catch (_) {}
-  }, 2000);
+  }, settings.sampleIntervalMs);
 }
 
 async function shutdownManagedServers() {
@@ -2265,7 +2417,8 @@ const DEFAULT_SETTINGS = {
     dbMode: 'local',
     localDbPath: '',
     useLocalIpOnly: false
-  }
+  },
+  websitePermissions: {}
 };
 
 function normalizeYouTubeAddonSettings(youtubeAddon = {}) {
@@ -2453,6 +2606,150 @@ let isInputFocused = false;
 ipcMain.on('focus-changed', (event, status) => {
   isInputFocused = status;
 });
+
+function normalizeWebsitePermissions(value = {}) {
+  const source = value && typeof value === 'object' ? value : {};
+  const normalized = {};
+  for (const [origin, permissions] of Object.entries(source)) {
+    const safeOrigin = String(origin || '').trim().toLowerCase();
+    if (!safeOrigin) continue;
+    if (!permissions || typeof permissions !== 'object') continue;
+    const next = {};
+    for (const [permission, decision] of Object.entries(permissions)) {
+      const safePermission = String(permission || '').trim().toLowerCase();
+      const safeDecision = decision === 'allow' ? 'allow' : (decision === 'deny' ? 'deny' : '');
+      if (!safePermission || !safeDecision) continue;
+      next[safePermission] = safeDecision;
+    }
+    if (Object.keys(next).length) normalized[safeOrigin] = next;
+  }
+  return normalized;
+}
+
+function normalizePermissionName(permission = '') {
+  const value = String(permission || '').trim().toLowerCase();
+  if (value === 'audiocapture') return 'microphone';
+  if (value === 'videocapture') return 'camera';
+  if (value === 'display-capture') return 'display-capture';
+  return value;
+}
+
+function getPermissionDecisionKeys(permission = '', details = {}) {
+  const normalized = normalizePermissionName(permission);
+  if (normalized !== 'media') return [normalized];
+
+  const mediaTypes = Array.isArray(details?.mediaTypes) ? details.mediaTypes.map((item) => String(item || '').toLowerCase()) : [];
+  const keys = [];
+  if (mediaTypes.includes('audio')) keys.push('microphone');
+  if (mediaTypes.includes('video')) keys.push('camera');
+  return keys.length ? keys : ['microphone', 'camera'];
+}
+
+function getPermissionLabel(permission = '') {
+  const normalized = normalizePermissionName(permission);
+  const labels = {
+    notifications: 'show notifications',
+    microphone: 'use your microphone',
+    camera: 'use your camera',
+    geolocation: 'know your location',
+    midi: 'use MIDI devices',
+    'midi-sysex': 'use MIDI devices with SysEx',
+    'clipboard-read': 'read your clipboard',
+    'clipboard-sanitized-write': 'write to your clipboard',
+    'pointer-lock': 'lock your pointer',
+    fullscreen: 'enter fullscreen',
+    'display-capture': 'capture your screen'
+  };
+  return labels[normalized] || `use ${normalized}`;
+}
+
+function getRequestOrigin(details = {}, contents = null) {
+  const candidates = [
+    details?.requestingOrigin,
+    details?.embeddingOrigin
+  ];
+  for (const candidate of candidates) {
+    try {
+      if (!candidate) continue;
+      return new URL(candidate).origin.toLowerCase();
+    } catch (_) {}
+  }
+  try {
+    const url = contents?.getURL?.() || '';
+    if (url) return new URL(url).origin.toLowerCase();
+  } catch (_) {}
+  return '';
+}
+
+function getStoredPermissionDecision(origin = '', permission = '') {
+  const safeOrigin = String(origin || '').trim().toLowerCase();
+  const safePermission = normalizePermissionName(permission);
+  return cachedSettings?.websitePermissions?.[safeOrigin]?.[safePermission] || null;
+}
+
+function persistPermissionDecision(origin = '', permission = '', decision = '') {
+  const safeOrigin = String(origin || '').trim().toLowerCase();
+  const safePermission = normalizePermissionName(permission);
+  const safeDecision = decision === 'allow' ? 'allow' : (decision === 'deny' ? 'deny' : '');
+  if (!safeOrigin || !safePermission || !safeDecision) return;
+
+  const nextPermissions = normalizeWebsitePermissions(cachedSettings?.websitePermissions);
+  nextPermissions[safeOrigin] = {
+    ...(nextPermissions[safeOrigin] || {}),
+    [safePermission]: safeDecision
+  };
+  cachedSettings.websitePermissions = nextPermissions;
+  saveSettings(cachedSettings);
+}
+
+const configuredPermissionSessions = new WeakSet();
+
+function configureSitePermissions(targetSession) {
+  if (!targetSession || configuredPermissionSessions.has(targetSession)) return;
+  configuredPermissionSessions.add(targetSession);
+
+  targetSession.setPermissionCheckHandler((webContents, permission, requestingOrigin, details) => {
+    const decisionKeys = getPermissionDecisionKeys(permission, details);
+    const origin = getRequestOrigin({ requestingOrigin, ...(details || {}) }, webContents);
+    return decisionKeys.every((key) => getStoredPermissionDecision(origin, key) === 'allow');
+  });
+
+  targetSession.setPermissionRequestHandler((webContents, permission, callback, details = {}) => {
+    const decisionKeys = getPermissionDecisionKeys(permission, details);
+    const normalizedPermission = decisionKeys[0] || normalizePermissionName(permission);
+    const origin = getRequestOrigin(details, webContents);
+    const storedDecisions = decisionKeys.map((key) => getStoredPermissionDecision(origin, key));
+    if (storedDecisions.every((decision) => decision === 'allow')) return callback(true);
+    if (storedDecisions.some((decision) => decision === 'deny')) return callback(false);
+
+    const hostWindow = BrowserWindow.fromWebContents(webContents) || mainWindow;
+    const siteLabel = origin || 'This site';
+    const permissionLabel = getPermissionLabel(normalizedPermission);
+
+    dialog.showMessageBox(hostWindow || undefined, {
+      type: 'question',
+      buttons: ['Allow Once', 'Always Allow', 'Block'],
+      defaultId: 0,
+      cancelId: 2,
+      noLink: true,
+      title: 'Website Permission Request',
+      message: `${siteLabel} wants to ${permissionLabel}.`,
+      detail: `Om-X will let this website ${permissionLabel} only if you approve it.`
+    }).then(({ response }) => {
+      if (response === 1) {
+        decisionKeys.forEach((key) => persistPermissionDecision(origin, key, 'allow'));
+        callback(true);
+        return;
+      }
+      if (response === 0) {
+        callback(true);
+        return;
+      }
+      decisionKeys.forEach((key) => persistPermissionDecision(origin, key, 'deny'));
+      callback(false);
+    }).catch(() => callback(false));
+  });
+}
 
 
 async function safeWriteJson(filePath, data) {
@@ -2960,49 +3257,133 @@ async function ensureSiteSafetyStatus(rawUrl, options = {}) {
   return await scanPromise;
 }
 
-function extractGpuMemoryMB(info) {
-  const candidates = [];
-  const pushCandidate = (value) => {
-    const num = Number(value);
-    if (!Number.isFinite(num)) return;
-    // Treat large values as bytes.
-    if (num > 262144 && num < 1e12) {
-      candidates.push(num / (1024 * 1024));
-      return;
-    }
-    candidates.push(num);
+function normalizeMemoryValueToMB(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num) || num <= 0) return 0;
+  if (num > 262144 && num < 1e12) {
+    return Math.round(num / (1024 * 1024));
+  }
+  return Math.round(num);
+}
+
+function extractGpuInfoPayload(info) {
+  const payload = {
+    availableMemory: 0,
+    totalMemoryMB: 0,
+    dedicatedMemoryMB: 0,
+    sharedMemoryMB: 0,
+    isIntegrated: false,
+    name: '',
+    source: 'electron'
   };
-  const visit = (value) => {
-    if (!value) return;
-    if (typeof value === 'number') {
-      pushCandidate(value);
-      return;
-    }
-    if (typeof value === 'string') {
-      const match = value.match(/(\d+(\.\d+)?)/);
-      if (match) pushCandidate(match[1]);
-      return;
-    }
-    if (Array.isArray(value)) {
-      value.forEach(visit);
-      return;
-    }
-    if (typeof value === 'object') {
-      for (const [key, val] of Object.entries(value)) {
-        const keyLower = String(key).toLowerCase();
-        if (keyLower.includes('memory') || keyLower.includes('vram')) {
-          pushCandidate(val);
+
+  const gpuDevice = Array.isArray(info?.gpuDevice) ? info.gpuDevice[0] : null;
+  if (gpuDevice) {
+    payload.name = String(gpuDevice.deviceString || gpuDevice.vendorString || '').trim();
+    const active = gpuDevice.active !== false;
+    payload.isIntegrated = active && /intel|uhd|iris|integrated/i.test(payload.name);
+  }
+
+  const aux = info?.auxAttributes && typeof info.auxAttributes === 'object' ? info.auxAttributes : {};
+  const dedicatedCandidates = [
+    aux.dedicatedVideoMemory,
+    aux.dedicatedSystemMemory,
+    gpuDevice?.videoMemory,
+    gpuDevice?.dedicatedVideoMemory
+  ].map(normalizeMemoryValueToMB).filter(Boolean);
+
+  const sharedCandidates = [
+    aux.sharedSystemMemory,
+    gpuDevice?.sharedSystemMemory
+  ].map(normalizeMemoryValueToMB).filter(Boolean);
+
+  const totalCandidates = [
+    aux.totalVideoMemory
+  ].map(normalizeMemoryValueToMB).filter(Boolean);
+
+  payload.dedicatedMemoryMB = dedicatedCandidates.length ? Math.max(...dedicatedCandidates) : 0;
+  payload.sharedMemoryMB = sharedCandidates.length ? Math.max(...sharedCandidates) : 0;
+  payload.totalMemoryMB = totalCandidates.length
+    ? Math.max(...totalCandidates)
+    : Math.max(payload.dedicatedMemoryMB + payload.sharedMemoryMB, payload.dedicatedMemoryMB, payload.sharedMemoryMB);
+
+  payload.availableMemory = payload.totalMemoryMB || payload.sharedMemoryMB || payload.dedicatedMemoryMB || 0;
+  return payload;
+}
+
+function parseDxdiagDisplayValue(line = '') {
+  const match = String(line || '').match(/:\s*([0-9]+(?:\.[0-9]+)?)\s*MB/i);
+  return match ? Math.round(Number(match[1])) : 0;
+}
+
+function parseDxdiagGpuInfo(text = '') {
+  const raw = String(text || '');
+  if (!raw.trim()) return null;
+
+  const sections = raw.split(/-{10,}\r?\nDisplay Devices\r?\n-{10,}/i);
+  const displayBlock = sections.length > 1 ? sections[1] : raw;
+  const deviceBlocks = displayBlock.split(/\r?\n(?=\s*Card name:)/).map((block) => block.trim()).filter(Boolean);
+  if (!deviceBlocks.length) return null;
+
+  const parseDevice = (block) => {
+    const lines = block.split(/\r?\n/);
+    const getLine = (label) => lines.find((line) => line.trim().toLowerCase().startsWith(label.toLowerCase()));
+    const nameLine = getLine('Card name:');
+    const displayMemoryLine = getLine('Display Memory:');
+    const dedicatedMemoryLine = getLine('Dedicated Memory:');
+    const sharedMemoryLine = getLine('Shared Memory:');
+    const hybridLine = getLine('Hybrid Graphics GPU:');
+
+    const name = nameLine ? nameLine.split(':').slice(1).join(':').trim() : '';
+    const dedicatedMemoryMB = parseDxdiagDisplayValue(dedicatedMemoryLine);
+    const sharedMemoryMB = parseDxdiagDisplayValue(sharedMemoryLine);
+    const totalMemoryMB = parseDxdiagDisplayValue(displayMemoryLine) || dedicatedMemoryMB + sharedMemoryMB;
+    const isIntegrated = /integrated/i.test(String(hybridLine || '')) || /intel|uhd|iris/i.test(name);
+
+    return {
+      availableMemory: totalMemoryMB || sharedMemoryMB || dedicatedMemoryMB || 0,
+      totalMemoryMB,
+      dedicatedMemoryMB,
+      sharedMemoryMB,
+      isIntegrated,
+      name,
+      source: 'dxdiag'
+    };
+  };
+
+  const parsedDevices = deviceBlocks.map(parseDevice).filter((device) => device.availableMemory > 0);
+  if (!parsedDevices.length) return null;
+  return parsedDevices.sort((a, b) => b.availableMemory - a.availableMemory)[0];
+}
+
+function getWindowsDxdiagGpuInfoPayload() {
+  return new Promise((resolve, reject) => {
+    const outputPath = path.join(os.tmpdir(), `omx-dxdiag-${process.pid}.txt`);
+    execFile(
+      'dxdiag.exe',
+      ['/whql:off', '/t', outputPath],
+      { windowsHide: true, timeout: 15000 },
+      (error) => {
+        if (error) {
+          reject(error);
+          return;
         }
-        visit(val);
+        try {
+          const text = fs.readFileSync(outputPath, 'utf8');
+          const parsed = parseDxdiagGpuInfo(text);
+          if (parsed) {
+            resolve(parsed);
+            return;
+          }
+          reject(new Error('dxdiag GPU memory could not be parsed.'));
+        } catch (readError) {
+          reject(readError);
+        } finally {
+          try { fs.unlinkSync(outputPath); } catch (_) {}
+        }
       }
-    }
-  };
-  visit(info);
-  const filtered = candidates
-    .map((n) => Math.round(n))
-    .filter((n) => n > 256 && n < 262144);
-  if (!filtered.length) return 0;
-  return Math.max(...filtered);
+    );
+  });
 }
 
 ipcMain.handle('bookmarks-get', () => getStoredBookmarks());
@@ -3334,6 +3715,8 @@ ipcMain.handle('llama:start-server', async (_event, config = {}) => {
   const gpuLayers = String(config.gpuLayers || existingConfig.gpuLayers || '-1');
   const port = Number(config.port || existingConfig.port || 8080);
   const threads = String(config.threads || existingConfig.threads || '4');
+  const systemPrompt = String(config.systemPrompt ?? existingConfig.systemPrompt ?? '').trim();
+  const guardSettings = normalizeLlamaGuardSettings(config.guardSettings || existingConfig.guardSettings || {});
   const serverType = String(config.serverType || config.host || existingConfig.serverType || existingConfig.host || 'local').trim().toLowerCase();
   const host = serverType === 'lan' || serverType === '0.0.0.0'
     ? '0.0.0.0'
@@ -3348,6 +3731,8 @@ ipcMain.handle('llama:start-server', async (_event, config = {}) => {
       gpuLayers,
       port,
       threads,
+      systemPrompt,
+      guardSettings,
       host,
       serverType
     });
@@ -3378,6 +3763,9 @@ ipcMain.handle('llama:start-server', async (_event, config = {}) => {
   }
 
   const args = ['-m', modelPath, '-c', contextLength, '-ngl', gpuLayers, '--port', String(port), '-t', threads, '--host', host];
+  if (systemPrompt) {
+    args.push('--system-prompt', systemPrompt);
+  }
 
   try {
     llamaServerProcess = spawn(executable, args, {
@@ -3393,6 +3781,8 @@ ipcMain.handle('llama:start-server', async (_event, config = {}) => {
       gpuLayers,
       port,
       threads,
+      systemPrompt,
+      guardSettings,
       host,
       serverType
     });
@@ -3479,6 +3869,8 @@ ipcMain.handle('llama:start-server', async (_event, config = {}) => {
       gpuLayers,
       port,
       threads,
+      systemPrompt,
+      guardSettings,
       host,
       serverType
     });
@@ -3888,11 +4280,13 @@ try {
       extensions: normalizeBuiltInExtensionSettings(saved?.extensions),
       searchEngines: normalizedSearchEngines,
       defaultSearchEngineId: normalizeDefaultSearchEngineId(saved?.defaultSearchEngineId, normalizedSearchEngines),
-      blocklist: normalizeBlocklistEntries(saved?.blocklist)
+      blocklist: normalizeBlocklistEntries(saved?.blocklist),
+      websitePermissions: normalizeWebsitePermissions(saved?.websitePermissions)
     });
   }
   cachedSettings.llm = normalizeSharedLlmSettings(cachedSettings?.llm);
   cachedSettings.aiConfig = normalizePersistedAiConfig(cachedSettings?.aiConfig);
+  cachedSettings.websitePermissions = normalizeWebsitePermissions(cachedSettings?.websitePermissions);
   cachedSettings = normalizeLockedSecuritySettings(cachedSettings);
 
   applyPreferredWebTheme();
@@ -4882,6 +5276,7 @@ function attachMiniAppContextMenu(hostWindow, options = {}) {
 }
 
 function createMainWindow() {
+  configureSitePermissions(session.defaultSession);
   mainWindow = new BrowserWindow({
     width: 960, height: 640, 
     frame: false, 
@@ -4901,6 +5296,7 @@ function createMainWindow() {
     }
   });
   attachLanHostWindow(mainWindow);
+  configureSitePermissions(mainWindow.webContents.session);
   if (!shortsHideWebContentsHookBound) {
     shortsHideWebContentsHookBound = true;
     app.on('web-contents-created', (_event, contents) => {
@@ -5774,7 +6170,8 @@ ipcMain.handle('settings-save', async (e, s) => {
       dbMode: String(incoming?.omchat?.dbMode ?? cachedSettings?.omchat?.dbMode ?? 'local') === 'mongo' ? 'mongo' : 'local',
       localDbPath: String(incoming?.omchat?.localDbPath ?? cachedSettings?.omchat?.localDbPath ?? '').trim(),
       useLocalIpOnly: Boolean(incoming?.omchat?.useLocalIpOnly ?? cachedSettings?.omchat?.useLocalIpOnly ?? DEFAULT_SETTINGS.omchat.useLocalIpOnly)
-    }
+    },
+    websitePermissions: normalizeWebsitePermissions(incoming?.websitePermissions ?? cachedSettings?.websitePermissions)
   });
   normalizedSettings.aiConfig = normalizePersistedAiConfig(normalizedSettings.aiConfig);
   const secureNormalizedSettings = isPrivilegedSettingsSender(e)

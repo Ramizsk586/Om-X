@@ -58,7 +58,13 @@ export function renderMarkdown(text) {
   html = html.replace(/^> (.+)$/gm, '<blockquote>$1</blockquote>');
   html = html.replace(/(@[a-zA-Z0-9_\-]+)/g, '<span class="mention">$1</span>');
   html = html.replace(/#([a-zA-Z0-9_\-]+)/g, '<a href="#" class="channel-link" data-channel="$1">#$1</a>');
-  html = html.replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noreferrer">$1</a>');
+  html = html.replace(
+    /(^|[\s(>])((?:https?:\/\/|www\.)[^\s<]+[^\s<.,!?;:")\]])/gi,
+    (_, prefix, url) => {
+      const href = /^https?:\/\//i.test(url) ? url : `https://${url}`;
+      return `${prefix}<a href="${href}" target="_blank" rel="noreferrer noopener">${url}</a>`;
+    }
+  );
   return html;
 }
 
@@ -104,6 +110,20 @@ function attachmentLabel(att) {
   return ext ? ext.toUpperCase() : 'FILE';
 }
 
+function summarizeReplyText(message) {
+  if (!message || typeof message !== 'object') return '(message)';
+  const previewText = String(message.previewText || '').trim();
+  if (previewText && !previewText.startsWith('omx-e2ee:v1:')) return previewText;
+  const text = String(message.content || '').trim();
+  if (text) return text;
+  const attachments = Array.isArray(message.attachments) ? message.attachments : [];
+  if (!attachments.length) return '(message)';
+  if (attachments.length === 1) {
+    return attachments[0]?.name ? `Attachment: ${attachments[0].name}` : 'Attachment';
+  }
+  return `${attachments.length} attachments`;
+}
+
 const ICONS = Object.freeze({
   reply: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 8 4 12l5 4"></path><path d="M20 12H5"></path></svg>',
   edit: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"></path><path d="m16.5 3.5 4 4L7 21H3v-4z"></path></svg>',
@@ -112,7 +132,9 @@ const ICONS = Object.freeze({
   emoji: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M9 10h.01"></path><path d="M15 10h.01"></path><path d="M8.5 14.5c.9 1.2 2.06 1.8 3.5 1.8s2.6-.6 3.5-1.8"></path></svg>',
   more: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.8"></circle><circle cx="12" cy="12" r="1.8"></circle><circle cx="19" cy="12" r="1.8"></circle></svg>',
   paperclip: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.44 11.05-8.84 8.84a5.5 5.5 0 1 1-7.78-7.78l8.49-8.48a3.5 3.5 0 0 1 4.95 4.95l-8.49 8.48a1.5 1.5 0 0 1-2.12-2.12l7.78-7.78"></path></svg>',
-  unread: '<svg viewBox="0 0 8 8" fill="currentColor" aria-hidden="true"><circle cx="4" cy="4" r="3"></circle></svg>'
+  unread: '<svg viewBox="0 0 8 8" fill="currentColor" aria-hidden="true"><circle cx="4" cy="4" r="3"></circle></svg>',
+  deviceDesktop: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"></rect><path d="M8 20h8"></path><path d="M12 16v4"></path></svg>',
+  deviceMobile: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="7" y="2.5" width="10" height="19" rx="2.5"></rect><path d="M11 18h2"></path></svg>'
 });
 
 const CATEGORY_STORAGE_KEY = 'omchat_collapsed_categories';
@@ -184,6 +206,14 @@ export function createAvatarNode(profile = {}, className = 'avatar') {
   }
 
   return avatar;
+}
+
+export function getDeviceBadgeSvg(deviceType) {
+  return deviceType === 'mobile' ? ICONS.deviceMobile : ICONS.deviceDesktop;
+}
+
+export function getDeviceLabel(deviceType) {
+  return deviceType === 'mobile' ? 'Mobile' : 'Desktop';
 }
 
 function createAttachmentElement(att) {
@@ -327,15 +357,31 @@ export function createMessageElement(message, grouped = false, currentUserId = n
   contentWrap.className = 'message-content';
 
   if (message.replyTo) {
-    const reply = document.createElement('div');
+    const replyData = typeof message.replyTo === 'object' && message.replyTo ? message.replyTo : null;
+    const reply = document.createElement('button');
+    reply.type = 'button';
     reply.className = 'message-reply';
-    const replyAuthor = typeof message.replyTo === 'object'
-      ? String(message.replyTo.username || 'Unknown')
-      : 'Unknown';
-    const replyBody = typeof message.replyTo === 'object'
-      ? String(message.replyTo.content || '(message)')
-      : '(message)';
-    reply.textContent = `${replyAuthor}: ${replyBody}`;
+    if (replyData?.id) reply.dataset.replyId = replyData.id;
+
+    const replyAvatar = createAvatarNode({
+      username: replyData?.username || 'Unknown',
+      avatarColor: replyData?.avatarColor || '#5865F2',
+      avatarUrl: replyData?.avatarUrl || ''
+    }, 'message-reply-avatar');
+
+    const replyText = document.createElement('span');
+    replyText.className = 'message-reply-text';
+
+    const replyAuthor = document.createElement('span');
+    replyAuthor.className = 'message-reply-author';
+    replyAuthor.textContent = replyData?.username || 'Unknown';
+
+    const replySnippet = document.createElement('span');
+    replySnippet.className = 'message-reply-snippet';
+    replySnippet.textContent = summarizeReplyText(replyData);
+
+    replyText.append(replyAuthor, replySnippet);
+    reply.append(replyAvatar, replyText);
     contentWrap.appendChild(reply);
   }
 
@@ -488,6 +534,16 @@ export function renderMembers(members, roles, container) {
       if (roleMeta?.color) name.style.color = roleMeta.color;
 
       nameRow.append(name);
+
+      if (member.deviceType === 'mobile' || member.deviceType === 'desktop') {
+        const deviceBadge = document.createElement('span');
+        deviceBadge.className = `member-device-badge is-${member.deviceType}`;
+        deviceBadge.title = getDeviceLabel(member.deviceType);
+        deviceBadge.setAttribute('aria-label', getDeviceLabel(member.deviceType));
+        deviceBadge.innerHTML = getDeviceBadgeSvg(member.deviceType);
+        nameRow.appendChild(deviceBadge);
+      }
+
       copy.appendChild(nameRow);
 
       const status = document.createElement('span');

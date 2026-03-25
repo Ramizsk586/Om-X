@@ -3,11 +3,11 @@ const requireAuth = require('../middleware/requireAuth');
 const DmConversation = require('../models/DmConversation.model');
 const { getModel } = require('../db/getModel');
 const {
+  deleteDmConversation,
   getDmById,
   getMember,
   getServerById,
   getUser,
-  hideDmConversation,
   restoreDmConversation,
   db
 } = require('../db');
@@ -161,13 +161,9 @@ router.post('/:id/delete', async (req, res, next) => {
 
     const dmId = ensureChannelId(req.params.id, 'id');
     const selfId = req.session.userId;
-    const dm = getDmById(dmId);
-    if (!dm || !Array.isArray(dm.participants) || !dm.participants.includes(selfId)) {
-      return res.status(404).json({ error: 'dm_not_found' });
-    }
-
-    await hideDmConversation(dm.id, selfId);
-    return res.json({ success: true });
+    const deleted = await deleteDmConversation(dmId, selfId);
+    if (!deleted) return res.status(404).json({ error: 'dm_not_found' });
+    return res.json({ success: true, deleted: true });
   } catch (error) {
     return next(error);
   }

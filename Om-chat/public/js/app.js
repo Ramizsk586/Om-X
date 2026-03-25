@@ -5,6 +5,8 @@ import {
   createMessageElement,
   escapeHtml,
   getCustomStatusText,
+  getDeviceBadgeSvg,
+  getDeviceLabel,
   getStatusLabel,
   messageShouldGroup,
   normalizeUserStatus,
@@ -57,6 +59,7 @@ const el = {
   jumpLatest: $('#jump-to-latest'),
   announcementNotice: $('#announcement-notice'),
   composer: $('#composer'),
+  replyPreview: $('#reply-preview'),
   pendingAttachments: $('#pending-attachments'),
   fileInput: $('#file-input'),
   giftButton: $('#gift-btn'),
@@ -65,6 +68,9 @@ const el = {
   voiceBtn: $('#voice-btn'),
   emojiPicker: $('#emoji-picker'),
   gifPicker: $('#gif-picker'),
+  slashCommandMenu: $('#slash-command-menu'),
+  mentionMenu: $('#mention-menu'),
+  genderCodeMenu: $('#gender-code-menu'),
   voiceTooltip: $('#voice-tooltip'),
   membersSidebarTitle: $('#members-sidebar-title'),
   memberCount: $('#member-online-count'),
@@ -89,6 +95,9 @@ const el = {
   serverIconPreview: $('#server-icon-preview'),
   serverIconUpload: $('#server-icon-upload'),
   serverIconClear: $('#server-icon-clear'),
+  serverRailIconPreview: $('#server-rail-icon-preview'),
+  serverRailIconUpload: $('#server-rail-icon-upload'),
+  serverRailIconClear: $('#server-rail-icon-clear'),
   serverThumbnailPreview: $('#server-thumbnail-preview'),
   serverChatBgPreview: $('#server-chatbg-preview'),
   serverThumbnailUpload: $('#server-thumbnail-upload'),
@@ -106,6 +115,12 @@ const el = {
   createChannelPerms: $('#create-channel-perms'),
   createChannelTopic: $('#create-channel-topic'),
   createChannelSlow: $('#create-channel-slow'),
+  createServerModal: $('#create-server-modal'),
+  createServerClose: $('#create-server-close'),
+  createServerCancel: $('#create-server-cancel'),
+  createServerSubmit: $('#create-server-submit'),
+  createServerError: $('#create-server-error'),
+  createServerName: $('#create-server-name'),
   chatCleanupModal: $('#chat-cleanup-modal'),
   chatCleanupClose: $('#chat-cleanup-close'),
   cleanupFromInput: $('#cleanup-from-input'),
@@ -126,6 +141,7 @@ const el = {
   userMicBtn: $('#user-mic-btn'),
   userDeafenBtn: $('#user-deafen-btn'),
   serverIconInput: $('#server-icon-input'),
+  serverRailIconInput: $('#server-rail-icon-input'),
   serverBannerInput: $('#server-banner-input'),
   serverThumbnailInput: $('#server-thumbnail-input'),
   serverChatBgInput: $('#server-chatbg-input')
@@ -163,6 +179,7 @@ const state = {
     messageId: null,
     draft: ''
   },
+  replyingTo: null,
   pendingFiles: [],
   pendingUploadItems: [],
   pendingUploads: [],
@@ -185,6 +202,23 @@ const state = {
   },
   serverMenuPortal: null
 };
+
+const SLASH_COMMANDS = Object.freeze([
+  { name: '/gif', usage: '/gif', description: 'Open GIF picker', role: 'all' },
+  { name: '/png', usage: '/png', description: 'Open PNG picker', role: 'all' },
+  { name: '/mute', usage: '/mute @username', description: 'Mute a member from chat', role: 'operator' },
+  { name: '/unmute', usage: '/unmute @username', description: 'Allow a muted member to chat again', role: 'operator' },
+  { name: '/gender', usage: '/gender @username `F`', description: 'Set a member gender badge', role: 'admin' },
+  { name: '/op', usage: '/op @username', description: 'Grant operator role', role: 'admin' },
+  { name: '/deop', usage: '/deop @username', description: 'Remove operator role', role: 'admin' }
+]);
+
+const GENDER_OPTIONS = Object.freeze([
+  { code: 'M', label: 'Male' },
+  { code: 'F', label: 'Female' },
+  { code: 'T', label: 'Trans' },
+  { code: 'S', label: 'Shemale' }
+]);
 
 let notificationPermissionRequested = false;
 function canUseNotifications() {
@@ -572,20 +606,22 @@ async function openDMDualKeyModal(member) {
     const continueBtn = document.getElementById('dm-final-key-continue');
 
     if (copyBtn) {
+      copyBtn.dataset.resetLabel = copyBtn.innerHTML;
       copyBtn.onclick = async () => {
-        await copyText(finalKey, copyBtn, '? Copied!');
+        await copyText(finalKey, copyBtn, 'Copied!');
         setTimeout(() => {
-          copyBtn.innerHTML = '&#128203; Copy Key';
+          copyBtn.innerHTML = copyBtn.dataset.resetLabel || '&#128203; Copy Key';
         }, 2000);
       };
     }
 
     if (continueBtn) {
-      continueBtn.onclick = () => {
+      continueBtn.onclick = async () => {
         modal.classList.add('hidden');
-        if (pendingDM) {
-          proceedOpenDM(pendingDM, true);
-          pendingDM = null;
+        const target = pendingDM;
+        pendingDM = null;
+        if (target) {
+          await proceedOpenDM(target, true);
         }
       };
     }
@@ -854,8 +890,21 @@ async function decodeMessageForDisplay(message) {
   const rawContent = message.content || '';
   const wasEncrypted = rawContent.startsWith(E2EE_PREFIX);
   const decoded = await decryptMessageText(rawContent, message.channelId || '');
+  let replyTo = message.replyTo || null;
+  if (replyTo && typeof replyTo === 'object') {
+    const replyRawContent = String(replyTo.content || '');
+    const replyWasEncrypted = replyRawContent.startsWith(E2EE_PREFIX);
+    replyTo = {
+      ...replyTo,
+      previewText: String(replyTo.previewText || ''),
+      content: replyWasEncrypted
+        ? await decryptMessageText(replyRawContent, replyTo.channelId || message.channelId || '')
+        : replyRawContent
+    };
+  }
   return {
     ...message,
+    replyTo,
     content: decoded,
     _encrypted: wasEncrypted,
     _decryptFailed: wasEncrypted && decoded === E2EE_FAILURE_TEXT
@@ -863,7 +912,20 @@ async function decodeMessageForDisplay(message) {
 }
 
 async function decodeMessageListForDisplay(messages = []) {
-  return Promise.all((messages || []).map((m) => decodeMessageForDisplay(m)));
+  return Promise.all((messages || []).map(async (message) => {
+    try {
+      return await decodeMessageForDisplay(message);
+    } catch (error) {
+      console.warn('[Om Chat] Failed to decode stored message:', error);
+      return {
+        ...message,
+        content: String(message?.content || ''),
+        replyTo: message?.replyTo || null,
+        _encrypted: false,
+        _decryptFailed: false
+      };
+    }
+  }));
 }
 
 // ─── Channel helpers ──────────────────────────────────────────────────────────
@@ -1219,6 +1281,11 @@ function initializeE2EE(serverId) {
   setE2EEPassphrase(savedPassphrase, { serverId: safeServerId, persist: false });
 }
 
+function refreshStoredE2EEState() {
+  initializeE2EE(state.server?.id || '');
+  updateE2EEIndicator();
+}
+
 function getCsrfToken() {
   try {
     const rt = (typeof window.getOmChatRuntime === 'function')
@@ -1260,6 +1327,7 @@ function syncCachedServer(server) {
     name: server.name || server.id,
     icon: server.icon || getServerBadge(server),
     iconUrl: server.iconUrl || '',
+    railIconUrl: server.railIconUrl || '',
     bannerUrl: server.bannerUrl || '',
     thumbnailUrl: server.thumbnailUrl || '',
     chatBackgroundUrl: server.chatBackgroundUrl || '',
@@ -1322,6 +1390,7 @@ function applyChatBackground(serverUrl = '', dmUrl = '') {
 
 function applyServerAppearance(server) {
   const iconUrl = normalizeAssetUrl(server?.iconUrl);
+  const railIconUrl = normalizeAssetUrl(server?.railIconUrl) || iconUrl;
   const legacyBanner = normalizeAssetUrl(server?.bannerUrl);
   const thumbnailUrl = normalizeAssetUrl(server?.thumbnailUrl) || legacyBanner;
   const chatBgUrl = normalizeAssetUrl(server?.chatBackgroundUrl) || legacyBanner;
@@ -1337,6 +1406,12 @@ function applyServerAppearance(server) {
     el.serverIconPreview.textContent = badge;
     el.serverIconPreview.classList.toggle('has-image', Boolean(iconUrl));
     el.serverIconPreview.style.backgroundImage = iconUrl ? `url("${iconUrl}")` : '';
+  }
+
+  if (el.serverRailIconPreview) {
+    el.serverRailIconPreview.textContent = badge;
+    el.serverRailIconPreview.classList.toggle('has-image', Boolean(railIconUrl));
+    el.serverRailIconPreview.style.backgroundImage = railIconUrl ? `url("${railIconUrl}")` : '';
   }
 
   if (el.serverThumbnailPreview) {
@@ -1401,8 +1476,28 @@ function buildAvatarHtml(profile = {}, className = 'popout-avatar') {
   const avatarUrl = String(profile.avatarUrl || '').trim();
   const color = escapeHtml(profile.avatarColor || profile.avatar || 'var(--accent)');
   const initial = escapeHtml(getAvatarInitial(profile.username));
-  const image = avatarUrl ? '<img class="avatar-image" src="' + escapeHtml(avatarUrl) + '" alt="" loading="lazy" />' : '';
-  return '<span class="' + className + (avatarUrl ? ' has-avatar-image' : '') + '" style="background:' + color + '">' + image + '<span class="avatar-initial">' + initial + '</span></span>';
+  if (!avatarUrl) {
+    return '<span class="' + className + '" style="background:' + color + '">' + initial + '</span>';
+  }
+  return '<span class="' + className + ' has-avatar-image" style="background:' + color + '"><img class="avatar-image" src="' + escapeHtml(avatarUrl) + '" alt="" loading="lazy" /><span class="avatar-initial">' + initial + '</span></span>';
+}
+
+function buildDeviceBadgeHtml(deviceType) {
+  if (deviceType !== 'mobile' && deviceType !== 'desktop') return '';
+  const label = escapeHtml(getDeviceLabel(deviceType));
+  return '<span class="member-device-badge is-' + deviceType + '" title="' + label + '" aria-label="' + label + '">' + getDeviceBadgeSvg(deviceType) + '</span>';
+}
+
+function getGenderOption(code) {
+  const normalized = String(code || '').trim().toUpperCase();
+  return GENDER_OPTIONS.find((item) => item.code === normalized) || null;
+}
+
+function buildGenderBadgeHtml(genderCode) {
+  const option = getGenderOption(genderCode);
+  if (!option) return '';
+  const label = escapeHtml(option.label);
+  return '<span class="member-gender-badge" title="' + label + '" aria-label="' + label + '">' + escapeHtml(option.code) + '</span>';
 }
 
 function applySelfAvatar(profile = {}) {
@@ -1510,10 +1605,22 @@ function renderServerRail() {
     button.setAttribute('aria-label', server.name || 'Server');
     button.title = server.name || 'Server';
     button.textContent = getServerBadge(server);
-    const iconUrl = normalizeAssetUrl(server.iconUrl);
-    if (iconUrl) {
+    const railIconUrl = normalizeAssetUrl(server.railIconUrl) || normalizeAssetUrl(server.iconUrl);
+    if (railIconUrl) {
       button.classList.add('has-image');
-      button.style.backgroundImage = `url("${iconUrl}")`;
+      button.textContent = '';
+      const image = document.createElement('img');
+      image.className = 'server-rail-pill-image';
+      image.src = railIconUrl;
+      image.alt = '';
+      image.loading = 'lazy';
+      image.decoding = 'async';
+      image.addEventListener('error', () => {
+        image.remove();
+        button.classList.remove('has-image');
+        button.textContent = getServerBadge(server);
+      }, { once: true });
+      button.appendChild(image);
     }
     el.serverRailList.appendChild(button);
   }
@@ -1785,6 +1892,81 @@ function closeCreateChannelModal() {
   setCreateChannelError('');
 }
 
+function setCreateServerError(message = '') {
+  if (!el.createServerError) return;
+  const text = String(message || '').trim();
+  el.createServerError.textContent = text;
+  el.createServerError.classList.toggle('hidden', !text);
+}
+
+function buildServerIconFromName(name) {
+  const words = String(name || '').trim().split(/\s+/).filter(Boolean);
+  const icon = (words[0]?.[0] || '') + (words[1]?.[0] || words[0]?.[1] || '');
+  return (icon || 'OX').slice(0, 2).toUpperCase();
+}
+
+function openCreateServerModal() {
+  if (!state.user?.id) return;
+  const fallbackName = `${state.user.username || 'My'}'s Server`;
+  el.createServerName.value = fallbackName;
+  setCreateServerError('');
+  el.createServerSubmit.disabled = false;
+  el.createServerSubmit.textContent = 'Create';
+  el.createServerModal.classList.remove('hidden');
+  setTimeout(() => {
+    el.createServerName.focus();
+    el.createServerName.select();
+  }, 0);
+}
+
+function closeCreateServerModal() {
+  el.createServerModal.classList.add('hidden');
+  setCreateServerError('');
+  el.createServerSubmit.disabled = false;
+  el.createServerSubmit.textContent = 'Create';
+}
+
+async function submitCreateServer() {
+  if (!state.user?.id) return;
+  const serverName = String(el.createServerName.value || '').trim();
+  if (!serverName) {
+    setCreateServerError('Server name is required.');
+    return;
+  }
+
+  el.createServerSubmit.disabled = true;
+  el.createServerSubmit.textContent = 'Creating...';
+  setCreateServerError('');
+
+  try {
+    const response = await fetch('/api/servers/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ serverName, icon: buildServerIconFromName(serverName) })
+    });
+    const data = await response.json().catch(() => null);
+    if (!response.ok || !data?.serverId) {
+      setCreateServerError(data?.error || 'Failed to create server.');
+      return;
+    }
+
+    if (data.server) {
+      state.serverRail = getCachedServerList().concat(data.server);
+      if (typeof window.cacheServers === 'function') {
+        window.cacheServers(state.serverRail);
+        state.serverRail = getCachedServerList();
+      }
+      renderServerRail();
+    }
+
+    closeCreateServerModal();
+    window.location.href = `/app.html?server=${encodeURIComponent(data.serverId)}`;
+  } finally {
+    el.createServerSubmit.disabled = false;
+    el.createServerSubmit.textContent = 'Create';
+  }
+}
+
 async function submitCreateChannel() {
   if (!state.server?.id) return;
   const name = String(el.createChannelName.value || '').trim();
@@ -1930,29 +2112,55 @@ function openActionModal({ title, description = '', value = '', placeholder = ''
   }
 }
 
+function fallbackCopyText(text) {
+  const temp = document.createElement('textarea');
+  temp.value = String(text || '');
+  temp.setAttribute('readonly', 'true');
+  temp.style.position = 'fixed';
+  temp.style.top = '0';
+  temp.style.left = '-9999px';
+  document.body.appendChild(temp);
+  temp.focus();
+  temp.select();
+  const copied = document.execCommand('copy');
+  document.body.removeChild(temp);
+  return copied;
+}
+
 async function copyText(text, button, successLabel = 'Copied') {
+  const value = String(text || '').trim();
+  if (!value || value === '-') return false;
+
+  let copied = false;
   try {
     if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(text);
-    } else {
-      const temp = document.createElement('textarea');
-      temp.value = text;
-      temp.setAttribute('readonly', 'true');
-      temp.style.position = 'absolute';
-      temp.style.left = '-9999px';
-      document.body.appendChild(temp);
-      temp.select();
-      document.execCommand('copy');
-      document.body.removeChild(temp);
+      await navigator.clipboard.writeText(value);
+      copied = true;
     }
-    const previous = button.textContent;
+  } catch (error) {
+    console.warn('[Om Chat] Clipboard API failed, using fallback copy:', error);
+  }
+
+  if (!copied) {
+    try {
+      copied = fallbackCopyText(value);
+    } catch (error) {
+      console.warn('[Om Chat] Fallback copy failed:', error);
+    }
+  }
+
+  if (!copied) return false;
+
+  if (button) {
+    const previousLabel = button.dataset.resetLabel || button.innerHTML;
+    button.dataset.resetLabel = previousLabel;
     button.textContent = successLabel;
     setTimeout(() => {
-      button.textContent = previous;
+      button.innerHTML = button.dataset.resetLabel || previousLabel;
     }, 1200);
-  } catch (error) {
-    console.warn('[Om Chat] Clipboard write failed:', error);
   }
+
+  return true;
 }
 
 async function handleServerMenuAction(action) {
@@ -2231,7 +2439,7 @@ async function deleteDmConversation(dmId) {
   const partnerName = dm.partner?.username || 'this user';
   openActionModal({
     title: 'Delete direct chat',
-    description: `Remove your chat with ${partnerName} from the direct message list. New messages will bring it back.`,
+    description: `Delete your DM chat with ${partnerName}. This removes the conversation and its messages.`,
     primaryLabel: 'Delete chat',
     hideInput: true,
     danger: true,
@@ -2350,6 +2558,77 @@ function renderPinnedPanel() {
   `).join('')}</div>`;
 }
 
+function getReplySummary(message) {
+  if (!message || typeof message !== 'object') return '(message)';
+  const previewText = String(message.previewText || '').trim();
+  if (previewText && !previewText.startsWith(E2EE_PREFIX)) return previewText;
+  const text = String(message.content || '').trim();
+  if (text) return text;
+  const attachments = Array.isArray(message.attachments) ? message.attachments : [];
+  if (!attachments.length) return '(message)';
+  if (attachments.length === 1) {
+    return attachments[0]?.name ? `Attachment: ${attachments[0].name}` : 'Attachment';
+  }
+  return `${attachments.length} attachments`;
+}
+
+function renderReplyPreview() {
+  if (!el.replyPreview) return;
+  const reply = state.replyingTo;
+  if (!reply?.id) {
+    el.replyPreview.innerHTML = '';
+    el.replyPreview.classList.add('hidden');
+    return;
+  }
+
+  el.replyPreview.innerHTML = `
+    <div class="reply-preview-copy">
+      <span class="reply-preview-label">Replying to <strong>${escapeHtml(reply.username || 'Unknown')}</strong></span>
+      <button type="button" class="reply-preview-source" data-action="jump-reply" data-reply-id="${escapeHtml(reply.id)}">${escapeHtml(getReplySummary(reply))}</button>
+    </div>
+    <button type="button" class="reply-preview-close" data-action="cancel-reply" aria-label="Cancel reply">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M18 6 6 18"></path>
+        <path d="m6 6 12 12"></path>
+      </svg>
+    </button>
+  `;
+  el.replyPreview.classList.remove('hidden');
+}
+
+function clearReplyTarget({ focusComposer = false } = {}) {
+  state.replyingTo = null;
+  renderReplyPreview();
+  if (focusComposer) el.composerInput?.focus();
+}
+
+function setReplyTarget(message) {
+  if (!message?.id) return;
+  state.replyingTo = {
+    id: message.id,
+    userId: message.userId || '',
+    username: message.username || 'Unknown',
+    avatarColor: message.avatarColor || '#5865F2',
+    avatarUrl: message.avatarUrl || '',
+    content: String(message.content || ''),
+    attachments: Array.isArray(message.attachments) ? [...message.attachments] : [],
+    channelId: message.channelId || state.currentChannelId || ''
+  };
+  renderReplyPreview();
+  el.composerInput?.focus();
+}
+
+function jumpToMessage(messageId) {
+  if (!messageId || !el.messageList || typeof CSS === 'undefined' || typeof CSS.escape !== 'function') return false;
+  const selector = `.chat-message[data-id="${CSS.escape(String(messageId))}"]`;
+  const target = el.messageList.querySelector(selector);
+  if (!target) return false;
+  target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  target.classList.add('is-jump-target');
+  window.setTimeout(() => target.classList.remove('is-jump-target'), 1800);
+  return true;
+}
+
 function renderMessages() {
   el.messageList.innerHTML = '';
   renderPinnedPanel();
@@ -2387,7 +2666,6 @@ function renderMessages() {
     }
 
     const row = createMessageElement(message, messageShouldGroup(previous, message), state.user.id, allowModeration);
-    row.querySelector('[data-action="reply"]')?.remove();
     // Annotate the rendered row with an encryption badge
     if (message._encrypted || message._decryptFailed) {
       const contentBody = row.querySelector('.message-content-body, .message-text, .message-content');
@@ -2890,6 +3168,11 @@ async function sendCurrentMessage() {
 
   const text = el.composerInput.value.trim();
   if (!text && !state.pendingFiles.length) return;
+  const selfMember = state.members.find((member) => member.userId === state.user?.id);
+  if (state.currentView === 'server' && isMutedMember(selfMember)) {
+    showVoiceTooltip('You are muted in this server');
+    return;
+  }
 
   if (text) {
     const handled = await handleSlashCommand(text);
@@ -2932,18 +3215,22 @@ async function sendCurrentMessage() {
     channelId: state.currentChannelId,
     content: encryptedText,
     type: 'text',
-    attachments: [...state.pendingFiles]
+    attachments: [...state.pendingFiles],
+    replyTo: state.replyingTo?.id || null
   });
 
   el.composerInput.value = '';
   el.composerInput.style.height = 'auto';
   state.pendingFiles = [];
   state.pendingUploadItems = [];
+  clearReplyTarget();
   renderPendingAttachments();
 }
 
 function closeAllTransientUi() {
   closeFloatingPanels();
+  closeSlashCommandMenu();
+  closeMentionMenu();
   closeStatusPopover();
   closeServerMenu();
   closeMemberPopout();
@@ -2953,6 +3240,7 @@ function closeAllTransientUi() {
   closeChatCleanupModal();
   closeActionModal();
   closeCreateChannelModal();
+  closeCreateServerModal();
   closeMobilePanels();
   el.searchPanel.classList.add('hidden');
   el.channelSwitcher.classList.add('hidden');
@@ -3000,8 +3288,13 @@ function openMemberPopup(member, anchorRect) {
 
   const status = normalizeUserStatus(member.status);
   const customStatus = getCustomStatusText(member.customStatus);
-  const left = Math.min(window.innerWidth - 332, Math.max(12, anchorRect.right + 10));
-  const top = Math.min(window.innerHeight - 260, Math.max(12, anchorRect.top));
+  const mobileSheet = isMobileLayout();
+  const left = mobileSheet
+    ? Math.max(12, (window.innerWidth - Math.min(window.innerWidth * 0.92, 360)) / 2)
+    : Math.min(window.innerWidth - 332, Math.max(12, anchorRect.right + 10));
+  const top = mobileSheet
+    ? Math.max(12, window.innerHeight - Math.min(window.innerHeight * 0.78, 520) - 18)
+    : Math.min(window.innerHeight - 260, Math.max(12, anchorRect.top));
   const canModerateMember = state.currentView === 'server'
     && state.isAdmin
     && member.userId !== state.user.id
@@ -3017,13 +3310,19 @@ function openMemberPopup(member, anchorRect) {
     '  </div>',
     '  <div class="popout-copy">',
     '    <div class="popout-title-row">',
-    '      <strong>' + escapeHtml(member.username) + '</strong>',
-    '      <span class="popout-presence ' + status + '"><span class="popout-presence-dot ' + status + '"></span>' + escapeHtml(getStatusLabel(status)) + '</span>',
-    '    </div>',
-    '    <div class="popout-meta">' + escapeHtml(getMemberRoleName(member.userId)) + '</div>',
+    '      <div class="popout-title-main">',
+    '        <strong title="' + escapeHtml(member.username) + '">' + escapeHtml(member.username) + '</strong>',
+    '        <div class="popout-meta">' + escapeHtml(getMemberRoleName(member.userId)) + '</div>',
     customStatus
-      ? '    <div class="popout-status">' + escapeHtml(customStatus) + '</div>'
+      ? '        <div class="popout-status">' + escapeHtml(customStatus) + '</div>'
       : '',
+    '      </div>',
+    '      <div class="popout-title-side">',
+    '        ' + buildGenderBadgeHtml(member.genderCode),
+    '        ' + buildDeviceBadgeHtml(member.deviceType),
+    '        <span class="popout-presence ' + status + '"><span class="popout-presence-dot ' + status + '"></span>' + escapeHtml(getStatusLabel(status)) + '</span>',
+    '      </div>',
+    '    </div>',
     '  </div>',
     '  <button id="member-pop-close" type="button" class="icon-btn" aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg></button>',
     '</div>',
@@ -3074,6 +3373,255 @@ function updateAdminState() {
   state.isAdmin = Boolean(role && (role.permissions.includes('manage_server') || role.permissions.includes('manage_channels')));
 }
 
+function getSelfMember() {
+  return state.members.find((member) => member.userId === state.user?.id) || null;
+}
+
+function getSelfRole() {
+  const self = getSelfMember();
+  return state.roles.find((entry) => entry.id === self?.roleId) || null;
+}
+
+function canUseAdminOnlyCommands() {
+  const role = getSelfRole();
+  return Boolean(role && Array.isArray(role.permissions) && role.permissions.includes('manage_server'));
+}
+
+function canUseOperatorCommands() {
+  const role = getSelfRole();
+  return Boolean(role && Array.isArray(role.permissions) && role.permissions.includes('manage_members'));
+}
+
+function isMutedMember(member) {
+  return Boolean(String(member?.mutedAt || '').trim());
+}
+
+function applyMemberPatch(nextMember) {
+  if (!nextMember?.userId) return;
+  state.members = state.members.map((entry) => (
+    entry.userId === nextMember.userId ? { ...entry, ...nextMember } : entry
+  ));
+  renderSidebar();
+  updateActiveHeader();
+}
+
+function findMemberByCommandTarget(targetRaw) {
+  const normalized = String(targetRaw || '').replace(/^@\s*/, '').trim().toLowerCase();
+  if (!normalized) return null;
+  let member = state.members.find((entry) => String(entry.username || '').toLowerCase() === normalized);
+  if (!member) {
+    member = state.members.find((entry) => getUserTag(entry.userId).toLowerCase() === normalized);
+  }
+  return member || null;
+}
+
+function getAvailableSlashCommands(query = '') {
+  const term = String(query || '').trim().toLowerCase();
+  return SLASH_COMMANDS.filter((item) => {
+    if (item.role === 'admin' && !canUseAdminOnlyCommands()) return false;
+    if (item.role === 'operator' && !canUseOperatorCommands()) return false;
+    if (!term) return true;
+    return item.name.includes(term) || item.usage.includes(term) || item.description.toLowerCase().includes(term);
+  });
+}
+
+function closeSlashCommandMenu() {
+  if (!el.slashCommandMenu) return;
+  el.slashCommandMenu.classList.add('hidden');
+  el.slashCommandMenu.innerHTML = '';
+}
+
+function closeMentionMenu() {
+  if (!el.mentionMenu) return;
+  el.mentionMenu.classList.add('hidden');
+  el.mentionMenu.innerHTML = '';
+}
+
+function closeGenderCodeMenu() {
+  if (!el.genderCodeMenu) return;
+  el.genderCodeMenu.classList.add('hidden');
+  el.genderCodeMenu.innerHTML = '';
+}
+
+function applySlashCommandSuggestion(command) {
+  if (!command) return;
+  el.composerInput.value = `${command.usage} `;
+  el.composerInput.focus();
+  el.composerInput.style.height = 'auto';
+  el.composerInput.style.height = `${Math.min(el.composerInput.scrollHeight, 160)}px`;
+  closeSlashCommandMenu();
+}
+
+function updateSlashCommandMenu() {
+  if (!el.slashCommandMenu) return;
+  const raw = String(el.composerInput.value || '');
+  if (!raw.startsWith('/')) {
+    closeSlashCommandMenu();
+    return;
+  }
+
+  const query = raw.slice(1);
+  const commands = getAvailableSlashCommands(query);
+  if (!commands.length) {
+    closeSlashCommandMenu();
+    return;
+  }
+
+  el.slashCommandMenu.innerHTML = '';
+  commands.forEach((command, index) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'slash-command-item' + (index === 0 ? ' is-active' : '');
+    button.dataset.commandUsage = command.usage;
+    button.innerHTML = `<span class="slash-command-name">${escapeHtml(command.name)}</span><span class="slash-command-meta">${escapeHtml(command.description)}</span>`;
+    button.addEventListener('click', () => applySlashCommandSuggestion(command));
+    el.slashCommandMenu.appendChild(button);
+  });
+  el.slashCommandMenu.classList.remove('hidden');
+}
+
+function getCurrentMentionQuery() {
+  if (state.currentView !== 'server') return null;
+  const value = String(el.composerInput.value || '');
+  const cursor = Number(el.composerInput.selectionStart ?? value.length);
+  const beforeCursor = value.slice(0, cursor);
+  const match = beforeCursor.match(/(^|\s)@([a-zA-Z0-9_-]*)$/);
+  if (!match) return null;
+  return {
+    query: String(match[2] || '').toLowerCase(),
+    start: cursor - match[2].length - 1,
+    end: cursor
+  };
+}
+
+function getMentionCandidates(query = '') {
+  const term = String(query || '').trim().toLowerCase();
+  return state.members
+    .filter((member) => member?.userId && member.userId !== state.user?.id)
+    .filter((member) => {
+      const name = String(member.username || '').toLowerCase();
+      return !term || name.includes(term);
+    })
+    .slice(0, 8);
+}
+
+function applyMentionSuggestion(member) {
+  const mention = getCurrentMentionQuery();
+  if (!member?.username || !mention) return;
+  const value = String(el.composerInput.value || '');
+  const next = `${value.slice(0, mention.start)}@${member.username} ${value.slice(mention.end)}`;
+  const caret = mention.start + member.username.length + 2;
+  el.composerInput.value = next;
+  el.composerInput.focus();
+  el.composerInput.setSelectionRange(caret, caret);
+  el.composerInput.style.height = 'auto';
+  el.composerInput.style.height = `${Math.min(el.composerInput.scrollHeight, 160)}px`;
+  closeMentionMenu();
+}
+
+function updateMentionMenu() {
+  if (!el.mentionMenu) return;
+  const mention = getCurrentMentionQuery();
+  if (!mention) {
+    closeMentionMenu();
+    return;
+  }
+
+  const candidates = getMentionCandidates(mention.query);
+  if (!candidates.length) {
+    closeMentionMenu();
+    return;
+  }
+
+  el.mentionMenu.innerHTML = '';
+  candidates.forEach((member, index) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'mention-item' + (index === 0 ? ' is-active' : '');
+    button.dataset.userId = member.userId;
+
+    const avatar = createAvatarNode(member, 'mention-item-avatar');
+    const copy = document.createElement('span');
+    copy.className = 'mention-item-copy';
+    copy.innerHTML = `<span class="mention-item-name">${escapeHtml(member.username || 'User')}</span><span class="mention-item-role">${escapeHtml(getMemberRoleName(member.userId))}</span>`;
+
+    button.append(avatar, copy);
+    button.addEventListener('click', () => applyMentionSuggestion(member));
+    el.mentionMenu.appendChild(button);
+  });
+
+  el.mentionMenu.classList.remove('hidden');
+}
+
+function getCurrentGenderCodeQuery() {
+  if (!state.server?.id || !canUseAdminOnlyCommands()) return null;
+  const input = el.composerInput;
+  if (!input) return null;
+  const value = input.value || '';
+  const selectionStart = input.selectionStart ?? value.length;
+  const beforeCaret = value.slice(0, selectionStart);
+  const commandMatch = beforeCaret.match(/^\/gender\s+@\S+\s+`([A-Za-z]*)$/i);
+  if (!commandMatch) return null;
+  const tickIndex = beforeCaret.lastIndexOf('`');
+  if (tickIndex < 0) return null;
+  return {
+    query: String(commandMatch[1] || '').toUpperCase(),
+    start: tickIndex,
+    end: selectionStart
+  };
+}
+
+function getGenderCandidates(query = '') {
+  const term = String(query || '').trim().toUpperCase();
+  return GENDER_OPTIONS.filter((item) => {
+    if (!term) return true;
+    return item.code.includes(term) || item.label.toUpperCase().includes(term);
+  });
+}
+
+function applyGenderCodeSuggestion(option) {
+  const current = getCurrentGenderCodeQuery();
+  if (!current || !option) return;
+  const value = el.composerInput.value || '';
+  const replacement = '`' + option.code + '` ';
+  const next = value.slice(0, current.start) + replacement + value.slice(current.end);
+  const caret = current.start + replacement.length;
+  el.composerInput.value = next;
+  el.composerInput.focus();
+  el.composerInput.setSelectionRange(caret, caret);
+  el.composerInput.style.height = 'auto';
+  el.composerInput.style.height = `${Math.min(el.composerInput.scrollHeight, 160)}px`;
+  closeGenderCodeMenu();
+}
+
+function updateGenderCodeMenu() {
+  if (!el.genderCodeMenu) return;
+  const info = getCurrentGenderCodeQuery();
+  if (!info) {
+    closeGenderCodeMenu();
+    return;
+  }
+
+  const candidates = getGenderCandidates(info.query);
+  if (!candidates.length) {
+    closeGenderCodeMenu();
+    return;
+  }
+
+  el.genderCodeMenu.innerHTML = '';
+  candidates.forEach((option, index) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'gender-code-item' + (index === 0 ? ' is-active' : '');
+    button.dataset.code = option.code;
+    button.innerHTML = `<span class="gender-code-name">\`${escapeHtml(option.code)}\`</span><span class="gender-code-meta">${escapeHtml(option.label)}</span>`;
+    button.addEventListener('click', () => applyGenderCodeSuggestion(option));
+    el.genderCodeMenu.appendChild(button);
+  });
+
+  el.genderCodeMenu.classList.remove('hidden');
+}
+
 function selectChannel(channelId) {
   const channel = state.channels.find((item) => item.id === channelId);
   if (!channel) return;
@@ -3087,6 +3635,7 @@ function selectChannel(channelId) {
   state.remoteTypingUsers = [];
   state.editing.messageId = null;
   state.editing.draft = '';
+  clearReplyTarget();
   clearUnread(channelId);
   if (channel.type === 'announcement') {
     setAnnouncementAlert(false);
@@ -3128,7 +3677,7 @@ async function handleSlashCommand(raw) {
       showVoiceTooltip('Open a server first.');
       return true;
     }
-    if (!state.isAdmin) {
+    if (!canUseAdminOnlyCommands()) {
       showVoiceTooltip('Only admins can use this command.');
       return true;
     }
@@ -3137,11 +3686,7 @@ async function handleSlashCommand(raw) {
       showVoiceTooltip(`Usage: ${command} @username`);
       return true;
     }
-    const normalized = targetRaw.replace(/^@/, '').trim().toLowerCase();
-    let member = state.members.find((m) => String(m.username || '').toLowerCase() === normalized);
-    if (!member) {
-      member = state.members.find((m) => getUserTag(m.userId).toLowerCase() === normalized);
-    }
+    const member = findMemberByCommandTarget(targetRaw);
     if (!member) {
       showVoiceTooltip('Member not found.');
       return true;
@@ -3168,6 +3713,89 @@ async function handleSlashCommand(raw) {
     showVoiceTooltip(action === 'grant'
       ? `Operator granted to @${member.username}`
       : `Operator removed from @${member.username}`);
+    return true;
+  }
+
+  if (command === '/mute' || command === '/unmute') {
+    if (!state.server?.id) {
+      showVoiceTooltip('Open a server first.');
+      return true;
+    }
+    if (!state.isAdmin) {
+      showVoiceTooltip('Only admins and operators can use this command.');
+      return true;
+    }
+
+    const targetRaw = parts.slice(1).join(' ').trim();
+    if (!targetRaw) {
+      showVoiceTooltip(`Usage: ${command} @username`);
+      return true;
+    }
+
+    const member = findMemberByCommandTarget(targetRaw);
+    if (!member) {
+      showVoiceTooltip('Member not found.');
+      return true;
+    }
+
+    const muted = command === '/mute';
+    const response = await fetch(`/api/servers/${encodeURIComponent(state.server.id)}/mute`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: member.userId, muted })
+    });
+    const data = await response.json().catch(() => null);
+    if (!response.ok || !data?.member) {
+      showVoiceTooltip(data?.error || (muted ? 'Mute failed.' : 'Unmute failed.'));
+      return true;
+    }
+
+    applyMemberPatch(data.member);
+    showVoiceTooltip(muted ? `@${member.username} was muted.` : `@${member.username} was unmuted.`);
+    return true;
+  }
+
+  if (command === '/gender') {
+    if (!state.server?.id) {
+      showVoiceTooltip('Open a server first.');
+      return true;
+    }
+    if (!canUseAdminOnlyCommands()) {
+      showVoiceTooltip('Only admins can use this command.');
+      return true;
+    }
+
+    const genderMatch = value.match(/^\/gender\s+(@\S+)\s+`?([A-Za-z]+)`?$/i);
+    if (!genderMatch) {
+      showVoiceTooltip('Usage: /gender @username `F`');
+      return true;
+    }
+
+    const member = findMemberByCommandTarget(genderMatch[1]);
+    if (!member) {
+      showVoiceTooltip('Member not found.');
+      return true;
+    }
+
+    const option = getGenderOption(genderMatch[2]);
+    if (!option) {
+      showVoiceTooltip('Use one of: `M`, `F`, `T`, `S`.');
+      return true;
+    }
+
+    const response = await fetch(`/api/servers/${encodeURIComponent(state.server.id)}/gender`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: member.userId, genderCode: option.code })
+    });
+    const data = await response.json().catch(() => null);
+    if (!response.ok || !data?.member) {
+      showVoiceTooltip(data?.error || 'Gender update failed.');
+      return true;
+    }
+
+    applyMemberPatch(data.member);
+    showVoiceTooltip(`@${member.username} gender set to ${option.label}.`);
     return true;
   }
 
@@ -3217,6 +3845,7 @@ async function proceedOpenDM(member, skipKey = false, existingChannelId = null) 
   state.dmPartner = member;
   state.messages = [];
   state.remoteTypingUsers = [];
+  clearReplyTarget();
   await refreshDmList();
   const dmWallpaper = normalizeAssetUrl(getDmWallpaper(channelId));
   applyChatBackground(normalizeAssetUrl(state.server?.chatBackgroundUrl || state.server?.bannerUrl || ''), dmWallpaper);
@@ -3246,7 +3875,6 @@ function handleSearchInput() {
   el.messageList.innerHTML = '';
   for (const message of items) {
     const row = createMessageElement(message, true, state.user.id, canModerateCurrentChannel());
-    row.querySelector('[data-action="reply"]')?.remove();
     row.querySelectorAll('.message-content-body').forEach((target) => {
       target.innerHTML = target.innerHTML.replace(regex, '<mark>$1</mark>');
     });
@@ -3327,7 +3955,14 @@ async function startVoiceRecording(event) {
       const file = new File([blob], 'voice-message.webm', { type: blob.type || 'audio/webm' });
       const attachment = await uploadFile(file);
       if (!attachment) return;
-      socketActions.sendMessage({ channelId: state.currentChannelId, content: '', type: 'voice', attachments: [attachment] });
+      socketActions.sendMessage({
+        channelId: state.currentChannelId,
+        content: '',
+        type: 'voice',
+        attachments: [attachment],
+        replyTo: state.replyingTo?.id || null
+      });
+      clearReplyTarget();
     });
 
     recorder.start();
@@ -3359,8 +3994,10 @@ function bind() {
     socketActions.sendMessage({
       channelId: state.currentChannelId,
       content: '',
-      attachments: [{ url: media?.url, name, type: `image/${type}`, size: 0 }]
+      attachments: [{ url: media?.url, name, type: `image/${type}`, size: 0 }],
+      replyTo: state.replyingTo?.id || null
     });
+    clearReplyTarget();
   });
 
   el.emojiButton.addEventListener('click', (event) => {
@@ -3383,6 +4020,9 @@ function bind() {
   el.composerInput.addEventListener('input', () => {
     el.composerInput.style.height = 'auto';
     el.composerInput.style.height = `${Math.min(el.composerInput.scrollHeight, 160)}px`;
+    updateSlashCommandMenu();
+    updateMentionMenu();
+    updateGenderCodeMenu();
     if (state.currentChannelId) {
       clearTimeout(uiTimers.typingTimer);
       socketActions.typingStart({ channelId: state.currentChannelId });
@@ -3391,6 +4031,24 @@ function bind() {
   });
 
   el.composerInput.addEventListener('keydown', async (event) => {
+    if (event.key === 'ArrowDown' && !el.genderCodeMenu.classList.contains('hidden')) {
+      event.preventDefault();
+      const first = el.genderCodeMenu.querySelector('.gender-code-item');
+      first?.focus();
+      return;
+    }
+    if (event.key === 'ArrowDown' && !el.mentionMenu.classList.contains('hidden')) {
+      event.preventDefault();
+      const first = el.mentionMenu.querySelector('.mention-item');
+      first?.focus();
+      return;
+    }
+    if (event.key === 'ArrowDown' && !el.slashCommandMenu.classList.contains('hidden')) {
+      event.preventDefault();
+      const first = el.slashCommandMenu.querySelector('.slash-command-item');
+      first?.focus();
+      return;
+    }
     if (event.key === 'Enter' && !event.shiftKey) {
       const command = el.composerInput.value.trim().toLowerCase();
       if (command === '/png' || command === '/gif') {
@@ -3406,6 +4064,22 @@ function bind() {
       return;
     }
     if (event.key === 'Escape') {
+      if (!el.genderCodeMenu.classList.contains('hidden')) {
+        closeGenderCodeMenu();
+        return;
+      }
+      if (!el.mentionMenu.classList.contains('hidden')) {
+        closeMentionMenu();
+        return;
+      }
+      if (!el.slashCommandMenu.classList.contains('hidden')) {
+        closeSlashCommandMenu();
+        return;
+      }
+      if (state.replyingTo) {
+        clearReplyTarget({ focusComposer: true });
+        return;
+      }
       closeAllTransientUi();
       return;
     }
@@ -3437,6 +4111,93 @@ function bind() {
   });
 
   el.fileInput.accept = 'image/*,audio/*,video/*,.txt,.md,.json,.js,.ts,.tsx,.jsx,.css,.html,.xml,.yml,.yaml,.log,.csv,.env';
+
+  el.slashCommandMenu?.addEventListener('keydown', (event) => {
+    const items = [...el.slashCommandMenu.querySelectorAll('.slash-command-item')];
+    const index = items.findIndex((item) => item === document.activeElement);
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      items[(index + 1 + items.length) % items.length]?.focus();
+      return;
+    }
+    if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      if (index <= 0) {
+        el.composerInput.focus();
+        return;
+      }
+      items[index - 1]?.focus();
+      return;
+    }
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      closeSlashCommandMenu();
+      el.composerInput.focus();
+      return;
+    }
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      document.activeElement?.click?.();
+    }
+  });
+
+  el.genderCodeMenu?.addEventListener('keydown', (event) => {
+    const items = [...el.genderCodeMenu.querySelectorAll('.gender-code-item')];
+    const index = items.findIndex((item) => item === document.activeElement);
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      items[(index + 1 + items.length) % items.length]?.focus();
+      return;
+    }
+    if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      if (index <= 0) {
+        el.composerInput.focus();
+        return;
+      }
+      items[index - 1]?.focus();
+      return;
+    }
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      closeGenderCodeMenu();
+      el.composerInput.focus();
+      return;
+    }
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      document.activeElement?.click?.();
+    }
+  });
+
+  el.mentionMenu?.addEventListener('keydown', (event) => {
+    const items = [...el.mentionMenu.querySelectorAll('.mention-item')];
+    const index = items.findIndex((item) => item === document.activeElement);
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      items[(index + 1 + items.length) % items.length]?.focus();
+      return;
+    }
+    if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      if (index <= 0) {
+        el.composerInput.focus();
+        return;
+      }
+      items[index - 1]?.focus();
+      return;
+    }
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      closeMentionMenu();
+      el.composerInput.focus();
+      return;
+    }
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      document.activeElement?.click?.();
+    }
+  });
 
   el.fileInput.addEventListener('change', async () => {
     const files = [...(el.fileInput.files || [])];
@@ -3523,6 +4284,13 @@ function bind() {
       return;
     }
 
+    const replyJump = event.target.closest('[data-action="jump-reply"], .message-reply');
+    if (replyJump) {
+      const replyId = replyJump.dataset.replyId;
+      if (!jumpToMessage(replyId)) showVoiceTooltip('Original message is not loaded right now');
+      return;
+    }
+
     const reaction = event.target.closest('.reaction');
     if (reaction) {
       const row = reaction.closest('.chat-message');
@@ -3538,11 +4306,25 @@ function bind() {
     if (!message) return;
 
     if (actionButton.dataset.action === 'emoji') { closeFloatingPanels('emoji'); el.emojiPicker.classList.toggle('hidden'); return; }
+    if (actionButton.dataset.action === 'reply') { setReplyTarget(message); return; }
     if (actionButton.dataset.action === 'edit' && message.userId === state.user.id) { state.editing.messageId = message.id; state.editing.draft = message.content || ''; renderMessages(); return; }
     if (actionButton.dataset.action === 'delete') { openDeleteConfirm(message.id, actionButton); return; }
     if (actionButton.dataset.action === 'pin' && canModerateCurrentChannel()) {
       if (message.pinned) socketActions.unpinMessage({ messageId: message.id });
       else socketActions.pinMessage({ messageId: message.id });
+    }
+  });
+
+  el.replyPreview?.addEventListener('click', (event) => {
+    const cancelButton = event.target.closest('[data-action="cancel-reply"]');
+    if (cancelButton) {
+      clearReplyTarget({ focusComposer: true });
+      return;
+    }
+
+    const source = event.target.closest('[data-action="jump-reply"]');
+    if (source && !jumpToMessage(source.dataset.replyId)) {
+      showVoiceTooltip('Original message is not loaded right now');
     }
   });
 
@@ -3664,7 +4446,7 @@ function bind() {
   el.mobileNavToggle?.addEventListener('click', () => toggleMobileDrawer('nav'));
   el.mobileDrawerBackdrop?.addEventListener('click', closeMobilePanels);
   el.serverRailHome?.addEventListener('click', () => toggleChannelSidebar());
-  el.serverRailAdd?.addEventListener('click', () => { window.location.href = '/'; });
+  el.serverRailAdd?.addEventListener('click', openCreateServerModal);
   el.serverRailExplore?.addEventListener('click', () => openServerInfoModal({ title: 'Explore Servers', linkLabel: 'Home', link: window.location.origin + '/' }));
   el.serverRailList?.addEventListener('click', (event) => {
     const serverButton = event.target.closest('[data-server-id]');
@@ -3675,8 +4457,14 @@ function bind() {
     }
   });
   el.serverInfoClose.addEventListener('click', closeServerInfoModal);
-  el.copyServerIdBtn.addEventListener('click', () => copyText(state.server?.id || '', el.copyServerIdBtn));
-  el.copyServerLinkBtn.addEventListener('click', () => copyText(el.serverInfoLink.textContent || getServerJoinUrl(), el.copyServerLinkBtn));
+  el.copyServerIdBtn.addEventListener('click', () => {
+    const value = el.serverInfoId?.textContent || state.server?.id || '';
+    void copyText(value, el.copyServerIdBtn);
+  });
+  el.copyServerLinkBtn.addEventListener('click', () => {
+    const value = el.serverInfoLink?.textContent || getServerJoinUrl();
+    void copyText(value, el.copyServerLinkBtn);
+  });
   el.serverInfoModal.addEventListener('click', (event) => { if (event.target === el.serverInfoModal) closeServerInfoModal(); });
   el.serverAppearanceClose?.addEventListener('click', closeServerAppearanceModal);
   el.serverAppearanceModal?.addEventListener('click', (event) => { if (event.target === el.serverAppearanceModal) closeServerAppearanceModal(); });
@@ -3686,6 +4474,14 @@ function bind() {
   el.createChannelModal?.addEventListener('click', (event) => { if (event.target === el.createChannelModal) closeCreateChannelModal(); });
   el.createChannelSubmit?.addEventListener('click', submitCreateChannel);
   el.createChannelName?.addEventListener('keydown', (event) => { if (event.key === 'Enter') submitCreateChannel(); });
+  el.createServerClose?.addEventListener('click', closeCreateServerModal);
+  el.createServerCancel?.addEventListener('click', closeCreateServerModal);
+  el.createServerModal?.addEventListener('click', (event) => { if (event.target === el.createServerModal) closeCreateServerModal(); });
+  el.createServerSubmit?.addEventListener('click', submitCreateServer);
+  el.createServerName?.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') submitCreateServer();
+    if (event.key === 'Escape') closeCreateServerModal();
+  });
 
   el.serverIconUpload?.addEventListener('click', () => {
     if (!state.isAdmin || !el.serverIconInput) return;
@@ -3695,6 +4491,15 @@ function bind() {
   el.serverIconClear?.addEventListener('click', () => {
     if (!state.isAdmin) return;
     void updateServerAppearance({ iconUrl: '' });
+  });
+  el.serverRailIconUpload?.addEventListener('click', () => {
+    if (!state.isAdmin || !el.serverRailIconInput) return;
+    el.serverRailIconInput.value = '';
+    el.serverRailIconInput.click();
+  });
+  el.serverRailIconClear?.addEventListener('click', () => {
+    if (!state.isAdmin) return;
+    void updateServerAppearance({ railIconUrl: '' });
   });
   el.serverThumbnailUpload?.addEventListener('click', () => {
     if (!state.isAdmin || !el.serverThumbnailInput) return;
@@ -3726,6 +4531,20 @@ function bind() {
       showVoiceTooltip(error?.message || 'Server icon upload failed');
     } finally {
       el.serverIconInput.value = '';
+    }
+  });
+  el.serverRailIconInput?.addEventListener('change', async () => {
+    if (!state.isAdmin) return;
+    const file = el.serverRailIconInput.files?.[0];
+    if (!file) return;
+    try {
+      const uploaded = await uploadFile(file);
+      await updateServerAppearance({ railIconUrl: uploaded?.url || '' });
+      showVoiceTooltip('Bar icon updated');
+    } catch (error) {
+      showVoiceTooltip(error?.message || 'Bar icon upload failed');
+    } finally {
+      el.serverRailIconInput.value = '';
     }
   });
   el.serverThumbnailInput?.addEventListener('change', async () => {
@@ -3833,12 +4652,19 @@ function bind() {
     if (!el.memberPopout.contains(event.target)) closeMemberPopout();
     if (!el.deletePopover.contains(event.target)) closeDeleteConfirm();
     if (!el.emojiPicker.contains(event.target) && !el.emojiButton.contains(event.target) && !el.giftButton.contains(event.target) && !el.gifPicker.contains(event.target)) closeFloatingPanels();
+    if (!el.slashCommandMenu.contains(event.target) && !el.composerInput.contains(event.target)) closeSlashCommandMenu();
+    if (!el.genderCodeMenu.contains(event.target) && !el.composerInput.contains(event.target)) closeGenderCodeMenu();
+    if (!el.mentionMenu.contains(event.target) && !el.composerInput.contains(event.target)) closeMentionMenu();
   });
 
-  window.addEventListener('focus', () => { state.hasFocus = true; updateTitle(); });
+  window.addEventListener('focus', () => { state.hasFocus = true; refreshStoredE2EEState(); updateTitle(); });
   window.addEventListener('blur', () => {
     state.hasFocus = false;
     if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission();
+  });
+  window.addEventListener('pageshow', refreshStoredE2EEState);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') refreshStoredE2EEState();
   });
   const handleViewportChange = () => applyResponsiveChrome();
   window.addEventListener('resize', handleViewportChange);
@@ -3891,6 +4717,7 @@ function wireSocket() {
       state.messages = [];
       state.editing.messageId = null;
       state.editing.draft = '';
+      clearReplyTarget();
       state.remoteTypingUsers = [];
       renderMessages();
       renderTypingIndicator();
@@ -3906,6 +4733,7 @@ function wireSocket() {
         markUnread(decodedMessage.channelId);
         if (String(decodedMessage.channelId).startsWith('dm_')) await refreshDmList();
       } else {
+        el.messageList.querySelector('.text-muted')?.remove();
         state.messages.push(decodedMessage);
         const previous = state.messages.length > 1 ? state.messages[state.messages.length - 2] : null;
         if (!previous || !isSameCalendarDay(previous.createdAt, decodedMessage.createdAt)) {
@@ -3915,7 +4743,6 @@ function wireSocket() {
           el.messageList.appendChild(divider);
         }
         const row = createMessageElement(decodedMessage, messageShouldGroup(previous, decodedMessage), state.user.id, canModerateCurrentChannel());
-        row.querySelector('[data-action="reply"]')?.remove();
         el.messageList.appendChild(row);
         renderPinnedPanel();
         if (!state.isScrollingLocked) {
@@ -3972,6 +4799,7 @@ function wireSocket() {
     },
     message_deleted: ({ messageId }) => {
       state.messages = state.messages.filter((item) => item.id !== messageId);
+      if (state.replyingTo?.id === messageId) clearReplyTarget();
       if (state.editing.messageId === messageId) { state.editing.messageId = null; state.editing.draft = ''; }
       renderMessages();
     },
@@ -4068,7 +4896,13 @@ function wireSocket() {
       updateActiveHeader();
     },
     typing_update: ({ channelId, typingUsers }) => { if (channelId === state.currentChannelId) { state.remoteTypingUsers = typingUsers || []; renderTypingIndicator(); } },
-    error: (payload) => console.warn('[Om Chat] Socket error:', payload)
+    error: (payload) => {
+      console.warn('[Om Chat] Socket error:', payload);
+      const code = String(payload?.code || '').trim();
+      if (code === 'member_muted') {
+        showVoiceTooltip('You are muted in this server');
+      }
+    }
   });
 }
 

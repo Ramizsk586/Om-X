@@ -338,6 +338,18 @@ function validateOperatorPayload(payload = {}) {
   };
 }
 
+function validateGenderPayload(payload = {}) {
+  const allowedCodes = new Set(['M', 'F', 'T', 'S']);
+  const code = String(payload.genderCode || '').trim().toUpperCase();
+  if (!allowedCodes.has(code)) {
+    throw new Error('Invalid gender code.');
+  }
+  return {
+    userId: ensureUserId(payload.userId),
+    genderCode: code
+  };
+}
+
 function validateServerRenamePayload(payload = {}) {
   return {
     name: ensureServerName(payload.name, 'name')
@@ -354,6 +366,9 @@ function validateServerAppearancePayload(payload = {}) {
   const updates = {};
   if (Object.prototype.hasOwnProperty.call(payload, 'iconUrl')) {
     updates.iconUrl = ensureUrl(payload.iconUrl, 'iconUrl', { optional: true, allowRelative: true, allowDataImage: true });
+  }
+  if (Object.prototype.hasOwnProperty.call(payload, 'railIconUrl')) {
+    updates.railIconUrl = ensureUrl(payload.railIconUrl, 'railIconUrl', { optional: true, allowRelative: true, allowDataImage: true });
   }
   if (Object.prototype.hasOwnProperty.call(payload, 'bannerUrl')) {
     updates.bannerUrl = ensureUrl(payload.bannerUrl, 'bannerUrl', { optional: true, allowRelative: true, allowDataImage: true });
@@ -508,6 +523,7 @@ module.exports = {
   validateDmOpenPayload,
   validateEditMessagePayload,
   validateInvitePayload,
+  validateGenderPayload,
   validateMessagePayload,
   validateMessageQuery,
   validateOgQuery,

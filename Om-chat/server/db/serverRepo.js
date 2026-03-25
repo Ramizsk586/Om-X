@@ -77,7 +77,10 @@ function mapMember(member) {
     joinedAt: String(member.joinedAt || ''),
     avatar: avatarColor,
     avatarColor,
-    avatarUrl: String(member.avatarUrl || '')
+    avatarUrl: String(member.avatarUrl || ''),
+    mutedAt: String(member.mutedAt || ''),
+    mutedById: String(member.mutedById || ''),
+    genderCode: String(member.genderCode || '')
   };
 }
 
@@ -127,6 +130,7 @@ function mapServer(server, parts = {}) {
     name: String(server.name || ''),
     icon: String(server.icon || '??'),
     iconUrl: String(server.iconUrl || ''),
+    railIconUrl: String(server.railIconUrl || ''),
     bannerUrl: String(server.bannerUrl || ''),
     thumbnailUrl: String(server.thumbnailUrl || ''),
     chatBackgroundUrl: String(server.chatBackgroundUrl || ''),
@@ -386,7 +390,7 @@ async function updateRole(id, changes) {
 
 /**
  * Insert or refresh a membership row.
- * @param {{userId: string, serverId: string, roleId: string|null, username: string, avatarColor: string, avatarUrl?: string, joinedAt: string}} input Membership payload.
+ * @param {{userId: string, serverId: string, roleId: string|null, username: string, avatarColor: string, avatarUrl?: string, joinedAt: string, mutedAt?: string, mutedById?: string, genderCode?: string}} input Membership payload.
  * @returns {Promise<Record<string, unknown>>} Stored member.
  */
 async function addMember(input) {
@@ -398,7 +402,10 @@ async function addMember(input) {
           roleId: input.roleId == null ? null : String(input.roleId),
           username: String(input.username || 'User'),
           avatarColor: String(input.avatarColor || '#5865F2'),
-          avatarUrl: String(input.avatarUrl || '')
+          avatarUrl: String(input.avatarUrl || ''),
+          mutedAt: String(input.mutedAt || ''),
+          mutedById: String(input.mutedById || ''),
+          genderCode: String(input.genderCode || '')
         },
         $setOnInsert: {
           userId: String(input.userId),
@@ -666,7 +673,10 @@ async function importLegacyServer(legacyServer) {
         username: String(member.username || 'User'),
         avatarColor: String(member.avatarColor || member.avatar || '#5865F2'),
         avatarUrl: String(member.avatarUrl || ''),
-        joinedAt: String(member.joinedAt || new Date().toISOString())
+        joinedAt: String(member.joinedAt || new Date().toISOString()),
+        mutedAt: String(member.mutedAt || ''),
+        mutedById: String(member.mutedById || ''),
+        genderCode: String(member.genderCode || '')
       })));
     }
 

@@ -7,7 +7,10 @@ const memberSchema = new Schema({
   username: { type: String, required: true, trim: true },
   avatarColor: { type: String, default: '#5865F2' },
   avatarUrl: { type: String, default: '' },
-  joinedAt: { type: String, required: true }
+  joinedAt: { type: String, required: true },
+  mutedAt: { type: String, default: '' },
+  mutedById: { type: String, default: '' },
+  genderCode: { type: String, default: '' }
 }, {
   versionKey: false,
   minimize: false

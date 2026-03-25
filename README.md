@@ -176,6 +176,8 @@ A built-in local AI server that runs GGUF-format language models using llama.cpp
 | **Threads** | CPU threads for inference (default: 4) |
 | **Port** | Server port (default: 8080) |
 | **Host** | Bind address (local/remote/LAN) |
+| **System Prompt** | Optional default guardrails/persona passed to `llama-server` with `--system-prompt` |
+| **Protection Manager** | RAM safety thresholds that warn early and eject the model before the system freezes |
 
 ### Features
 - **Model Scanning**: Automatically detects .gguf files in models folder
@@ -184,6 +186,8 @@ A built-in local AI server that runs GGUF-format language models using llama.cpp
 - **Uptime Counter**: Tracks server runtime duration
 - **Real-time Logs**: Streams stdout/stderr to terminal console
 - **Manual Command Generator**: Generates CLI commands for custom launches
+- **System Prompt Injection**: Persists a default startup prompt for local llama-server sessions
+- **RAM Protection Manager**: Monitors system memory pressure and automatically unloads the model when usage stays critical
 
 ### IPC API (preload bridge)
 ```javascript

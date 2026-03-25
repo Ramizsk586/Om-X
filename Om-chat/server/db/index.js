@@ -261,6 +261,58 @@ function normalizeMessageForStorage(message) {
   };
 }
 
+function getReplyPreviewText(message) {
+  if (!message || typeof message !== 'object') return '(message)';
+  const text = String(message.content || '').trim();
+  if (text) return text;
+  const attachments = Array.isArray(message.attachments) ? message.attachments : [];
+  if (!attachments.length) return '(message)';
+  if (attachments.length === 1) {
+    return attachments[0]?.name ? `Attachment: ${attachments[0].name}` : 'Attachment';
+  }
+  return `${attachments.length} attachments`;
+}
+
+function buildReplyReference(replyTo) {
+  if (!replyTo) return null;
+  if (typeof replyTo === 'object' && !Array.isArray(replyTo)) {
+    return clone(replyTo);
+  }
+
+  const source = db.data.messages.find((message) => message.id === replyTo);
+  if (!source) {
+    return {
+      id: String(replyTo),
+      username: 'Unknown',
+      avatarColor: '#5865F2',
+      avatarUrl: '',
+      content: '',
+      previewText: 'Original message unavailable'
+    };
+  }
+
+  return {
+    id: source.id,
+    userId: source.userId,
+    username: source.username || 'Unknown',
+    avatarColor: source.avatarColor || '#5865F2',
+    avatarUrl: source.avatarUrl || '',
+    content: String(source.content || ''),
+    previewText: getReplyPreviewText(source),
+    attachments: Array.isArray(source.attachments) ? clone(source.attachments) : [],
+    channelId: source.channelId || '',
+    deleted: false
+  };
+}
+
+function hydrateMessageReply(message) {
+  if (!message || typeof message !== 'object') return clone(message);
+  return clone({
+    ...message,
+    replyTo: buildReplyReference(message.replyTo)
+  });
+}
+
 async function persistMessage(message) {
   const payload = normalizeMessageForStorage(message);
   if (!payload.id) return;
@@ -272,8 +324,6 @@ async function persistMessage(message) {
  * @returns {Promise<void>} Promise that resolves when initialization finishes.
  */
 async function initDb() {
-  const { isLocalMode } = require('./getModel');
-
   db.data = clone(defaultData);
   db.data.users = [];
   if (!db.data) {
@@ -282,13 +332,11 @@ async function initDb() {
 
   ensureDefaultData(db);
 
-  if (!isLocalMode()) {
-    try {
-      await hydrateMongoChatState();
-      await hydrateRuntimeUsers();
-    } catch (err) {
-      console.warn('[Om Chat] MongoDB hydration failed, using empty state:', err.message);
-    }
+  try {
+    await hydrateMongoChatState();
+    await hydrateRuntimeUsers();
+  } catch (err) {
+    console.warn('[Om Chat] DB hydration failed, using empty state:', err.message);
   }
 
   await db.write();
@@ -440,6 +488,12 @@ function roleById(server, roleId) {
   return getRoles(server).find((role) => role.id === roleId) || null;
 }
 
+function memberRoleName(server, userId) {
+  const member = getMember(server, userId);
+  const role = member ? roleById(server, member.roleId) : null;
+  return String(role?.name || '').toLowerCase();
+}
+
 /**
  * Check whether a member has a permission in a server.
  * @param {Record<string, unknown>|null|undefined} server Assembled server object.
@@ -480,6 +534,31 @@ function isAdmin(server, userId) {
   return adminRole ? member.roleId === adminRole.id : false;
 }
 
+function isOperator(server, userId) {
+  if (!server || !userId || isAdmin(server, userId)) return false;
+  return memberRoleName(server, userId) === 'operator';
+}
+
+function isMemberMuted(member) {
+  return Boolean(String(member?.mutedAt || '').trim());
+}
+
+function canManageMember(server, actorId, targetUserId) {
+  if (!server || !actorId || !targetUserId || actorId === targetUserId || targetUserId === server.ownerId) {
+    return false;
+  }
+
+  const actor = getMember(server, actorId);
+  const target = getMember(server, targetUserId);
+  if (!actor || !target) return false;
+
+  if (isAdmin(server, actorId)) return true;
+  if (!hasPermission(server, actorId, 'manage_members')) return false;
+
+  const targetRoleName = memberRoleName(server, targetUserId);
+  return targetRoleName !== 'admin' && targetRoleName !== 'operator';
+}
+
 /**
  * Check whether a user is banned from a server.
  * @param {Record<string, unknown>|null|undefined} server Assembled server object.
@@ -506,6 +585,8 @@ function userMembers(server) {
           avatar: member.avatar || member.avatarColor || user?.avatarColor || '#5865F2',
           avatarColor: member.avatarColor || member.avatar || user?.avatarColor || '#5865F2',
           avatarUrl: member.avatarUrl || user?.avatarUrl || '',
+          mutedAt: String(member.mutedAt || ''),
+          mutedById: String(member.mutedById || ''),
           status: user?.status || 'offline',
           customStatus: user?.customStatus || ''
         };
@@ -667,6 +748,7 @@ async function createServer({ name, icon, owner }) {
     name: String(name).slice(0, 80),
     icon: icon || '??',
     iconUrl: '',
+    railIconUrl: '',
     bannerUrl: '',
     thumbnailUrl: '',
     chatBackgroundUrl: '',
@@ -1101,7 +1183,7 @@ function channelMessages(serverId, channelId, before, limit = 50) {
     if (index > -1) list = list.slice(0, index);
   }
 
-  return clone(list.slice(-limit));
+  return list.slice(-limit).map((message) => hydrateMessageReply(message));
 }
 
 /**
@@ -1121,7 +1203,7 @@ function getDmMessages(channelId, before, limit = 50) {
     if (index > -1) list = list.slice(0, index);
   }
 
-  return clone(list.slice(-limit));
+  return list.slice(-limit).map((message) => hydrateMessageReply(message));
 }
 
 /**
@@ -1205,7 +1287,7 @@ async function createMessage({ serverId, channelId, userId, username, avatarColo
     }
   }
 
-  return clone(message);
+  return hydrateMessageReply(message);
 }
 
 /**
@@ -1515,17 +1597,8 @@ async function setMemberRole(serverId, userId, roleId, actorId) {
 async function removeMember(serverId, actorId, targetUserId) {
   const server = await getServerById(serverId);
   if (!server) return false;
-  if (isAdmin(server, actorId)) {
-    return serverRepo.removeMember(targetUserId, serverId);
-  }
-  if (!hasPermission(server, actorId, 'kick_members')) return false;
-  if (!targetUserId || targetUserId === server.ownerId) return false;
-  const actorMember = getMember(server, actorId);
-  const targetMember = getMember(server, targetUserId);
-  if (!actorMember || !targetMember) return false;
-  const targetRole = roleById(server, targetMember.roleId);
-  const targetRoleName = String(targetRole?.name || '').toLowerCase();
-  if (targetRoleName === 'admin' || targetRoleName === 'operator') return false;
+  if (!isAdmin(server, actorId) && !hasPermission(server, actorId, 'kick_members')) return false;
+  if (!canManageMember(server, actorId, targetUserId)) return false;
   return serverRepo.removeMember(targetUserId, serverId);
 }
 
@@ -1539,7 +1612,7 @@ async function removeMember(serverId, actorId, targetUserId) {
 async function banMember(serverId, actorId, targetUserId) {
   const server = await getServerById(serverId);
   if (!server || !isAdmin(server, actorId)) return false;
-  if (!targetUserId || targetUserId === actorId || targetUserId === server.ownerId) return false;
+  if (!canManageMember(server, actorId, targetUserId)) return false;
   const target = getMember(server, targetUserId);
   if (!target && isBanned(server, targetUserId)) return true;
 
@@ -1551,6 +1624,33 @@ async function banMember(serverId, actorId, targetUserId) {
   });
   await serverRepo.removeMember(targetUserId, serverId);
   return true;
+}
+
+async function setMemberMuteState(serverId, actorId, targetUserId, muted) {
+  const server = await getServerById(serverId);
+  if (!server) return null;
+  if (!canManageMember(server, actorId, targetUserId)) return false;
+
+  const member = getMember(server, targetUserId);
+  if (!member) return null;
+
+  return serverRepo.updateMember(targetUserId, serverId, {
+    mutedAt: muted ? now() : '',
+    mutedById: muted ? String(actorId) : ''
+  });
+}
+
+async function setMemberGender(serverId, actorId, targetUserId, genderCode) {
+  const server = await getServerById(serverId);
+  if (!server) return null;
+  if (!isAdmin(server, actorId)) return false;
+
+  const member = getMember(server, targetUserId);
+  if (!member) return null;
+
+  return serverRepo.updateMember(targetUserId, serverId, {
+    genderCode: String(genderCode || '').trim().toUpperCase()
+  });
 }
 
 /**
@@ -1595,7 +1695,7 @@ async function updateServerIcon(serverId, actorId, icon) {
  * Update server appearance fields (icon image / banner).
  * @param {string} serverId Server identifier.
  * @param {string} actorId Acting user identifier.
- * @param {{iconUrl?: string, bannerUrl?: string}} payload Appearance payload.
+ * @param {{iconUrl?: string, railIconUrl?: string, bannerUrl?: string}} payload Appearance payload.
  * @returns {Promise<Record<string, unknown>|null>} Updated server.
  */
 async function updateServerAppearance(serverId, actorId, payload = {}) {
@@ -1604,6 +1704,9 @@ async function updateServerAppearance(serverId, actorId, payload = {}) {
   const changes = {};
   if (Object.prototype.hasOwnProperty.call(payload, 'iconUrl')) {
     changes.iconUrl = String(payload.iconUrl || '');
+  }
+  if (Object.prototype.hasOwnProperty.call(payload, 'railIconUrl')) {
+    changes.railIconUrl = String(payload.railIconUrl || '');
   }
   if (Object.prototype.hasOwnProperty.call(payload, 'bannerUrl')) {
     changes.bannerUrl = String(payload.bannerUrl || '');
@@ -1635,6 +1738,28 @@ async function deleteServerData(serverId, actorId) {
 
   db.data.messages = db.data.messages.filter((message) => message.serverId !== serverId);
   await getChatMessageCollection().deleteMany({ serverId });
+  await deleteUnreferencedUploadFiles(attachmentUrls);
+  return true;
+}
+
+/**
+ * Delete a DM conversation and all of its messages.
+ * @param {string} dmId DM identifier.
+ * @param {string} userId Requesting user identifier.
+ * @returns {Promise<boolean>} True when the DM existed and was deleted.
+ */
+async function deleteDmConversation(dmId, userId) {
+  const dm = getDmById(dmId);
+  if (!dm || !userId || !Array.isArray(dm.participants) || !dm.participants.includes(userId)) return false;
+
+  const removedMessages = db.data.messages.filter((message) => message.serverId == null && message.channelId === dmId);
+  const attachmentUrls = collectAttachmentUrls(removedMessages);
+
+  db.data.dms = db.data.dms.filter((item) => item.id !== dmId);
+  db.data.messages = db.data.messages.filter((message) => !(message.serverId == null && message.channelId === dmId));
+
+  await getDmConversationCollection().deleteOne({ id: dmId });
+  await getChatMessageCollection().deleteMany({ serverId: null, channelId: dmId });
   await deleteUnreferencedUploadFiles(attachmentUrls);
   return true;
 }
@@ -1740,6 +1865,7 @@ module.exports = {
   createServer,
   db,
   deleteChannel,
+  deleteDmConversation,
   deleteMessage,
   deleteServerData,
   ensureUser,
@@ -1763,6 +1889,8 @@ module.exports = {
   initDb,
   isAdmin,
   isBanned,
+  isMemberMuted,
+  isOperator,
   isValidDeviceToken,
   leaveServer,
   listServersForUser,
@@ -1774,6 +1902,8 @@ module.exports = {
   restoreDmConversation,
   revokeDeviceToken,
   setMemberRole,
+  setMemberMuteState,
+  setMemberGender,
   syncRuntimeAuthUser,
   setUserStatus: updateStatus,
   setUsername: updateUsername,

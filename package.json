@@ -23,7 +23,8 @@
   },
   "workspaces": [
     "tools/ddg",
-    "tools/wiki"
+    "tools/wiki",
+    "tools/diagram"
   ],
   "dependencies": {
     "@google/genai": "^1.44.0",
@@ -44,6 +45,8 @@
     "lowdb": "^3.0.0",
     "mongodb": "^6.14.0",
     "archiver": "^7.0.1",
+    "archiver-utils": "^5.0.2",
+    "zip-stream": "^6.0.1",
     "mongoose": "^9.3.1",
     "multer": "^1.4.5-lts.1",
     "nanoid": "^5.0.7",

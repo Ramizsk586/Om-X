@@ -212,13 +212,22 @@ function createQueryBuilder(collectionName) {
       }
       return { lean: () => Promise.resolve(null) };
     },
-    updateOne: (query, update) => {
+    updateOne: (query, update, options = {}) => {
       const idx = col.findIndex(doc => matchesQuery(doc, query));
       if (idx >= 0) {
         col[idx] = applyUpdate(col[idx], update);
         saveAll();
+        return Promise.resolve({ modifiedCount: 1, upsertedCount: 0 });
       }
-      return Promise.resolve({ modifiedCount: idx >= 0 ? 1 : 0 });
+      if (options.upsert) {
+        const newDoc = applyUpdate(update?.$setOnInsert || {}, update);
+        const idField = query?.id || query?._id;
+        if (idField && !newDoc.id) newDoc.id = idField;
+        col.push(newDoc);
+        saveAll();
+        return Promise.resolve({ modifiedCount: 0, upsertedCount: 1 });
+      }
+      return Promise.resolve({ modifiedCount: 0, upsertedCount: 0 });
     },
     updateMany: (query, update) => {
       let count = 0;

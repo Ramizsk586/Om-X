@@ -82,7 +82,7 @@ export class TabManager {
     this.loadSettings();
     this.setupPlayerControls();
 
-    this.SUSPEND_TIMEOUT = 10 * 1000; // 10 seconds after leaving tab
+    this.SUSPEND_TIMEOUT = 30 * 1000; // 30 seconds after leaving tab
     this.SUSPEND_CHECK_INTERVAL = 5 * 1000; // Check every 5 seconds
     setInterval(() => this.checkSuspension(), this.SUSPEND_CHECK_INTERVAL);
   }
@@ -296,6 +296,41 @@ html[${cleanUiAttr}="1"] ytd-watch-flexy[flexy] {
   -ms-overflow-style: none !important;
 }
 
+/* Clear YouTube's default dark surfaces so ambient can fill the full page */
+html[${cleanUiAttr}="1"],
+html[${cleanUiAttr}="1"] body,
+html[${cleanUiAttr}="1"] ytd-app,
+html[${cleanUiAttr}="1"] #content,
+html[${cleanUiAttr}="1"] #page-manager,
+html[${cleanUiAttr}="1"] ytd-watch-flexy,
+html[${cleanUiAttr}="1"] ytd-watch-flexy[flexy],
+html[${cleanUiAttr}="1"] ytd-watch-flexy[theater],
+html[${cleanUiAttr}="1"] ytd-watch-flexy[fullscreen],
+html[${cleanUiAttr}="1"] ytd-watch-flexy[flexy] #columns,
+html[${cleanUiAttr}="1"] ytd-watch-flexy[flexy] #primary,
+html[${cleanUiAttr}="1"] ytd-watch-flexy[flexy] #primary-inner,
+html[${cleanUiAttr}="1"] ytd-watch-flexy[flexy] #player,
+html[${cleanUiAttr}="1"] ytd-watch-flexy[flexy] #full-bleed-container,
+html[${cleanUiAttr}="1"] ytd-watch-flexy[flexy] #player-full-bleed-container,
+html[${cleanUiAttr}="1"] ytd-watch-flexy[flexy] #player-container-outer,
+html[${cleanUiAttr}="1"] ytd-watch-flexy[flexy] #player-container-inner,
+html[${cleanUiAttr}="1"] ytd-watch-flexy[flexy] #cinematics,
+html[${cleanUiAttr}="1"] ytd-watch-flexy[flexy] .html5-video-player,
+html[${cleanUiAttr}="1"] ytd-watch-flexy[flexy] .html5-video-container {
+  background: transparent !important;
+}
+
+html[${cleanUiAttr}="1"],
+html[${cleanUiAttr}="1"] body,
+html[${cleanUiAttr}="1"] ytd-app {
+  --yt-spec-base-background: transparent !important;
+  --yt-spec-raised-background: transparent !important;
+  --yt-spec-general-background-a: transparent !important;
+  --yt-spec-general-background-b: transparent !important;
+  --yt-spec-general-background-c: transparent !important;
+  --ytd-app-background: transparent !important;
+}
+
 /* Enable YouTube ambient mode - let the blurred video colors show as background */
 html[${cleanUiAttr}="1"] ytd-watch-flexy[flexy] {
   height: 100vh !important;
@@ -393,6 +428,11 @@ html[${cleanUiAttr}="1"] ytd-watch-flexy[flexy] .html5-video-container {
   overflow: hidden !important;
   background: transparent !important;
   box-shadow: none !important;
+}
+
+html[${cleanUiAttr}="1"] ytd-watch-flexy[flexy] #cinematics::before,
+html[${cleanUiAttr}="1"] ytd-watch-flexy[flexy] #cinematics::after {
+  opacity: 1 !important;
 }
 
 /* Video element - responsive */
@@ -3948,11 +3988,11 @@ body[class*="overflow-hidden"]:not([data-legit]) {
           const blurMarkerAttr = 'data-omx-thumb-blur';
 
           const state = window[stateKey] || (window[stateKey] = {});
-          if (state.timer) clearInterval(state.timer);
-          if (state.cleanTimer) clearInterval(state.cleanTimer);
-          if (state.blurObserver) state.blurObserver.disconnect();
-          if (state.blurFrame) cancelAnimationFrame(state.blurFrame);
-          state.blurQueued = false;
+          if (typeof state.cleanup === 'function') {
+            try { state.cleanup(); } catch (_) {}
+          }
+          if (state.adSkipInterval) clearInterval(state.adSkipInterval);
+          if (state.adSkipObserver) state.adSkipObserver.disconnect();
 
           const clearInlineBlur = () => {
             document.querySelectorAll('[' + blurMarkerAttr + '="1"]').forEach(node => {
@@ -3980,14 +4020,6 @@ body[class*="overflow-hidden"]:not([data-legit]) {
             return;
           }
 
-          const isHomePath = () => {
-            try {
-              const host = location.hostname;
-              if (!/youtube\\.com$/.test(host)) return false;
-              return location.pathname === '/' || location.pathname === '';
-            } catch (e) { return false; }
-          };
-
           const isWatchPath = () => {
             try {
               const host = location.hostname;
@@ -3996,26 +4028,24 @@ body[class*="overflow-hidden"]:not([data-legit]) {
             } catch (e) { return false; }
           };
 
-          const isFullscreenOrMaximized = () => {
-            return document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement || window.innerWidth === screen.width || window.innerHeight === screen.height;
-          };
-
           const updateCleanUiAttr = () => {
-            const shouldCleanUi = ${cfg.cleanUi} && (isHomePath() || isWatchPath());
+            const shouldCleanUi = ${cfg.cleanUi} && isWatchPath();
             root.setAttribute(cleanUiAttr, shouldCleanUi ? '1' : '0');
           };
           updateCleanUiAttr();
-          state.cleanTimer = setInterval(updateCleanUiAttr, 750);
 
-          // Add event listeners for window state changes
-          const handleWindowStateChange = () => {
-            updateCleanUiAttr();
+          const onLocationChange = () => {
+            if (state.cleanUiFrame) cancelAnimationFrame(state.cleanUiFrame);
+            state.cleanUiFrame = requestAnimationFrame(() => {
+              state.cleanUiFrame = null;
+              updateCleanUiAttr();
+            });
           };
-          window.addEventListener('resize', handleWindowStateChange);
-          document.addEventListener('fullscreenchange', handleWindowStateChange);
-          document.addEventListener('webkitfullscreenchange', handleWindowStateChange);
-          document.addEventListener('mozfullscreenchange', handleWindowStateChange);
-          document.addEventListener('MSFullscreenChange', handleWindowStateChange);
+
+          window.addEventListener('popstate', onLocationChange);
+          window.addEventListener('hashchange', onLocationChange);
+          document.addEventListener('yt-navigate-finish', onLocationChange, true);
+          document.addEventListener('yt-page-data-updated', onLocationChange, true);
 
           if (!style) {
             style = document.createElement('style');
@@ -4045,29 +4075,24 @@ body[class*="overflow-hidden"]:not([data-legit]) {
 
           style.textContent = rules.join('\\n');
 
-          if (${cfg.blurThumbnails}) {
-            const thumbSelector = 'a#thumbnail, ytd-thumbnail, ytd-playlist-thumbnail, ytd-rich-grid-media, ytd-rich-item-renderer, ytd-video-renderer, ytd-grid-video-renderer, ytd-compact-video-renderer, ytd-playlist-video-renderer, ytd-reel-item-renderer, ytd-reel-video-renderer, ytd-shorts-lockup-view-model, ytd-moving-thumbnail-renderer';
-            const applyBlur = () => {
-              clearInlineBlur();
-              document.querySelectorAll(thumbSelector).forEach(host => {
-                const target = host.querySelector && (host.querySelector('img.yt-core-image, yt-image, yt-img-shadow, img, #img') || host) || host;
-                if (target && target.style && target.getAttribute(blurMarkerAttr) !== '1') {
-                  target.setAttribute(blurMarkerAttr, '1');
-                  target.style.setProperty('filter', 'blur(12px)', 'important');
-                }
-              });
-            };
-            applyBlur();
-            state.blurObserver = new MutationObserver(() => {
-              if (state.blurQueued) return;
-              state.blurQueued = true;
-              state.blurFrame = requestAnimationFrame(() => {
-                state.blurQueued = false;
-                applyBlur();
-              });
-            });
-            state.blurObserver.observe(document.documentElement || document.body, { childList: true, subtree: true });
-          }
+          state.cleanup = () => {
+            window.removeEventListener('popstate', onLocationChange);
+            window.removeEventListener('hashchange', onLocationChange);
+            document.removeEventListener('yt-navigate-finish', onLocationChange, true);
+            document.removeEventListener('yt-page-data-updated', onLocationChange, true);
+            if (state.cleanUiFrame) {
+              cancelAnimationFrame(state.cleanUiFrame);
+              state.cleanUiFrame = null;
+            }
+            if (state.adSkipInterval) {
+              clearInterval(state.adSkipInterval);
+              state.adSkipInterval = null;
+            }
+            if (state.adSkipObserver) {
+              state.adSkipObserver.disconnect();
+              state.adSkipObserver = null;
+            }
+          };
 
           // ════════════════════════════════════════════════════════════════
           //  AD SKIPPER — skips skippable ads, fast-forwards the rest
@@ -4150,7 +4175,7 @@ body[class*="overflow-hidden"]:not([data-legit]) {
             if (state.adSkipInterval) clearInterval(state.adSkipInterval);
 
             // Poll every 300ms — lightweight and catches all ad states
-            state.adSkipInterval = setInterval(tick, 300);
+            state.adSkipInterval = setInterval(tick, 800);
 
             // Also react instantly to DOM mutations (skip button appearing)
             if (state.adSkipObserver) state.adSkipObserver.disconnect();
@@ -5729,6 +5754,7 @@ body[class*="overflow-hidden"]:not([data-legit]) {
         window.dispatchEvent(new CustomEvent('tab-activated', { detail: { id } }));
       } else {
         if (t.webview) { t.webview.classList.add('hidden'); t.webview.blur(); }
+        t.lastAccessed = Date.now();
         this.scheduleSuspension(t);
         t.tabItem.classList.remove('active');
       }

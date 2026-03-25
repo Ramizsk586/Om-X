@@ -161,7 +161,6 @@
 
         <div id="message-list" class="message-list"></div>
         <div id="typing-indicator" class="typing-indicator"></div>
-        <button id="jump-to-latest" class="jump-to-latest hidden" type="button">Jump to latest</button>
 
         <div id="announcement-notice" class="announcement-notice hidden">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="16" height="16" aria-hidden="true">
@@ -172,6 +171,12 @@
         </div>
 
         <div id="composer" class="composer">
+          <button id="jump-to-latest" class="jump-to-latest hidden" type="button" aria-label="Jump to latest" title="Jump to latest">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M12 5v12"></path>
+              <path d="m7 12 5 5 5-5"></path>
+            </svg>
+          </button>
           <div id="reply-preview" class="reply-preview hidden"></div>
           <div class="composer-row">
             <div id="pending-attachments" class="pending-attachments hidden" aria-live="polite"></div>
@@ -217,6 +222,9 @@
 
           <div id="emoji-picker" class="floating-panel emoji-picker hidden"></div>
           <div id="gif-picker" class="floating-panel gif-picker hidden"></div>
+          <div id="slash-command-menu" class="floating-panel slash-command-menu hidden"></div>
+          <div id="gender-code-menu" class="floating-panel gender-code-menu hidden"></div>
+          <div id="mention-menu" class="floating-panel mention-menu hidden"></div>
           <div id="voice-tooltip" class="composer-tooltip hidden"></div>
         </div>
       </main>
@@ -292,6 +300,16 @@
             </div>
           </div>
           <div class="server-appearance-block">
+            <span class="section-label">Bar Icon Image</span>
+            <div class="appearance-row">
+              <div id="server-rail-icon-preview" class="server-icon-preview">OX</div>
+              <div class="appearance-actions">
+                <button id="server-rail-icon-upload" type="button" class="btn-secondary">Upload</button>
+                <button id="server-rail-icon-clear" type="button" class="btn-secondary">Clear</button>
+              </div>
+            </div>
+          </div>
+          <div class="server-appearance-block">
             <span class="section-label">Server Thumbnail</span>
             <div id="server-thumbnail-preview" class="server-banner-preview">
               <span class="appearance-hint">No thumbnail set</span>
@@ -316,6 +334,7 @@
     </div>
 
     <input id="server-icon-input" type="file" accept="image/*" hidden />
+    <input id="server-rail-icon-input" type="file" accept="image/*" hidden />
     <input id="server-banner-input" type="file" accept="image/*" hidden />
     <input id="server-thumbnail-input" type="file" accept="image/*" hidden />
     <input id="server-chatbg-input" type="file" accept="image/*" hidden />
@@ -362,6 +381,27 @@
         <div class="modal-actions">
           <button id="create-channel-cancel" type="button" class="btn-secondary">Cancel</button>
           <button id="create-channel-submit" type="button" class="btn-primary">Create</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="create-server-modal" class="modal hidden">
+      <div class="modal-inner create-server-modal-inner">
+        <div class="modal-head">
+          <strong>Create Server</strong>
+          <button id="create-server-close" type="button" class="icon-btn" aria-label="Close create server">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M18 6 6 18"></path>
+              <path d="m6 6 12 12"></path>
+            </svg>
+          </button>
+        </div>
+        <label class="section-label" for="create-server-name">Server name</label>
+        <input id="create-server-name" class="modal-input" maxlength="80" placeholder="My new server" />
+        <div id="create-server-error" class="modal-description hidden"></div>
+        <div class="modal-actions">
+          <button id="create-server-cancel" type="button" class="btn-secondary">Cancel</button>
+          <button id="create-server-submit" type="button" class="btn-primary">Create</button>
         </div>
       </div>
     </div>
