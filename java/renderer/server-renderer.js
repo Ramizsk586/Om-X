@@ -301,6 +301,9 @@ class LlamaServerRenderer {
             });
         }
 
+        // DISABLED: KV Cache button - Compatibility Calculator is hidden
+        // const clearKvCacheBtn = document.getElementById('btn-clear-kv-cache');
+
         ['llama-path-input', 'llama-cli-path-input', 'models-path-input'].forEach((id) => {
             const input = document.getElementById(id);
             if (!input) return;
@@ -632,6 +635,12 @@ class LlamaServerRenderer {
     }
 
     async updateCompatibilityCalculator(info = this.latestModelInfo) {
+        // DISABLED: Compatibility Calculator UI is hidden
+        const compatSection = document.getElementById('llama-compat-section');
+        if (!compatSection || compatSection.style.display === 'none') {
+            return;
+        }
+        
         const labelEl = document.getElementById('llama-compat-label');
         const descEl = document.getElementById('llama-compat-desc');
         const setText = (id, value) => {
@@ -715,6 +724,14 @@ class LlamaServerRenderer {
         setText('llama-compat-gpu-layers', `${gpuLayers} / ${layers}`);
         setText('llama-compat-weights', this.formatGB(modelWeightsGB));
         setText('llama-compat-kv', this.formatGB(kvCacheGB));
+        
+        // Show KV cache indicator when calculated
+        const kvIndicator = document.getElementById('kv-cache-indicator');
+        if (kvIndicator) {
+            kvIndicator.style.display = 'inline-block';
+            kvIndicator.title = `KV Cache: ${this.formatGB(kvCacheGB)} calculated`;
+        }
+        
         setText('llama-compat-total', this.formatGB(totalRequiredGB));
         setText('llama-compat-arch', `${String(metadata.arch).toUpperCase()} (~${layers} layers)`);
 
