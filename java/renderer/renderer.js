@@ -1372,20 +1372,57 @@ document.addEventListener('DOMContentLoaded', async () => {
         resetOmChatLaunchLog();
         setOmChatLaunchStatus('Starting OmChat server...', '');
         const useLocalIpOnly = Boolean(cachedSettings?.omchat?.useLocalIpOnly);
-        appendOmChatLaunchLog(useLocalIpOnly ? 'Launching OmChat on local IP...' : 'Launching OmChat with ngrok...', 'info');
-        startOmChatLogPolling();
+        const alwaysOn = Boolean(cachedSettings?.omchat?.alwaysOn);
+
         if (!cachedSettings?.omchat?.localDbPath) {
             const message = 'OmChat local folder is not set. Please choose a folder in Settings > OmChat.';
             setOmChatLaunchStatus(message, 'error');
             appendOmChatLaunchLog(message, 'error');
             return;
         }
+
+        if (alwaysOn) {
+            appendOmChatLaunchLog('Always On enabled — checking background server...', 'info');
+            try {
+                const bg = await window.browserAPI.omChat.checkBackground();
+                if (bg?.running && bg?.url) {
+                    let serverUrl = String(bg.url).trim().replace(/[/\\]+$/, '');
+                    if (!/^https?:\/\//i.test(serverUrl)) serverUrl = `http://${serverUrl}`;
+                    window.__omxOmChatNetworkUrl = `${serverUrl}/`;
+                    try {
+                        const omOrigin = new URL(window.__omxOmChatNetworkUrl).origin;
+                        tabManager?.registerOmChatOrigin?.(omOrigin);
+                    } catch (_) {}
+                    openAppTab(window.__omxOmChatNetworkUrl, { isOmChat: true });
+                    setOmChatLaunchStatus('Connected to background server.', 'success');
+                    appendOmChatLaunchLog(`Connected to ${window.__omxOmChatNetworkUrl}`, 'success');
+                    return;
+                }
+            } catch (_) {}
+            appendOmChatLaunchLog('Starting background server...', 'info');
+        } else {
+            appendOmChatLaunchLog(useLocalIpOnly ? 'Launching OmChat on local IP...' : 'Launching OmChat with ngrok...', 'info');
+        }
+        startOmChatLogPolling();
         try {
             const result = await window.browserAPI.omChat.startServer({ useNgrok: !useLocalIpOnly });
             if (!result?.success) {
                 console.error('[Om Chat] Failed to start server:', result?.error || 'Unknown error');
                 setOmChatLaunchStatus(result?.error || 'Om Chat failed to start.', 'error');
                 appendOmChatLaunchLog(result?.error || 'Om Chat failed to start.', 'error');
+                return;
+            }
+            if (alwaysOn && result?.url) {
+                let serverUrl = String(result.url).trim().replace(/[/\\]+$/, '');
+                if (!/^https?:\/\//i.test(serverUrl)) serverUrl = `http://${serverUrl}`;
+                window.__omxOmChatNetworkUrl = `${serverUrl}/`;
+                try {
+                    const omOrigin = new URL(window.__omxOmChatNetworkUrl).origin;
+                    tabManager?.registerOmChatOrigin?.(omOrigin);
+                } catch (_) {}
+                openAppTab(window.__omxOmChatNetworkUrl, { isOmChat: true });
+                setOmChatLaunchStatus('Background server online.', 'success');
+                appendOmChatLaunchLog(`Opened ${window.__omxOmChatNetworkUrl}`, 'success');
                 return;
             }
             if (useLocalIpOnly) {

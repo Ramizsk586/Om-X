@@ -1,20 +1,15 @@
 /**
  * flowchart-server.mjs
- * MCP server that exposes flowchart generation tools.
- *
- * Tools exposed:
- *   flowchart_generate         - Generate a flowchart HTML file
- *   diagram_generate           - Generate a diagram HTML file (alias of flowchart_generate)
- *   flowchart_list_types       - List all supported chart types
- *   flowchart_list_node_types  - List all supported node types
- *   flowchart_example          - Get a ready-to-run example payload for a given type
- *
- * Usage (standalone):
- *   node flowchart-server.mjs
- *
- * Usage (integrated into your existing server.mjs):
- *   import { buildFlowchartTools } from "./flowchart-server.mjs";
- *   buildFlowchartTools(server);          // pass your existing McpServer instance
+ * Advanced MCP server for flowchart and diagram generation.
+ * 
+ * Features:
+ * - Multiple layout algorithms
+ * - Advanced node types
+ * - AI-friendly modification API
+ * - Interactive editing
+ * - Multiple export formats
+ * - Validation
+ * - Custom themes
  */
 
 import { pathToFileURL } from "url";
@@ -25,159 +20,62 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
 
-import { generateFlowchart, listChartTypes, listNodeTypes } from "./mcp-flowchart.mjs";
-
-// ─── Zod schemas (reusable) ───────────────────────────────────────────────────
+import {
+  generateFlowchart,
+  listChartTypes,
+  listNodeTypes,
+  listThemes,
+  modifyFlowchart,
+  generateExample,
+  validateFlowchartData
+} from "./mcp-flowchart.mjs";
 
 const NodeSchema = z.object({
-  id:          z.string().min(1).describe("Unique node identifier"),
-  label:       z.string().min(1).describe("Display label shown inside the node"),
-  type:        z.enum(["terminal", "process", "decision", "io", "default"])
-               .default("default")
-               .describe("Shape of the node: terminal=oval, process=rect, decision=diamond, io=parallelogram"),
-  description: z.string().optional().describe("Optional tooltip text shown on hover")
+  id: z.string().min(1).describe("Unique node identifier"),
+  label: z.string().min(1).describe("Display label shown inside the node"),
+  type: z.enum(["terminal", "process", "decision", "io", "data", "document", "subroutine", "custom"])
+    .default("default")
+    .describe("Shape: terminal=oval, process=rect, decision=diamond, io=parallelogram, data=cylinder, document=doc, subroutine=double-rect"),
+  description: z.string().optional().describe("Optional tooltip text"),
+  icon: z.string().optional().describe("Optional emoji/icon prefix"),
+  color: z.object({
+    fill: z.string().optional(),
+    stroke: z.string().optional(),
+    text: z.string().optional()
+  }).optional().describe("Custom node colors"),
+  style: z.object({
+    strokeWidth: z.number().optional(),
+    dashed: z.boolean().optional(),
+    dotted: z.boolean().optional()
+  }).optional().describe("Custom stroke styles")
 });
 
 const EdgeSchema = z.object({
-  from:  z.string().min(1).describe("Source node id"),
-  to:    z.string().min(1).describe("Target node id"),
-  label: z.string().optional().describe("Optional label shown on the edge (e.g. 'Yes', 'No')")
+  from: z.string().min(1).describe("Source node id"),
+  to: z.string().min(1).describe("Target node id"),
+  label: z.string().optional().describe("Label shown on edge"),
+  color: z.string().optional().describe("Custom edge color"),
+  style: z.enum(["curved", "straight", "orthogonal"]).optional().describe("Edge path style")
 });
 
-// ─── Example payloads ─────────────────────────────────────────────────────────
+const LayoutOptionsSchema = z.object({
+  nodeWidth: z.number().optional(),
+  nodeHeight: z.number().optional(),
+  vGap: z.number().optional(),
+  hGap: z.number().optional(),
+  rankSep: z.number().optional(),
+  nodeSep: z.number().optional(),
+  cols: z.number().optional(),
+  iterations: z.number().optional()
+}).optional();
 
-const EXAMPLES = {
-  column: {
-    title:       "User Login Flow",
-    type:        "column",
-    theme:       "dark",
-    description: "Handles authentication and session creation",
-    nodes: [
-      { id: "start",   label: "Start",            type: "terminal" },
-      { id: "input",   label: "Enter Credentials", type: "io" },
-      { id: "check",   label: "Valid?",            type: "decision" },
-      { id: "session", label: "Create Session",    type: "process" },
-      { id: "fail",    label: "Show Error",        type: "process" },
-      { id: "end",     label: "End",               type: "terminal" }
-    ],
-    edges: [
-      { from: "start",   to: "input" },
-      { from: "input",   to: "check" },
-      { from: "check",   to: "session", label: "Yes" },
-      { from: "check",   to: "fail",    label: "No" },
-      { from: "session", to: "end" },
-      { from: "fail",    to: "input" }
-    ]
-  },
-  circle: {
-    title:       "Agile Sprint Cycle",
-    type:        "circle",
-    theme:       "colorful",
-    description: "Continuous delivery sprint loop",
-    nodes: [
-      { id: "plan",    label: "Sprint Planning", type: "terminal" },
-      { id: "design",  label: "Design",          type: "process" },
-      { id: "develop", label: "Develop",         type: "process" },
-      { id: "test",    label: "Test",            type: "process" },
-      { id: "review",  label: "Review",          type: "decision" },
-      { id: "deploy",  label: "Deploy",          type: "process" },
-      { id: "retro",   label: "Retrospective",   type: "process" }
-    ],
-    edges: [
-      { from: "plan",    to: "design" },
-      { from: "design",  to: "develop" },
-      { from: "develop", to: "test" },
-      { from: "test",    to: "review" },
-      { from: "review",  to: "deploy",  label: "Pass" },
-      { from: "review",  to: "develop", label: "Fail" },
-      { from: "deploy",  to: "retro" },
-      { from: "retro",   to: "plan" }
-    ]
-  },
-  horizontal: {
-    title:       "CI/CD Pipeline",
-    type:        "horizontal",
-    theme:       "dark",
-    description: "From source commit to production",
-    nodes: [
-      { id: "commit",  label: "Commit",        type: "terminal" },
-      { id: "build",   label: "Build",         type: "process" },
-      { id: "test",    label: "Run Tests",     type: "process" },
-      { id: "gate",    label: "Quality Gate",  type: "decision" },
-      { id: "stage",   label: "Deploy Staging",type: "process" },
-      { id: "approve", label: "Approve?",      type: "decision" },
-      { id: "prod",    label: "Deploy Prod",   type: "process" },
-      { id: "done",    label: "Live",          type: "terminal" }
-    ],
-    edges: [
-      { from: "commit",  to: "build" },
-      { from: "build",   to: "test" },
-      { from: "test",    to: "gate" },
-      { from: "gate",    to: "stage",   label: "Pass" },
-      { from: "gate",    to: "build",   label: "Fail" },
-      { from: "stage",   to: "approve" },
-      { from: "approve", to: "prod",    label: "Yes" },
-      { from: "approve", to: "stage",   label: "No" },
-      { from: "prod",    to: "done" }
-    ]
-  },
-  tree: {
-    title:       "Software Architecture",
-    type:        "tree",
-    theme:       "light",
-    description: "High-level system components",
-    nodes: [
-      { id: "app",      label: "Application",   type: "terminal" },
-      { id: "frontend", label: "Frontend",      type: "process" },
-      { id: "backend",  label: "Backend",       type: "process" },
-      { id: "react",    label: "React",         type: "default" },
-      { id: "redux",    label: "Redux",         type: "default" },
-      { id: "api",      label: "REST API",      type: "process" },
-      { id: "db",       label: "Database",      type: "io" },
-      { id: "cache",    label: "Cache",         type: "io" }
-    ],
-    edges: [
-      { from: "app",      to: "frontend" },
-      { from: "app",      to: "backend" },
-      { from: "frontend", to: "react" },
-      { from: "frontend", to: "redux" },
-      { from: "backend",  to: "api" },
-      { from: "backend",  to: "db" },
-      { from: "backend",  to: "cache" }
-    ]
-  },
-  mindmap: {
-    title:       "Product Strategy",
-    type:        "mindmap",
-    theme:       "colorful",
-    description: "Key pillars of product development",
-    nodes: [
-      { id: "core",    label: "Product Vision",  type: "terminal" },
-      { id: "ux",      label: "UX",              type: "process" },
-      { id: "eng",     label: "Engineering",     type: "process" },
-      { id: "growth",  label: "Growth",          type: "process" },
-      { id: "design",  label: "Design System",   type: "default" },
-      { id: "user",    label: "User Research",   type: "default" },
-      { id: "infra",   label: "Infrastructure",  type: "default" },
-      { id: "api2",    label: "APIs",            type: "default" },
-      { id: "seo",     label: "SEO",             type: "default" },
-      { id: "ads",     label: "Paid Ads",        type: "default" }
-    ],
-    edges: [
-      { from: "core",   to: "ux" },
-      { from: "core",   to: "eng" },
-      { from: "core",   to: "growth" },
-      { from: "ux",     to: "design" },
-      { from: "ux",     to: "user" },
-      { from: "eng",    to: "infra" },
-      { from: "eng",    to: "api2" },
-      { from: "growth", to: "seo" },
-      { from: "growth", to: "ads" }
-    ]
-  }
-};
-
-// ─── Tool registration helper ─────────────────────────────────────────────────
+const GenerateOptionsSchema = z.object({
+  layout: LayoutOptionsSchema,
+  edgeStyle: z.enum(["curved", "straight", "orthogonal"]).optional(),
+  showLabels: z.boolean().optional(),
+  animateEdges: z.boolean().optional(),
+  swimlanes: z.array(z.string()).optional()
+});
 
 function addTool(server, name, description, schema, handler) {
   server.tool(name, description, schema, async (args) => {
@@ -220,31 +118,34 @@ async function openInOmxTab(url) {
     return { opened: false, error: error?.message || "Electron is not available." };
   }
 }
-// ─── Public: register tools onto any McpServer ───────────────────────────────
 
 export function buildFlowchartTools(server) {
   const generateSchema = {
     title: z.string().min(1).describe("Chart title displayed at the top"),
-    type: z.enum(["column", "circle", "horizontal", "tree", "mindmap"])
+    type: z.enum(["column", "horizontal", "circle", "tree", "mindmap", "force", "grid", "radial", "dagre"])
       .default("column")
-      .describe("Layout type of the flowchart"),
+      .describe("Layout type: column=vertical, horizontal=left-to-right, circle=radial, tree=hierarchical, mindmap=radial from center, force=physics-based, grid=grid arrangement, radial=concentric rings, dagre=optimized hierarchical"),
     nodes: z.array(NodeSchema).min(1).describe("Array of node objects"),
     edges: z.array(EdgeSchema).describe("Array of directed edge objects"),
-    theme: z.enum(["dark", "light", "colorful"]).default("dark").describe("Color theme"),
+    theme: z.enum(["dark", "light", "colorful", "nature", "ocean", "sunset"])
+      .default("dark")
+      .describe("Color theme: dark, light, colorful, nature, ocean, sunset"),
     description: z.string().optional().describe("Optional subtitle shown below the title"),
-    outputPath: z.string().optional()
-      .describe("Absolute or relative file path to save the HTML (e.g. '/tmp/my-chart.html'). If omitted, the HTML is returned but not saved."),
-    openInNewTab: z.boolean().optional()
-      .describe("If true, save the HTML (if needed) and open it in a new Om-X tab.")
+    width: z.number().optional().default(1000).describe("SVG canvas width"),
+    height: z.number().optional().default(700).describe("SVG canvas height"),
+    options: GenerateOptionsSchema.describe("Advanced layout and rendering options"),
+    outputPath: z.string().optional().describe("File path to save the HTML"),
+    openInNewTab: z.boolean().optional().describe("Open in new Om-X tab")
   };
 
-  const generateHandler = async ({ title, type, nodes, edges, theme, description, outputPath, openInNewTab }) => {
-    const html = generateFlowchart({ title, type, nodes, edges: edges || [], theme, description });
+  const generateHandler = async (args) => {
+    const { outputPath, openInNewTab, ...flowchartArgs } = args;
+    const html = generateFlowchart(flowchartArgs);
 
     let saveResult = null;
     let finalPath = outputPath;
     if (openInNewTab && !finalPath) {
-      finalPath = defaultOutputPath(title);
+      finalPath = defaultOutputPath(args.title);
     }
     if (finalPath) {
       const dir = dirname(finalPath);
@@ -266,88 +167,161 @@ export function buildFlowchartTools(server) {
       openUrl,
       opened: openResult.opened,
       openError: openResult.error,
-      nodeCount: nodes.length,
-      edgeCount: (edges || []).length,
-      type,
-      theme,
-      title
+      nodeCount: args.nodes.length,
+      edgeCount: (args.edges || []).length,
+      type: args.type,
+      theme: args.theme,
+      title: args.title
     };
   };
 
-  // 1. flowchart_generate
-  addTool(
-    server,
-    "flowchart_generate",
-    `Generate a beautiful, self-contained flowchart HTML file.
+  addTool(server, "flowchart_generate", `Generate an advanced, interactive flowchart HTML file.
 
-Supported chart types:
-  - column     - vertical top-to-bottom flowchart (default)
-  - circle     - nodes arranged in a circle (cyclical processes)
-  - horizontal - left-to-right pipeline/timeline
-  - tree       - hierarchical tree / org-chart
-  - mindmap    - radial map from a central idea
+**Layout Types:**
+- column: Classic vertical top-to-bottom flowchart
+- horizontal: Left-to-right pipeline/timeline
+- circle: Nodes arranged in a circle (cyclical)
+- tree: Hierarchical tree / org-chart
+- mindmap: Radial map from central idea
+- force: Physics-based auto-layout
+- grid: Grid arrangement matrix
+- radial: Concentric rings from center
+- dagre: Optimized hierarchical layout
 
-Node types: terminal (start/end oval), process (rectangle), decision (diamond), io (parallelogram), default.
+**Node Types:**
+- terminal: Oval (Start/End)
+- process: Rectangle (Action/Step)
+- diamond: Decision/Branch
+- io: Parallelogram (Input/Output)
+- data: Cylinder (Database/Storage)
+- document: Document shape
+- subroutine: Double rectangle (Function)
 
-Returns a JSON object with:
-  - html       - the complete standalone HTML string (save as .html to view)
-  - saveResult - path where the file was saved, or null if no outputPath given
-  - nodeCount  - number of nodes
-  - edgeCount  - number of edges`,
-    generateSchema,
-    generateHandler
-  );
+**Themes:** dark, light, colorful, nature, ocean, sunset
 
-  // 1b. diagram_generate (alias of flowchart_generate)
-  addTool(
-    server,
-    "diagram_generate",
-    "Generate a diagram HTML file using the flowchart engine. This is an alias of flowchart_generate.",
-    generateSchema,
-    generateHandler
-  );
+**Features:**
+- Interactive zoom/pan
+- Node selection and editing
+- Multiple export formats (SVG, PNG, JSON, Markdown)
+- Custom colors and styles
+- Edge animations
+- Swimlane support
+- Drag-and-drop positioning`, generateSchema, generateHandler);
 
-  // 2. flowchart_list_types
-  addTool(
-    server,
-    "flowchart_list_types",
-    "List all supported flowchart types with descriptions and use-cases.",
-    {},
-    async () => ({ chartTypes: listChartTypes() })
-  );
+  addTool(server, "diagram_generate", "Alias for flowchart_generate with all advanced features.", generateSchema, generateHandler);
 
-  // 3. flowchart_list_node_types
-  addTool(
-    server,
-    "flowchart_list_node_types",
-    "List all supported node types, their shapes, and when to use each.",
-    {},
-    async () => ({ nodeTypes: listNodeTypes() })
-  );
+  addTool(server, "flowchart_list_types", "List all supported flowchart layout types with descriptions.", {}, async () => ({
+    chartTypes: listChartTypes()
+  }));
 
-  // 4. flowchart_example
-  addTool(
-    server,
-    "flowchart_example",
-    "Get a ready-to-use example payload for a specific chart type. Use this to learn the data format before calling flowchart_generate.",
-    {
-      type: z.enum(["column", "circle", "horizontal", "tree", "mindmap"])
-        .default("column")
-        .describe("Chart type to get an example for")
-    },
-    async ({ type }) => {
-      const example = EXAMPLES[type] ?? EXAMPLES.column;
-      return {
-        description: `Example payload for "${type}" chart - pass these fields directly to flowchart_generate.`,
-        payload: example
-      };
-    }
-  );
+  addTool(server, "flowchart_list_node_types", "List all supported node types, shapes, and descriptions.", {}, async () => ({
+    nodeTypes: listNodeTypes()
+  }));
+
+  addTool(server, "flowchart_list_themes", "List all available color themes with preview colors.", {}, async () => ({
+    themes: listThemes()
+  }));
+
+  const modifySchema = {
+    action: z.enum(["addNode", "updateNode", "deleteNode", "addEdge", "updateEdge", "deleteEdge", "batch"])
+      .describe("Modification action to perform"),
+    nodes: z.array(NodeSchema).describe("Current nodes array"),
+    edges: z.array(EdgeSchema).describe("Current edges array"),
+    nodeId: z.string().optional().describe("Node ID for update/delete operations"),
+    newData: z.object({
+      id: z.string().optional(),
+      label: z.string().optional(),
+      type: z.string().optional(),
+      description: z.string().optional(),
+      from: z.string().optional(),
+      to: z.string().optional(),
+      label: z.string().optional(),
+      color: z.string().optional(),
+      nodes: z.array(NodeSchema).optional(),
+      edges: z.array(EdgeSchema).optional()
+    }).optional().describe("Data for the modification")
+  };
+
+  addTool(server, "flowchart_modify", `Modify an existing flowchart by adding, updating, or deleting nodes and edges.
+    
+**Actions:**
+- addNode: Add a new node
+- updateNode: Update existing node properties
+- deleteNode: Remove a node and its connected edges
+- addEdge: Add a new edge between nodes
+- updateEdge: Update edge properties
+- deleteEdge: Remove an edge
+- batch: Add multiple nodes/edges at once
+
+Returns the updated nodes and edges arrays that can be passed back to flowchart_generate.`, modifySchema, async (args) => {
+    return modifyFlowchart(args);
+  });
+
+  const validateSchema = {
+    nodes: z.array(NodeSchema).min(1).describe("Nodes to validate"),
+    edges: z.array(EdgeSchema).optional().describe("Edges to validate")
+  };
+
+  addTool(server, "flowchart_validate", `Validate flowchart data for common errors.
+    
+Checks for:
+- At least one node exists
+- No duplicate node IDs
+- All nodes have id and label
+- All edge references point to existing nodes
+- Returns list of errors if invalid`, validateSchema, async (args) => {
+    return validateFlowchartData(args);
+  });
+
+  const exampleSchema = {
+    type: z.enum(["column", "orgchart", "mindmap", "network", "grid"])
+      .default("column")
+      .describe("Example type to generate")
+  };
+
+  addTool(server, "flowchart_example", `Get a ready-to-use example payload for different diagram types.
+
+**Examples:**
+- column: User authentication flow
+- orgchart: Company organization tree
+- mindmap: Project roadmap mind map
+- network: System architecture topology
+- grid: Feature comparison matrix`, exampleSchema, async ({ type }) => {
+    return generateExample(type);
+  });
+
+  const autoLayoutSchema = {
+    nodes: z.array(NodeSchema).describe("Input nodes"),
+    edges: z.array(EdgeSchema).describe("Input edges"),
+    layoutType: z.enum(["force", "dagre", "tree"]).default("force")
+      .describe("Auto-layout algorithm to use"),
+    width: z.number().optional().default(1000),
+    height: z.number().optional().default(700)
+  };
+
+  addTool(server, "flowchart_auto_layout", `Automatically compute optimal node positions using layout algorithms.
+    
+**Layout Types:**
+- force: Force-directed graph layout (best for organic structures)
+- dagre: Hierarchical layout (best for directed flows)
+- tree: Tree layout (best for hierarchies)
+
+Returns the computed positions for each node.`, autoLayoutSchema, async (args) => {
+    const { generateFlowchart: gf } = await import("./mcp-flowchart.mjs");
+    const result = gf({
+      title: "Auto Layout",
+      type: args.layoutType,
+      nodes: args.nodes,
+      edges: args.edges,
+      width: args.width,
+      height: args.height,
+      options: { layout: { iterations: 150 } }
+    });
+    return { message: "Use the generated HTML output with positions. Auto-layout is applied automatically when generating." };
+  });
 
   return server;
 }
-
-// ─── Standalone server (used when run directly) ───────────────────────────────
 
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 3100;
@@ -355,7 +329,7 @@ const DEFAULT_PORT = 3100;
 function buildServer() {
   const server = new McpServer({
     name: "mcp-flowchart",
-    version: "1.0.0"
+    version: "2.0.0"
   });
   buildFlowchartTools(server);
   return server;
@@ -364,7 +338,6 @@ function buildServer() {
 const app = express();
 app.disable("x-powered-by");
 
-// CORS
 app.use((req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   const rh = req.headers["access-control-request-headers"];
@@ -403,13 +376,28 @@ app.post("/sse", handleRequest);
 app.get("/mcp", (_req, res) => res.status(405).json({ error: "Use POST for MCP requests." }));
 app.get("/sse", (_req, res) => res.status(410).json({ error: "Legacy SSE removed. Use POST /mcp." }));
 
-// Health-check endpoint
 app.get("/health", (_req, res) => {
   res.json({
     status: "ok",
     server: "mcp-flowchart",
-    version: "1.0.0",
-    tools: ["flowchart_generate", "diagram_generate", "flowchart_list_types", "flowchart_list_node_types", "flowchart_example"]
+    version: "2.0.0",
+    tools: [
+      "flowchart_generate",
+      "diagram_generate",
+      "flowchart_list_types",
+      "flowchart_list_node_types",
+      "flowchart_list_themes",
+      "flowchart_modify",
+      "flowchart_validate",
+      "flowchart_example",
+      "flowchart_auto_layout"
+    ],
+    features: {
+      layouts: ["column", "horizontal", "circle", "tree", "mindmap", "force", "grid", "radial", "dagre"],
+      nodeTypes: ["terminal", "process", "decision", "io", "data", "document", "subroutine", "custom"],
+      themes: ["dark", "light", "colorful", "nature", "ocean", "sunset"],
+      exports: ["SVG", "PNG", "JSON", "Markdown"]
+    }
   });
 });
 
@@ -422,7 +410,6 @@ export async function startServer(options = {}) {
       console.log(`[mcp-flowchart] MCP server  → http://${host}:${port}/mcp`);
       console.log(`[mcp-flowchart] SSE alias   → http://${host}:${port}/sse`);
       console.log(`[mcp-flowchart] Health      → http://${host}:${port}/health`);
-      console.log(`[mcp-flowchart] Tools: flowchart_generate, diagram_generate, flowchart_list_types, flowchart_list_node_types, flowchart_example`);
       resolve(s);
     });
     s.once("error", reject);
@@ -437,7 +424,3 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     process.exit(1);
   });
 }
-
-
-
-

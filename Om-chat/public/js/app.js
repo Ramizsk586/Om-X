@@ -3283,58 +3283,44 @@ function openMemberModerationAction(member, action) {
   });
 }
 
-function openMemberPopup(member, anchorRect) {
+function openMemberPopup(member) {
   if (!member) return;
 
-  const status = normalizeUserStatus(member.status);
-  const customStatus = getCustomStatusText(member.customStatus);
-  const mobileSheet = isMobileLayout();
-  const left = mobileSheet
-    ? Math.max(12, (window.innerWidth - Math.min(window.innerWidth * 0.92, 360)) / 2)
-    : Math.min(window.innerWidth - 332, Math.max(12, anchorRect.right + 10));
-  const top = mobileSheet
-    ? Math.max(12, window.innerHeight - Math.min(window.innerHeight * 0.78, 520) - 18)
-    : Math.min(window.innerHeight - 260, Math.max(12, anchorRect.top));
   const canModerateMember = state.currentView === 'server'
     && state.isAdmin
     && member.userId !== state.user.id
     && member.userId !== state.server?.ownerId;
 
-  el.memberPopout.style.left = left + 'px';
-  el.memberPopout.style.top = top + 'px';
+  const joinDate = member.joinedAt
+    ? new Date(member.joinedAt).toLocaleDateString([], { month: 'long', day: 'numeric', year: 'numeric' })
+    : '';
+
   el.memberPopout.innerHTML = [
-    '<div class="popout-header">',
-    '  <div class="popout-avatar-wrap">',
-    '    ' + buildAvatarHtml(member, 'popout-avatar'),
-    '    <span class="status-badge ' + status + '"></span>',
+    '<div class="member-profile-backdrop"></div>',
+    '<div class="member-profile-card">',
+    '  <button id="member-pop-close" type="button" class="icon-btn member-profile-close" aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg></button>',
+    '  <div class="member-profile-avatar">' + buildAvatarHtml(member, 'member-profile-avatar-circle') + '</div>',
+    '  <div class="member-profile-name">' + escapeHtml(member.username) + '</div>',
+    '  <div class="member-profile-details">',
+    '    <div class="member-profile-row"><span class="member-profile-label">Role</span><span class="member-profile-value">' + escapeHtml(getMemberRoleName(member.userId)) + '</span></div>',
+    member.genderCode ? '    <div class="member-profile-row"><span class="member-profile-label">Gender</span><span class="member-profile-value">' + buildGenderBadgeHtml(member.genderCode) + ' ' + escapeHtml(getGenderOption(member.genderCode)?.label || '') + '</span></div>' : '',
+    joinDate ? '    <div class="member-profile-row"><span class="member-profile-label">Joined</span><span class="member-profile-value">' + escapeHtml(joinDate) + '</span></div>' : '',
     '  </div>',
-    '  <div class="popout-copy">',
-    '    <div class="popout-title-row">',
-    '      <div class="popout-title-main">',
-    '        <strong title="' + escapeHtml(member.username) + '">' + escapeHtml(member.username) + '</strong>',
-    '        <div class="popout-meta">' + escapeHtml(getMemberRoleName(member.userId)) + '</div>',
-    customStatus
-      ? '        <div class="popout-status">' + escapeHtml(customStatus) + '</div>'
-      : '',
-    '      </div>',
-    '      <div class="popout-title-side">',
-    '        ' + buildGenderBadgeHtml(member.genderCode),
-    '        ' + buildDeviceBadgeHtml(member.deviceType),
-    '        <span class="popout-presence ' + status + '"><span class="popout-presence-dot ' + status + '"></span>' + escapeHtml(getStatusLabel(status)) + '</span>',
-    '      </div>',
-    '    </div>',
+    '  <div class="member-profile-actions">',
+    '    <button id="member-pop-dm" type="button" class="btn-primary">Message</button>',
+    '    <button id="member-pop-profile" type="button" class="btn-secondary">Mention</button>',
     '  </div>',
-    '  <button id="member-pop-close" type="button" class="icon-btn" aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg></button>',
-    '</div>',
-    '<div class="popout-actions">',
-    '  <button id="member-pop-dm" type="button" class="btn-primary">Message</button>',
-    '  <button id="member-pop-profile" type="button" class="btn-secondary">Mention</button>',
-    '</div>',
     canModerateMember
-      ? '<div class="popout-divider"></div><div class="popout-section-label">Moderation</div><div class="popout-actions popout-actions-moderation"><button id="member-pop-kick" type="button" class="btn-secondary">Kick</button><button id="member-pop-ban" type="button" class="btn-danger">Ban</button></div>'
-      : ''
+      ? '<div class="member-profile-divider"></div><div class="member-profile-section-label">Moderation</div><div class="member-profile-actions"><button id="member-pop-kick" type="button" class="btn-secondary">Kick</button><button id="member-pop-ban" type="button" class="btn-danger">Ban</button></div>'
+      : '',
+    '</div>'
   ].join('');
+
   el.memberPopout.classList.remove('hidden');
+
+  const backdrop = el.memberPopout.querySelector('.member-profile-backdrop');
+  if (backdrop) backdrop.onclick = () => closeMemberPopout();
+
   $('#member-pop-close').onclick = () => closeMemberPopout();
   $('#member-pop-dm').onclick = async () => {
     closeMemberPopout();
@@ -3460,6 +3446,11 @@ function updateSlashCommandMenu() {
     return;
   }
 
+  if (/^\/\S+\s+@/.test(raw)) {
+    closeSlashCommandMenu();
+    return;
+  }
+
   const query = raw.slice(1);
   const commands = getAvailableSlashCommands(query);
   if (!commands.length) {
@@ -3540,12 +3531,11 @@ function updateMentionMenu() {
     button.className = 'mention-item' + (index === 0 ? ' is-active' : '');
     button.dataset.userId = member.userId;
 
-    const avatar = createAvatarNode(member, 'mention-item-avatar');
-    const copy = document.createElement('span');
-    copy.className = 'mention-item-copy';
-    copy.innerHTML = `<span class="mention-item-name">${escapeHtml(member.username || 'User')}</span><span class="mention-item-role">${escapeHtml(getMemberRoleName(member.userId))}</span>`;
+    const name = document.createElement('span');
+    name.className = 'mention-item-name';
+    name.textContent = member.username || 'User';
 
-    button.append(avatar, copy);
+    button.append(name);
     button.addEventListener('click', () => applyMentionSuggestion(member));
     el.mentionMenu.appendChild(button);
   });
@@ -4386,26 +4376,11 @@ function bind() {
     if (dm?.partner) await openDMFromList(dm.partner, dm.id);
   });
 
-  const handleMemberPreview = (event) => {
-    const memberRow = event.target.closest('.member-item');
-    const member = getMemberByUserId(memberRow?.dataset.userId);
-    if (member && memberRow) openMemberPopup(member, memberRow.getBoundingClientRect());
-  };
-
   el.membersList.addEventListener('click', (event) => {
     event.stopPropagation();
-    handleMemberPreview(event);
-  });
-  el.membersList.addEventListener('mouseover', handleMemberPreview);
-  el.membersList.addEventListener('mouseleave', () => {
-    clearTimeout(state.memberPopoutTimer);
-    state.memberPopoutTimer = setTimeout(closeMemberPopout, 120);
-  });
-  el.memberPopout.addEventListener('mouseenter', () => {
-    clearTimeout(state.memberPopoutTimer);
-  });
-  el.memberPopout.addEventListener('mouseleave', () => {
-    state.memberPopoutTimer = setTimeout(closeMemberPopout, 120);
+    const memberRow = event.target.closest('.member-item');
+    const member = getMemberByUserId(memberRow?.dataset.userId);
+    if (member) openMemberPopup(member);
   });
 
   el.searchToggle.addEventListener('click', () => {

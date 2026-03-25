@@ -66,6 +66,7 @@ const applyThemeClass = (theme) => {
     featCookieThirdParty: document.getElementById('feat-cookie-third-party'),
     featSessionGuard: document.getElementById('feat-sessionguard'),
     featOmchatLocalIp: document.getElementById('feat-omchat-local-ip'),
+    featOmchatAlwaysOn: document.getElementById('feat-omchat-always-on'),
     // Ad Blocker Panel
     featAdblockerMaster: document.getElementById('feat-adblocker-master'),
     featAdblockerPopups: document.getElementById('feat-adblocker-popups'),
@@ -801,6 +802,7 @@ const applyThemeClass = (theme) => {
       }
       if (els.featSessionGuard) els.featSessionGuard.checked = s.security?.sessionGuard?.enabled ?? true;
       if (els.featOmchatLocalIp) els.featOmchatLocalIp.checked = s.omchat?.useLocalIpOnly ?? false;
+      if (els.featOmchatAlwaysOn) els.featOmchatAlwaysOn.checked = s.omchat?.alwaysOn ?? false;
       
       // Load Ad Blocker settings (default OFF)
       const adBlocker = s.adBlocker || {};
@@ -903,7 +905,8 @@ const applyThemeClass = (theme) => {
         omchat: {
             dbMode: 'local',
             localDbPath: omchatPath,
-            useLocalIpOnly: els.featOmchatLocalIp?.checked ?? false
+            useLocalIpOnly: els.featOmchatLocalIp?.checked ?? false,
+            alwaysOn: els.featOmchatAlwaysOn?.checked ?? false
         },
         shortcuts: newShortcuts,
         blocklist: currentSettings.blocklist || [],

@@ -244,6 +244,9 @@ const OMX_MCP_MODULE = path.resolve(OMX_APP_ROOT, 'mcp', 'server.mjs');
 const OMX_OMCHAT_ROOT = path.resolve(OMX_APP_ROOT, 'Om-chat');
 const OMX_OMCHAT_ENTRY = path.resolve(OMX_OMCHAT_ROOT, 'server', 'index.js');
 const OMX_OMCHAT_NGROK_HELPER = path.resolve(OMX_OMCHAT_ROOT, 'scripts', 'run-with-ngrok.js');
+const OMX_OMCHAT_BG_LAUNCHER = path.resolve(OMX_OMCHAT_ROOT, 'backgroundLauncher.js');
+const OMX_OMCHAT_BG_PID_FILE = path.resolve(OMX_OMCHAT_ROOT, '.background-server.pid');
+const OMX_OMCHAT_BG_URL_FILE = path.resolve(OMX_OMCHAT_ROOT, '.background-server.url');
 const OMX_OMCHAT_DEFAULT_PORT = 3031;
 const OMX_FIREWALL_RULE_STATE_VERSION = 2;
 const OMX_ALLOWED_SCRIPT_ENTRY_EXTENSIONS = new Set(['.js', '.cjs', '.mjs']);
@@ -485,6 +488,7 @@ let lanServerProcess = null;
 let mcpServerProcess = null;
 let omChatServerProcess = null;
 let omChatNgrokProcess = null;
+let omChatBackgroundProcess = null;
 let lanServerInstance = global.omxLanServer || null;
 const SERVER_LOG_LIMIT = 500;
 const serverLogs = {
@@ -1200,7 +1204,7 @@ async function stopOmChatNgrokTunnelInternal() {
 async function getOmChatStatusPayload() {
   try {
     const omChatApi = getOmChatModuleSync();
-    const runtimeStatus = omChatApi.getStatus?.() || {
+    const runtimeStatus = omChatApi?.getStatus?.() || {
       isRunning: false,
       host: null,
       port: null,
@@ -1220,6 +1224,22 @@ async function getOmChatStatusPayload() {
       ? await checkTcpPort(readinessHost, runtimeStatus.port)
       : false;
 
+    if (!ready && isBackgroundServerRunning()) {
+      const bgUrl = getBackgroundServerUrl();
+      if (bgUrl) {
+        return {
+          isRunning: true,
+          ready: true,
+          pid: null,
+          tunnelPid: null,
+          ngrokRunning: false,
+          startedAt: serverStarts.omchat || null,
+          config: serverConfigs.omchat || null,
+          alwaysOnBackground: true
+        };
+      }
+    }
+
     return {
       ...runtimeStatus,
       isRunning: Boolean(runtimeStatus?.isRunning) && ready,
@@ -1231,6 +1251,21 @@ async function getOmChatStatusPayload() {
       config: serverConfigs.omchat || null
     };
   } catch (error) {
+    if (isBackgroundServerRunning()) {
+      const bgUrl = getBackgroundServerUrl();
+      if (bgUrl) {
+        return {
+          isRunning: true,
+          ready: true,
+          pid: null,
+          tunnelPid: null,
+          ngrokRunning: false,
+          startedAt: serverStarts.omchat || null,
+          config: serverConfigs.omchat || null,
+          alwaysOnBackground: true
+        };
+      }
+    }
     return {
       isRunning: false,
       ready: false,
@@ -1255,15 +1290,164 @@ function getLanStatusPayload() {
   };
 }
 
+function isBackgroundServerRunning() {
+  try {
+    if (!fs.existsSync(OMX_OMCHAT_BG_PID_FILE)) return false;
+    const pid = Number(fs.readFileSync(OMX_OMCHAT_BG_PID_FILE, 'utf-8').trim());
+    if (!pid || Number.isNaN(pid)) return false;
+    process.kill(pid, 0);
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+function getBackgroundServerUrl() {
+  try {
+    if (fs.existsSync(OMX_OMCHAT_BG_URL_FILE)) {
+      return fs.readFileSync(OMX_OMCHAT_BG_URL_FILE, 'utf-8').trim() || '';
+    }
+  } catch (_) {}
+  return '';
+}
+
+function cleanupBackgroundFiles() {
+  try { if (fs.existsSync(OMX_OMCHAT_BG_PID_FILE)) fs.unlinkSync(OMX_OMCHAT_BG_PID_FILE); } catch (_) {}
+  try { if (fs.existsSync(OMX_OMCHAT_BG_URL_FILE)) fs.unlinkSync(OMX_OMCHAT_BG_URL_FILE); } catch (_) {}
+  const ngrokPidPath = path.resolve(OMX_OMCHAT_ROOT, '.background-ngrok.pid');
+  try { if (fs.existsSync(ngrokPidPath)) fs.unlinkSync(ngrokPidPath); } catch (_) {}
+}
+
+function killBackgroundServer() {
+  try {
+    if (fs.existsSync(OMX_OMCHAT_BG_PID_FILE)) {
+      const pid = Number(fs.readFileSync(OMX_OMCHAT_BG_PID_FILE, 'utf-8').trim());
+      if (pid && !Number.isNaN(pid)) {
+        try { process.kill(pid, 'SIGTERM'); } catch (_) {}
+      }
+    }
+    const ngrokPidPath = path.resolve(OMX_OMCHAT_ROOT, '.background-ngrok.pid');
+    if (fs.existsSync(ngrokPidPath)) {
+      const ngrokPid = Number(fs.readFileSync(ngrokPidPath, 'utf-8').trim());
+      if (ngrokPid && !Number.isNaN(ngrokPid)) {
+        try { process.kill(ngrokPid, 'SIGTERM'); } catch (_) {}
+      }
+    }
+    cleanupBackgroundFiles();
+    return true;
+  } catch (_) {
+    cleanupBackgroundFiles();
+    return false;
+  }
+}
+
+async function startOmChatBackground(config = {}) {
+  const port = Number(config.port || OMX_OMCHAT_DEFAULT_PORT);
+  const host = String(config.host || '0.0.0.0').trim() || '0.0.0.0';
+  const useNgrok = config.useNgrok === true;
+  const omchatSettings = cachedSettings?.omchat || {};
+
+  if (!fs.existsSync(OMX_OMCHAT_BG_LAUNCHER)) {
+    return { success: false, error: 'Background launcher not found.' };
+  }
+
+  if (isBackgroundServerRunning()) {
+    const url = getBackgroundServerUrl();
+    return { success: true, url, alreadyRunning: true };
+  }
+
+  cleanupBackgroundFiles();
+
+  const bgConfig = JSON.stringify({
+    port,
+    host,
+    useNgrok,
+    localDbPath: omchatSettings.localDbPath || '',
+    sessionSecret: process.env.OMX_OMCHAT_SESSION_SECRET || 'omx-omchat-dev-secret'
+  });
+
+  const bgEnv = {
+    ...process.env,
+    DB_MODE: 'local',
+    LOCAL_DB_PATH: omchatSettings.localDbPath || '',
+    TRUST_PROXY: useNgrok ? '1' : '0'
+  };
+
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, [OMX_OMCHAT_BG_LAUNCHER, bgConfig], {
+      detached: true,
+      stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
+      cwd: OMX_OMCHAT_ROOT,
+      env: bgEnv
+    });
+
+    let resolved = false;
+    const timeout = setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        try { child.disconnect(); } catch (_) {}
+        if (isBackgroundServerRunning()) {
+          const url = getBackgroundServerUrl();
+          resolve({ success: true, url, delayed: true });
+        } else {
+          resolve({ success: false, error: 'Background server timed out.' });
+        }
+      }
+    }, useNgrok ? 30000 : 15000);
+
+    child.on('message', (msg) => {
+      if (resolved) return;
+      resolved = true;
+      clearTimeout(timeout);
+      try { child.disconnect(); } catch (_) {}
+      if (msg?.success) {
+        omChatBackgroundProcess = child;
+        resolve({ success: true, url: msg.url });
+      } else {
+        resolve({ success: false, error: msg?.error || 'Failed to start background server.' });
+      }
+    });
+
+    child.on('error', (err) => {
+      if (resolved) return;
+      resolved = true;
+      clearTimeout(timeout);
+      resolve({ success: false, error: err?.message || 'Failed to spawn background server.' });
+    });
+
+    child.unref();
+  });
+}
+
 async function startOmChatServerInternal(config = {}) {
   invalidateServerStatusCache('omchat');
   const existingConfig = serverConfigs.omchat || {};
   const port = Number(config.port || existingConfig.port || OMX_OMCHAT_DEFAULT_PORT);
   const host = String(config.host || existingConfig.host || '0.0.0.0').trim() || '0.0.0.0';
   const useNgrok = config.useNgrok === true;
+  const alwaysOn = Boolean(cachedSettings?.omchat?.alwaysOn);
 
   if (!fs.existsSync(OMX_OMCHAT_ENTRY)) {
     return { success: false, error: 'Om Chat server entry not found.' };
+  }
+
+  if (alwaysOn) {
+    if (isBackgroundServerRunning()) {
+      const url = getBackgroundServerUrl();
+      if (url) {
+        serverStarts.omchat = serverStarts.omchat || Date.now();
+        syncOmChatServerConfig({ host, port, accessInfo: null });
+        return { success: true, url, alreadyRunning: true, alwaysOn: true, publicUrl: url };
+      }
+    }
+    pushServerLog('omchat', 'info', 'Starting OmChat in background mode (Always On with ngrok)...');
+    const result = await startOmChatBackground({ port, host, useNgrok: true });
+    if (result?.success) {
+      serverStarts.omchat = Date.now();
+      syncOmChatServerConfig({ host, port, accessInfo: null });
+      pushServerLog('omchat', 'success', `OmChat background server running at ${result.url || 'http://localhost:' + port}`);
+    }
+    return { ...result, alwaysOn: true };
   }
 
   if (!isServerProcessActive(omChatServerProcess) && isServerProcessActive(omChatNgrokProcess)) {
@@ -1358,6 +1542,15 @@ async function startOmChatServerInternal(config = {}) {
 
 async function stopOmChatServerInternal() {
   invalidateServerStatusCache('omchat');
+
+  if (isBackgroundServerRunning() && !isServerProcessActive(omChatServerProcess)) {
+    killBackgroundServer();
+    serverStarts.omchat = null;
+    serverConfigs.omchat = null;
+    emitResolvedLanIp();
+    return { success: true };
+  }
+
   if (!isServerProcessActive(omChatServerProcess)) {
     await stopOmChatNgrokTunnelInternal().catch(() => {});
     return { success: false, error: 'Om Chat server is not running.' };
@@ -2016,23 +2209,49 @@ async function shutdownManagedServers() {
     }
 
     if (isServerProcessActive(omChatServerProcess) || isServerProcessActive(omChatNgrokProcess)) {
-      pushServerLog('omchat', 'info', 'Om-X is closing. Stopping Om Chat server.');
-      try {
-        await stopOmChatNgrokTunnelInternal();
-      } catch (_) {}
-      if (isServerProcessActive(omChatServerProcess)) {
+      const alwaysOn = Boolean(cachedSettings?.omchat?.alwaysOn);
+      if (alwaysOn) {
+        pushServerLog('omchat', 'info', 'Om-X is closing. Always On enabled — keeping server running in background.');
+        try { await stopOmChatNgrokTunnelInternal(); } catch (_) {}
         try {
           const moduleRef = await loadOmChatModule();
           const omChatApi = moduleRef?.default || moduleRef;
-          await omChatApi.stopServer();
+          const status = omChatApi.getStatus?.();
+          if (status?.isRunning) {
+            await startOmChatBackground({
+              port: serverConfigs.omchat?.port || OMX_OMCHAT_DEFAULT_PORT,
+              host: serverConfigs.omchat?.host || '0.0.0.0'
+            });
+            try { omChatApi.stopServer(); } catch (_) {}
+          }
         } catch (_) {}
+        try { omChatServerProcess.kill(); } catch (_) {}
+        omChatServerProcess = null;
+        omChatNgrokProcess = null;
+      } else {
+        pushServerLog('omchat', 'info', 'Om-X is closing. Stopping Om Chat server.');
         try {
-          omChatServerProcess.kill();
+          await stopOmChatNgrokTunnelInternal();
         } catch (_) {}
+        if (isServerProcessActive(omChatServerProcess)) {
+          try {
+            const moduleRef = await loadOmChatModule();
+            const omChatApi = moduleRef?.default || moduleRef;
+            await omChatApi.stopServer();
+          } catch (_) {}
+          try {
+            omChatServerProcess.kill();
+          } catch (_) {}
+        }
+        omChatServerProcess = null;
+        serverStarts.omchat = null;
+        serverConfigs.omchat = null;
       }
-      omChatServerProcess = null;
-      serverStarts.omchat = null;
-      serverConfigs.omchat = null;
+    } else {
+      const alwaysOn = Boolean(cachedSettings?.omchat?.alwaysOn);
+      if (!alwaysOn) {
+        killBackgroundServer();
+      }
     }
   } finally {
     hasCompletedServerShutdown = true;
@@ -2416,7 +2635,8 @@ const DEFAULT_SETTINGS = {
   omchat: {
     dbMode: 'local',
     localDbPath: '',
-    useLocalIpOnly: false
+    useLocalIpOnly: false,
+    alwaysOn: false
   },
   websitePermissions: {}
 };
@@ -3629,6 +3849,19 @@ ipcMain.handle('omchat:start-server', async (event, config = {}) => {
 ipcMain.handle('omchat:stop-server', async (event) => {
   ensureTrustedServerControlSender(event);
   return stopOmChatServerInternal();
+});
+
+ipcMain.handle('omchat:check-background', async (event) => {
+  ensureTrustedServerControlSender(event);
+  const running = isBackgroundServerRunning();
+  const url = running ? getBackgroundServerUrl() : '';
+  return { running, url };
+});
+
+ipcMain.handle('omchat:kill-background', async (event) => {
+  ensureTrustedServerControlSender(event);
+  const killed = killBackgroundServer();
+  return { success: killed };
 });
 
 ipcMain.handle('omchat:select-db-folder', async (event) => {
@@ -6169,7 +6402,8 @@ ipcMain.handle('settings-save', async (e, s) => {
       ...(incoming?.omchat || {}),
       dbMode: String(incoming?.omchat?.dbMode ?? cachedSettings?.omchat?.dbMode ?? 'local') === 'mongo' ? 'mongo' : 'local',
       localDbPath: String(incoming?.omchat?.localDbPath ?? cachedSettings?.omchat?.localDbPath ?? '').trim(),
-      useLocalIpOnly: Boolean(incoming?.omchat?.useLocalIpOnly ?? cachedSettings?.omchat?.useLocalIpOnly ?? DEFAULT_SETTINGS.omchat.useLocalIpOnly)
+      useLocalIpOnly: Boolean(incoming?.omchat?.useLocalIpOnly ?? cachedSettings?.omchat?.useLocalIpOnly ?? DEFAULT_SETTINGS.omchat.useLocalIpOnly),
+      alwaysOn: Boolean(incoming?.omchat?.alwaysOn ?? cachedSettings?.omchat?.alwaysOn ?? DEFAULT_SETTINGS.omchat.alwaysOn)
     },
     websitePermissions: normalizeWebsitePermissions(incoming?.websitePermissions ?? cachedSettings?.websitePermissions)
   });

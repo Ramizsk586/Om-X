@@ -161,6 +161,8 @@ contextBridge.exposeInMainWorld('browserAPI', {
   omChat: {
     startServer: (config) => ipcRenderer.invoke('omchat:start-server', config),
     stopServer: () => ipcRenderer.invoke('omchat:stop-server'),
+    checkBackground: () => ipcRenderer.invoke('omchat:check-background'),
+    killBackground: () => ipcRenderer.invoke('omchat:kill-background'),
     selectDbFolder: () => ipcRenderer.invoke('omchat:select-db-folder'),
     syncDatabases: () => ipcRenderer.invoke('omchat:sync-db'),
     importDatabases: () => ipcRenderer.invoke('omchat:import-db'),
