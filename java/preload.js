@@ -177,7 +177,11 @@ contextBridge.exposeInMainWorld('browserAPI', {
       getBlockedSites: () => ipcRenderer.invoke('security:get-blocked-sites'),
       clearBlockedSites: () => ipcRenderer.invoke('security:clear-blocked-sites'),
       getSiteSafetyStatus: (payload) => ipcRenderer.invoke('security:get-site-safety-status', payload),
-      primeSiteSafetyScan: (payload) => ipcRenderer.invoke('security:prime-site-safety-scan', payload)
+      primeSiteSafetyScan: (payload) => ipcRenderer.invoke('security:prime-site-safety-scan', payload),
+      getSiteSettings: (payload) => ipcRenderer.invoke('security:get-site-settings', payload),
+      setSitePermission: (payload) => ipcRenderer.invoke('security:set-site-permission', payload),
+      resetSitePermissions: (payload) => ipcRenderer.invoke('security:reset-site-permissions', payload),
+      clearSiteData: (payload) => ipcRenderer.invoke('security:clear-site-data', payload)
   },
   settings: {
     get: () => ipcRenderer.invoke('settings-get'),
@@ -273,6 +277,7 @@ contextBridge.exposeInMainWorld('browserAPI', {
     selectDbFolder: () => ipcRenderer.invoke('omchat:select-db-folder'),
     syncDatabases: () => ipcRenderer.invoke('omchat:sync-db'),
     importDatabases: () => ipcRenderer.invoke('omchat:import-db'),
+    deleteMongoBackup: () => ipcRenderer.invoke('omchat:delete-mongo-backup'),
     getMongoStats: () => ipcRenderer.invoke('omchat:get-mongo-stats'),
     onOutput: (callback) => ipcRenderer.on('omchat-server-output', (event, data) => callback(data)),
     onExit: (callback) => ipcRenderer.on('omchat-server-exit', (event, data) => callback(data)),

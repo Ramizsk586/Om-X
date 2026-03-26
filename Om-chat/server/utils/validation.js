@@ -98,6 +98,15 @@ function ensureChannelName(value, field = 'name') {
   return next;
 }
 
+function ensureChannelType(value, field = 'type', { optional = false } = {}) {
+  if (optional && (value == null || value === '')) return undefined;
+  const next = ensureNonEmpty(value, field, { maxLength: 24 }).toLowerCase();
+  if (!['text', 'announce', 'announcement', 'voice-placeholder'].includes(next)) {
+    throw createValidationError(`invalid_${field}`, `Invalid ${field}`);
+  }
+  return next;
+}
+
 function ensureTopic(value, field = 'topic') {
   return cleanText(value, { maxLength: 240, multiline: true });
 }
@@ -405,7 +414,7 @@ function validateDmOpenPayload(payload = {}) {
 function validateChannelCreatePayload(payload = {}) {
   return {
     name: ensureChannelName(payload.name || 'new-channel'),
-    type: payload.type ? ensureNonEmpty(payload.type, 'type', { maxLength: 24 }) : 'text',
+    type: payload.type ? ensureChannelType(payload.type) : 'text',
     category: cleanText(payload.category || 'TEXT CHANNELS', { maxLength: 40 }) || 'TEXT CHANNELS',
     topic: ensureTopic(payload.topic || ''),
     slowMode: ensureInteger(payload.slowMode ?? 0, 'slowMode', { min: 0, max: 3600, defaultValue: 0 }),
@@ -419,7 +428,7 @@ function validateChannelUpdatePayload(payload = {}) {
   if (Object.prototype.hasOwnProperty.call(payload, 'topic')) next.topic = ensureTopic(payload.topic);
   if (Object.prototype.hasOwnProperty.call(payload, 'category')) next.category = cleanText(payload.category, { maxLength: 40 }) || 'TEXT CHANNELS';
   if (Object.prototype.hasOwnProperty.call(payload, 'slowMode')) next.slowMode = ensureInteger(payload.slowMode, 'slowMode', { min: 0, max: 3600, defaultValue: 0 });
-  if (Object.prototype.hasOwnProperty.call(payload, 'type')) next.type = ensureNonEmpty(payload.type, 'type', { maxLength: 24 });
+  if (Object.prototype.hasOwnProperty.call(payload, 'type')) next.type = ensureChannelType(payload.type);
   if (!Object.keys(next).length) {
     throw createValidationError('empty_channel_update', 'No channel changes provided');
   }
@@ -500,6 +509,49 @@ function validateSocketTypingPayload(payload = {}) {
   };
 }
 
+function validateCallStartPayload(payload = {}) {
+  const invitedUserIds = Array.isArray(payload.invitedUserIds)
+    ? payload.invitedUserIds.map((userId) => ensureUserId(userId, 'invitedUserId'))
+    : [];
+
+  return {
+    serverId: ensureServerId(payload.serverId),
+    channelId: ensureChannelId(payload.channelId),
+    invitedUserIds: Array.from(new Set(invitedUserIds))
+  };
+}
+
+function validateCallJoinPayload(payload = {}) {
+  return {
+    callId: ensureId(payload.callId, 'callId', { pattern: /^[A-Za-z0-9-]+$/, maxLength: 80 })
+  };
+}
+
+function validateCallSignalPayload(payload = {}) {
+  if (!payload.signal || typeof payload.signal !== 'object' || Array.isArray(payload.signal)) {
+    throw createValidationError('invalid_signal', 'Invalid signal');
+  }
+
+  return {
+    callId: ensureId(payload.callId, 'callId', { pattern: /^[A-Za-z0-9-]+$/, maxLength: 80 }),
+    targetUserId: ensureUserId(payload.targetUserId, 'targetUserId'),
+    signal: payload.signal
+  };
+}
+
+function validateCallLeavePayload(payload = {}) {
+  return {
+    callId: ensureId(payload.callId, 'callId', { pattern: /^[A-Za-z0-9-]+$/, maxLength: 80 })
+  };
+}
+
+function validateCallMuteTogglePayload(payload = {}) {
+  return {
+    callId: ensureId(payload.callId, 'callId', { pattern: /^[A-Za-z0-9-]+$/, maxLength: 80 }),
+    muted: ensureBoolean(payload.muted)
+  };
+}
+
 function validateOgQuery(query = {}) {
   return {
     url: ensurePublicHttpUrl(query.url, 'url')
@@ -519,6 +571,11 @@ module.exports = {
   validateChannelClearPayload,
   validateChannelCreatePayload,
   validateChannelUpdatePayload,
+  validateCallJoinPayload,
+  validateCallLeavePayload,
+  validateCallMuteTogglePayload,
+  validateCallSignalPayload,
+  validateCallStartPayload,
   validateDeleteMessagePayload,
   validateDmOpenPayload,
   validateEditMessagePayload,
@@ -544,4 +601,3 @@ module.exports = {
   validateStatusPayload,
   validateUserTargetPayload
 };
-

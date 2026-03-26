@@ -17,6 +17,7 @@ const chatMessageSchema = new Schema({
   avatarUrl: { type: String, default: '' },
   content: { type: String, default: '' },
   type: { type: String, default: 'text' },
+  meta: { type: Schema.Types.Mixed, default: null },
   attachments: { type: [attachmentSchema], default: [] },
   reactions: { type: Schema.Types.Mixed, default: {} },
   replyTo: { type: String, default: null },

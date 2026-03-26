@@ -1,3 +1,5 @@
+const crypto = require('crypto');
+
 const {
   getServerById,
   getServerAndChannel,
@@ -6,6 +8,7 @@ const {
   getDmMessages,
   hasPermission,
   isAdmin,
+  isAdminOrOp,
   isMemberMuted,
   getMember,
   userMembers,
@@ -27,6 +30,11 @@ const userService = require('../services/userService');
 const {
   ValidationError,
   ensureChannelId,
+  validateCallJoinPayload,
+  validateCallLeavePayload,
+  validateCallMuteTogglePayload,
+  validateCallSignalPayload,
+  validateCallStartPayload,
   validateDeleteMessagePayload,
   validateEditMessagePayload,
   validateMessagePayload,
@@ -48,6 +56,7 @@ const {
 const typingTimers = new Map();
 const typingByChannel = new Map();
 const lastMessageTs = new Map();
+const activeCalls = new Map();
 const aiMentionState = {
   busy: false,
   startedAt: 0,
@@ -63,6 +72,12 @@ const SOCKET_JOIN_RATE_LIMIT_WINDOW_MS = Math.max(1000, Number(process.env.SOCKE
 const SOCKET_JOIN_RATE_LIMIT_MAX = Math.max(1, Number(process.env.SOCKET_JOIN_RATE_LIMIT_MAX || 20));
 const SOCKET_HISTORY_RATE_LIMIT_WINDOW_MS = Math.max(1000, Number(process.env.SOCKET_HISTORY_RATE_LIMIT_WINDOW_MS || 5000));
 const SOCKET_HISTORY_RATE_LIMIT_MAX = Math.max(1, Number(process.env.SOCKET_HISTORY_RATE_LIMIT_MAX || 12));
+const SOCKET_CALL_START_RATE_LIMIT_WINDOW_MS = 60 * 1000;
+const SOCKET_CALL_START_RATE_LIMIT_MAX = 2;
+const SOCKET_CALL_JOIN_RATE_LIMIT_WINDOW_MS = 60 * 1000;
+const SOCKET_CALL_JOIN_RATE_LIMIT_MAX = 5;
+const SOCKET_CALL_SIGNAL_RATE_LIMIT_WINDOW_MS = 60 * 1000;
+const SOCKET_CALL_SIGNAL_RATE_LIMIT_MAX = 50;
 const AI_PROFILE = Object.freeze({
   userId: 'omchat-ai',
   username: 'Om AI',
@@ -101,6 +116,65 @@ function emitError(socket, code, message) {
 function emitToMessageRoom(io, event, payload, message) {
   if (!message) return;
   io.to(channelRoom(message.channelId, message.serverId)).emit(event, payload);
+}
+
+function isAnnouncementChannel(channel) {
+  return channel?.type === 'announcement' || channel?.type === 'announce';
+}
+
+function findGeneralChannel(server) {
+  const channels = Array.isArray(server?.channels) ? server.channels : [];
+  return channels.find((channel) => (
+    channel.type !== 'voice-placeholder'
+    && String(channel.name || '').toLowerCase() === 'general'
+  )) || channels.find((channel) => channel.type !== 'voice-placeholder') || null;
+}
+
+function getCall(callId) {
+  return activeCalls.get(String(callId || '').trim()) || null;
+}
+
+function getCallAudienceUserIds(call) {
+  return Array.from(new Set([
+    call?.hostId,
+    ...Array.from(call?.invitedUserIds || []),
+    ...Array.from(call?.joinedUserIds || [])
+  ].filter(Boolean)));
+}
+
+function emitToCallAudience(io, call, event, payload) {
+  for (const userId of getCallAudienceUserIds(call)) {
+    io.to(`user:${userId}`).emit(event, payload);
+  }
+}
+
+function endCall(io, callId) {
+  const call = getCall(callId);
+  if (!call) return;
+  emitToCallAudience(io, call, 'call_ended', { callId: call.callId });
+  activeCalls.delete(call.callId);
+}
+
+function leaveActiveCall(io, callId, userId, username = 'User') {
+  const call = getCall(callId);
+  if (!call) return false;
+
+  const wasJoined = call.joinedUserIds.delete(userId);
+  if (!wasJoined) return false;
+
+  if (!call.joinedUserIds.size || call.hostId === userId) {
+    endCall(io, call.callId);
+    return true;
+  }
+
+  for (const participantId of call.joinedUserIds) {
+    io.to(`user:${participantId}`).emit('call_participant_left', {
+      callId: call.callId,
+      userId,
+      username
+    });
+  }
+  return true;
 }
 
 function clearTyping(io, socket, channelId, userId, serverId = null) {
@@ -251,6 +325,18 @@ module.exports = function initSockets(io) {
   const historyLimiter = createSocketRateLimiter({
     windowMs: SOCKET_HISTORY_RATE_LIMIT_WINDOW_MS,
     max: SOCKET_HISTORY_RATE_LIMIT_MAX
+  });
+  const callStartLimiter = createSocketRateLimiter({
+    windowMs: SOCKET_CALL_START_RATE_LIMIT_WINDOW_MS,
+    max: SOCKET_CALL_START_RATE_LIMIT_MAX
+  });
+  const callJoinLimiter = createSocketRateLimiter({
+    windowMs: SOCKET_CALL_JOIN_RATE_LIMIT_WINDOW_MS,
+    max: SOCKET_CALL_JOIN_RATE_LIMIT_MAX
+  });
+  const callSignalLimiter = createSocketRateLimiter({
+    windowMs: SOCKET_CALL_SIGNAL_RATE_LIMIT_WINDOW_MS,
+    max: SOCKET_CALL_SIGNAL_RATE_LIMIT_MAX
   });
   const messageLimiter = createSocketRateLimiter({
     windowMs: SOCKET_MESSAGE_RATE_LIMIT_WINDOW_MS,
@@ -478,8 +564,8 @@ module.exports = function initSockets(io) {
           return emitError(socket, 'cannot_send_to_voice_channel', 'Cannot send messages to this channel');
         }
 
-        if (channel.type === 'announcement' && !hasPermission(server, userId, 'manage_channels') && !isAdmin(server, userId)) {
-          return emitError(socket, 'only_admin_can_post_announcement', 'Only admins can post in announcement channels');
+        if (isAnnouncementChannel(channel) && !isAdminOrOp(server, userId)) {
+          return emitError(socket, 'forbidden', 'Only admins and ops can post in announcement channels');
         }
 
         const isAdminUser = isAdmin(server, userId);
@@ -751,7 +837,196 @@ module.exports = function initSockets(io) {
       });
     });
 
+    socket.on('call_start', (rawPayload = {}) => {
+      void runSocketHandler(socket, async () => {
+        if (!enforceRateLimit(socket, callStartLimiter, 'call_start', 'rate_limited', 'Too many call attempts')) return;
+
+        const { serverId, channelId, invitedUserIds } = validateCallStartPayload(rawPayload);
+        const found = await getServerAndChannel(channelId);
+        if (!found || found.server.id !== serverId) {
+          return emitError(socket, 'invalid_channel', 'Invalid channel');
+        }
+
+        const { server, channel } = found;
+        if (!getMember(server, userId)) {
+          return emitError(socket, 'not_member', 'Not a member of this server');
+        }
+        if (!isAnnouncementChannel(channel)) {
+          return emitError(socket, 'invalid_channel', 'Invalid channel');
+        }
+        if (!isAdminOrOp(server, userId)) {
+          return emitError(socket, 'forbidden', 'Only admins and ops can start calls in announcement channels');
+        }
+
+        const filteredInvites = Array.from(new Set(invitedUserIds.filter((id) => id && id !== userId)))
+          .filter((id) => Boolean(getMember(server, id)));
+        const callId = crypto.randomUUID();
+        const hostUsername = session.username || getUser(userId)?.username || 'User';
+        const invitedUsers = filteredInvites
+          .map((id) => getMember(server, id))
+          .filter(Boolean);
+
+        activeCalls.set(callId, {
+          callId,
+          serverId,
+          channelId,
+          channelName: channel.name || 'announce',
+          hostId: userId,
+          hostUsername,
+          invitedUserIds: new Set(filteredInvites),
+          joinedUserIds: new Set([userId]),
+          startedAt: Date.now()
+        });
+
+        for (const invitedUserId of filteredInvites) {
+          io.to(`user:${invitedUserId}`).emit('call_invite', {
+            callId,
+            channelId,
+            serverId,
+            channelName: channel.name || 'announce',
+            hostUsername
+          });
+        }
+
+        const generalChannel = findGeneralChannel(server);
+        if (generalChannel) {
+          const invitedUsernames = invitedUsers.map((member) => member.username || 'User');
+          const inviteMessage = await createMessage({
+            serverId,
+            channelId: generalChannel.id,
+            userId,
+            username: hostUsername,
+            avatarColor: session.avatarColor || getUser(userId)?.avatarColor,
+            avatarUrl: session.avatarUrl || getUser(userId)?.avatarUrl,
+            type: 'call_invite',
+            content: `Voice call started by ${hostUsername}. Invited: ${invitedUsernames.join(', ') || 'No one yet'}`,
+            meta: {
+              callId,
+              invitedUserIds: filteredInvites,
+              invitedUsernames,
+              channelId,
+              channelName: channel.name || 'announce'
+            }
+          });
+          io.to(channelRoom(generalChannel.id, serverId)).emit('new_message', { message: inviteMessage });
+        }
+
+        socket.emit('call_started', {
+          callId,
+          channelId,
+          channelName: channel.name || 'announce'
+        });
+      });
+    });
+
+    socket.on('call_join', (rawPayload = {}) => {
+      void runSocketHandler(socket, async () => {
+        if (!enforceRateLimit(socket, callJoinLimiter, 'call_join', 'rate_limited', 'Too many join attempts')) return;
+
+        const { callId } = validateCallJoinPayload(rawPayload);
+        const call = getCall(callId);
+        if (!call) {
+          return emitError(socket, 'call_not_found', 'Call not found');
+        }
+        if (!call.invitedUserIds.has(userId) && call.hostId !== userId) {
+          return emitError(socket, 'not_invited', 'You are not invited to this call');
+        }
+
+        call.joinedUserIds.add(userId);
+        const user = getUser(userId);
+        const username = user?.username || session.username || 'User';
+        const participants = Array.from(call.joinedUserIds)
+          .filter((participantId) => participantId !== userId)
+          .map((participantId) => {
+            const participantUser = getUser(participantId);
+            return {
+              userId: participantId,
+              username: participantUser?.username || 'User',
+              avatarColor: participantUser?.avatarColor || '#5865F2',
+              avatarUrl: participantUser?.avatarUrl || '',
+              muted: false
+            };
+          });
+
+        socket.emit('call_joined', {
+          callId,
+          channelId: call.channelId,
+          channelName: call.channelName || 'announce',
+          participants
+        });
+
+        for (const participantId of call.joinedUserIds) {
+          if (participantId === userId) continue;
+          io.to(`user:${participantId}`).emit('call_participant_joined', {
+            callId,
+            userId,
+            username,
+            avatarColor: user?.avatarColor || session.avatarColor || '#5865F2',
+            avatarUrl: user?.avatarUrl || session.avatarUrl || ''
+          });
+        }
+      });
+    });
+
+    socket.on('call_signal', (rawPayload = {}) => {
+      void runSocketHandler(socket, async () => {
+        if (!enforceRateLimit(socket, callSignalLimiter, 'call_signal', 'rate_limited', 'Too many call updates', { silent: true })) return;
+
+        const { callId, targetUserId, signal } = validateCallSignalPayload(rawPayload);
+        const call = getCall(callId);
+        if (!call) {
+          return emitError(socket, 'call_not_found', 'Call not found');
+        }
+        if (!call.joinedUserIds.has(userId)) {
+          return emitError(socket, 'forbidden', 'Join the call first');
+        }
+        if (!call.joinedUserIds.has(targetUserId)) {
+          return emitError(socket, 'invalid_target', 'Participant is not in the call');
+        }
+
+        io.to(`user:${targetUserId}`).emit('call_signal_received', {
+          callId,
+          fromUserId: userId,
+          signal
+        });
+      });
+    });
+
+    socket.on('call_leave', (rawPayload = {}) => {
+      void runSocketHandler(socket, async () => {
+        const { callId } = validateCallLeavePayload(rawPayload);
+        leaveActiveCall(io, callId, userId, session.username || getUser(userId)?.username || 'User');
+      });
+    });
+
+    socket.on('call_mute_toggle', (rawPayload = {}) => {
+      void runSocketHandler(socket, async () => {
+        const { callId, muted } = validateCallMuteTogglePayload(rawPayload);
+        const call = getCall(callId);
+        if (!call) {
+          return emitError(socket, 'call_not_found', 'Call not found');
+        }
+        if (!call.joinedUserIds.has(userId)) {
+          return emitError(socket, 'forbidden', 'Join the call first');
+        }
+
+        for (const participantId of call.joinedUserIds) {
+          if (participantId === userId) continue;
+          io.to(`user:${participantId}`).emit('call_mute_update', {
+            callId,
+            userId,
+            muted
+          });
+        }
+      });
+    });
+
     socket.on('disconnect', async () => {
+      for (const [callId, call] of activeCalls.entries()) {
+        if (!call.joinedUserIds.has(userId)) continue;
+        leaveActiveCall(io, callId, userId, session.username || getUser(userId)?.username || 'User');
+      }
+
       unregisterUserSocket(userId, socket.id);
       clearActiveTyping(io, socket, userId, activeChannelMode, activeServerId, activeChannelId);
 
@@ -775,8 +1050,4 @@ module.exports = function initSockets(io) {
     });
   });
 };
-
-
-
-
 

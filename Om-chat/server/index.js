@@ -9,7 +9,7 @@ const { spawnSync } = require('child_process');
 const { createServer: createHttpServer } = require('http');
 const { createServer: createHttpsServer } = require('https');
 const { Server } = require('socket.io');
-require('dotenv').config({ path: path.resolve(__dirname, '..', '.env') });
+require('dotenv').config({ path: path.resolve(__dirname, '..', '.env'), quiet: true });
 
 const appConfig = require('./config');
 const createSession = require('./middleware/session');
@@ -32,11 +32,76 @@ const uploadRoutes = require('./routes/uploads');
 const DEFAULT_HOST = '0.0.0.0';
 const DEFAULT_PORT = 3031;
 const TRUE_VALUES = new Set(['1', 'true', 'yes', 'on']);
+const GIF_PACK_ROOT = path.join(__dirname, '..', 'gif-pack');
+const GIF_PACK_ALLOWED_EXTENSIONS = new Set(['.gif', '.png', '.jpg', '.jpeg', '.webp']);
 
 const API_RATE_LIMIT_WINDOW_MS = Math.max(5000, Number(process.env.API_RATE_LIMIT_WINDOW_MS || appConfig.rateLimit.api.windowMs));
 const API_RATE_LIMIT_MAX = Math.max(30, Number(process.env.API_RATE_LIMIT_MAX || appConfig.rateLimit.api.max));
 const UPLOAD_RATE_LIMIT_WINDOW_MS = Math.max(5000, Number(process.env.UPLOAD_RATE_LIMIT_WINDOW_MS || 60000));
 const UPLOAD_RATE_LIMIT_MAX = Math.max(5, Number(process.env.UPLOAD_RATE_LIMIT_MAX || 20));
+
+function buildGifPackManifest() {
+  const items = [];
+  const folders = new Set();
+
+  function walk(currentDir, folderName = '') {
+    if (!fs.existsSync(currentDir)) return;
+    const entries = fs.readdirSync(currentDir, { withFileTypes: true });
+
+    for (const entry of entries) {
+      if (!entry || String(entry.name || '').startsWith('.')) continue;
+      const absolutePath = path.join(currentDir, entry.name);
+
+      if (entry.isDirectory()) {
+        const nextFolder = folderName || entry.name;
+        folders.add(String(entry.name).toLowerCase());
+        walk(absolutePath, nextFolder);
+        continue;
+      }
+
+      const ext = path.extname(entry.name).toLowerCase();
+      if (!GIF_PACK_ALLOWED_EXTENSIONS.has(ext)) continue;
+
+      const relativePath = path.relative(GIF_PACK_ROOT, absolutePath);
+      const relativePosix = relativePath.split(path.sep).join('/');
+      const urlPath = relativePosix.split('/').map((segment) => encodeURIComponent(segment)).join('/');
+      const baseName = entry.name.replace(/\.[^.]+$/, '');
+      const normalized = baseName
+        .toLowerCase()
+        .replace(/[_-]+/g, ' ')
+        .replace(/[^\w\s]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+      const tags = new Set([normalized, ...normalized.split(' ').filter(Boolean)]);
+      const effectiveFolder = String(folderName || path.dirname(relativePosix).split('/')[0] || 'general')
+        .replace(/\\/g, '/')
+        .split('/')[0]
+        .trim()
+        .toLowerCase();
+
+      if (effectiveFolder) tags.add(effectiveFolder);
+      items.push({
+        url: `/gif-pack/${urlPath}`,
+        type: ext === '.gif' ? 'gif' : 'png',
+        name: entry.name,
+        folder: effectiveFolder || 'general',
+        tags: Array.from(tags).filter(Boolean)
+      });
+    }
+  }
+
+  walk(GIF_PACK_ROOT);
+
+  items.sort((a, b) => {
+    if (a.folder !== b.folder) return a.folder.localeCompare(b.folder);
+    return a.name.localeCompare(b.name);
+  });
+
+  return {
+    folders: Array.from(folders).sort((a, b) => a.localeCompare(b)),
+    items
+  };
+}
 
 let runtime = null;
 
@@ -703,6 +768,11 @@ function createRuntime({ host, port, sessionSecret, tlsOptions, trustProxySettin
         publicUrl: currentBaseUrl
       })
     });
+  });
+
+  app.get('/api/gif-pack-manifest', (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    res.json(buildGifPackManifest());
   });
 
   app.use('/uploads', uploadRoutes);

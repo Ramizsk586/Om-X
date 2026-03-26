@@ -56,10 +56,16 @@
       background: rgba(255,255,255,0.06);
     }
     .omchat-db-section {
-      padding: 16px 0 8px;
+      padding: 20px;
+      border-radius: 14px;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      background: rgba(255, 255, 255, 0.02);
+    }
+    .omchat-db-section + .omchat-db-section {
+      margin-top: 16px;
     }
     .omchat-db-field {
-      margin-bottom: 16px;
+      margin-bottom: 0;
     }
     .omchat-db-label {
       display: block;
@@ -77,15 +83,17 @@
     .omchat-db-path-row {
       display: flex;
       gap: 8px;
+      align-items: stretch;
     }
     .omchat-db-input {
       flex: 1;
-      padding: 8px 12px;
-      background: #18181b;
-      border: 1px solid #3f3f46;
-      border-radius: 6px;
+      padding: 14px 16px;
+      background: rgba(0, 0, 0, 0.24);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 10px;
       color: #e4e4e7;
-      font-size: 13px;
+      font-size: 14px;
+      font-weight: 600;
       font-family: 'JetBrains Mono', monospace;
       outline: none;
       transition: border-color 0.2s;
@@ -97,30 +105,29 @@
       color: #52525b;
     }
     .omchat-db-browse-btn {
-      padding: 8px 16px;
-      background: #27272a;
-      border: 1px solid #3f3f46;
-      border-radius: 6px;
+      min-width: 114px;
+      padding: 14px 18px;
+      background: #2a2a2f;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 10px;
       color: #e4e4e7;
-      font-size: 13px;
+      font-size: 14px;
       font-weight: 600;
       cursor: pointer;
       transition: all 0.2s;
       white-space: nowrap;
     }
     .omchat-db-browse-btn:hover {
-      background: #6366f1;
-      border-color: #6366f1;
-      color: #fff;
+      background: #34343a;
     }
     .omchat-db-info-card {
       display: flex;
       gap: 12px;
-      padding: 14px 16px;
-      background: rgba(99, 102, 241, 0.06);
-      border: 1px solid rgba(99, 102, 241, 0.15);
-      border-radius: 8px;
-      margin-top: 8px;
+      padding: 18px 20px;
+      background: rgba(25, 35, 58, 0.45);
+      border: 1px solid rgba(59, 130, 246, 0.24);
+      border-radius: 16px;
+      margin-top: 16px;
     }
     .omchat-db-info-icon {
       font-size: 16px;
@@ -142,12 +149,12 @@
       flex-wrap: wrap;
     }
     .omchat-db-action-btn {
-      padding: 8px 16px;
+      padding: 14px 24px;
       background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
       border: 1px solid rgba(99, 102, 241, 0.35);
-      border-radius: 8px;
+      border-radius: 12px;
       color: #fff;
-      font-size: 13px;
+      font-size: 14px;
       font-weight: 700;
       cursor: pointer;
       transition: all 0.2s ease;
@@ -162,6 +169,14 @@
       transform: none;
       box-shadow: none;
     }
+    .omchat-db-action-btn.secondary {
+      background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%);
+      border-color: rgba(14, 165, 233, 0.35);
+    }
+    .omchat-db-action-btn.danger {
+      background: linear-gradient(135deg, #ef4444 0%, #b91c1c 100%);
+      border-color: rgba(239, 68, 68, 0.35);
+    }
     .omchat-mongo-stats {
       margin-top: 12px;
     }
@@ -169,6 +184,11 @@
       display: flex;
       flex-direction: column;
       gap: 6px;
+    }
+    @media (max-width: 960px) {
+      .omchat-db-path-row {
+        flex-direction: column;
+      }
     }
     .omchat-sync-modal {
       position: fixed;
@@ -308,7 +328,7 @@
           OmChat
         </button>
       </div>
-      <div class="sys-footer">v2.5.0 Stable</div>
+      <div class="sys-footer">v3.0.0 Stable</div>
     </div>
 
     <div class="system-content-area">
@@ -353,6 +373,13 @@
               <span class="toggle-desc">Keep the OmChat server running in the background even after closing Om-X. Reopening connects instantly without restarting the server.</span>
             </div>
             <label class="switch"><input type="checkbox" id="feat-omchat-always-on"><span class="slider"></span></label>
+          </div>
+          <div class="toggle-row">
+            <div class="toggle-info">
+              <span class="toggle-title">Always On MCP</span>
+              <span class="toggle-desc">Keep the MCP server running in the background after closing Om-X. Reopening reconnects to the same MCP endpoint instantly.</span>
+            </div>
+            <label class="switch"><input type="checkbox" id="feat-mcp-always-on"><span class="slider"></span></label>
           </div>
         </div>
       </div>
@@ -592,7 +619,7 @@
           <div id="omchat-local-section" class="omchat-db-section">
             <div class="omchat-db-field">
               <label class="omchat-db-label">Local Database Folder</label>
-              <p class="omchat-db-desc">Choose where OmChat stores its local database files. This folder is required.</p>
+              <p class="omchat-db-desc">Choose where OmChat stores its local database files. This folder is required for pushing a backup to MongoDB.</p>
               <div class="omchat-db-path-row">
                 <input type="text" id="omchat-local-db-path" class="omchat-db-input" placeholder="Select a folder path" readonly />
                 <button type="button" id="omchat-browse-local-db" class="omchat-db-browse-btn">Browse</button>
@@ -601,21 +628,22 @@
           </div>
           <div class="omchat-db-section">
             <div class="omchat-db-field">
-              <label class="omchat-db-label">Backup Local to MongoDB</label>
-              <p class="omchat-db-desc">Upload the local database to MongoDB as a backup. MongoDB data is overwritten for matching IDs.</p>
+              <label class="omchat-db-label">MongoDB Backup Actions</label>
+              <p class="omchat-db-desc">Upload your local OmChat data to MongoDB, download a ZIP export of the cloud backup, or permanently delete the MongoDB backup data.</p>
               <div class="omchat-db-action-row">
                 <button type="button" id="omchat-sync-btn" class="omchat-db-action-btn">Backup Now</button>
-                <button type="button" id="omchat-import-btn" class="omchat-db-action-btn" style="background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%); border-color: rgba(14, 165, 233, 0.35);">Download Zip</button>
-                <span id="omchat-sync-hint" class="omchat-db-desc" style="margin: 0;">Opens a live progress window.</span>
+                <button type="button" id="omchat-import-btn" class="omchat-db-action-btn secondary">Download Zip</button>
+                <button type="button" id="omchat-delete-btn" class="omchat-db-action-btn danger">Delete Backup</button>
+                <span id="omchat-sync-hint" class="omchat-db-desc" style="margin: 0;">Each action opens a live progress window.</span>
               </div>
             </div>
-            <p class="omchat-db-desc" style="margin-top: 8px;">Download Zip exports MongoDB data to a ZIP file without changing your local database.</p>
-            <div id="omchat-mongo-stats" class="omchat-db-info-card omchat-mongo-stats">
-              <div class="omchat-db-info-icon">DB</div>
-              <div class="omchat-db-info-text">
-                <div id="omchat-mongo-stats-line">MongoDB storage: --</div>
-                <div id="omchat-mongo-stats-sub">Free: --</div>
-              </div>
+            <p class="omchat-db-desc" style="margin-top: 16px;">Backup overwrites matching MongoDB records. Delete Backup removes OmChat collections from MongoDB after confirmation.</p>
+          </div>
+          <div id="omchat-mongo-stats" class="omchat-db-info-card omchat-mongo-stats">
+            <div class="omchat-db-info-icon">DB</div>
+            <div class="omchat-db-info-text">
+              <div id="omchat-mongo-stats-line">MongoDB storage: --</div>
+              <div id="omchat-mongo-stats-sub">Free: --</div>
             </div>
           </div>
         </div>

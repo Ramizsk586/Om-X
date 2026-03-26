@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data: https:;">
+  <title>Site Settings</title>
+  <link rel="stylesheet" href="../../css/base/reset.css">
+  <link rel="stylesheet" href="../../css/base/variables.css">
+  <link rel="stylesheet" href="../../css/base/base.css">
+  <link rel="stylesheet" href="../../css/themes/all-themes.css">
+  <style>
+    html, body {
+      height: 100%;
+      overflow: auto;
+    }
+    body {
+      margin: 0;
+      background: #202124;
+      color: #e8eaed;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+    }
+    .site-settings-page {
+      min-height: 100vh;
+      box-sizing: border-box;
+      padding: 18px 28px 28px;
+      background: #202124;
+    }
+    .site-settings-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 28px;
+    }
+    .site-settings-headline {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      min-width: 0;
+    }
+    .site-settings-back {
+      width: 44px;
+      height: 44px;
+      border-radius: 12px;
+      border: 1px solid rgba(138, 180, 248, 0.9);
+      background: rgba(138, 180, 248, 0.08);
+      color: #d2e3fc;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+    .site-settings-title-wrap {
+      min-width: 0;
+    }
+    .site-settings-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: #e8eaed;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .site-settings-subtitle {
+      margin-top: 4px;
+      font-size: 11px;
+      color: #9aa0a6;
+      word-break: break-all;
+    }
+    .site-settings-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .site-settings-btn {
+      min-width: 136px;
+      padding: 11px 16px;
+      border-radius: 12px;
+      border: 1px solid rgba(138, 180, 248, 0.9);
+      background: transparent;
+      color: #8ab4f8;
+      font-size: 11px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .site-settings-btn:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+    .site-settings-section {
+      margin-top: 18px;
+    }
+    .site-settings-section-title {
+      font-size: 12px;
+      font-weight: 700;
+      color: #bdc1c6;
+      margin-bottom: 14px;
+    }
+    .site-settings-usage {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 6px 0 26px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    }
+    .site-settings-usage-value {
+      font-size: 13px;
+      font-weight: 700;
+      color: #e8eaed;
+    }
+    .site-settings-usage-meta {
+      margin-top: 4px;
+      font-size: 11px;
+      color: #9aa0a6;
+    }
+    .site-settings-status {
+      margin: 14px 0 0;
+      min-height: 18px;
+      font-size: 11px;
+      color: #9aa0a6;
+    }
+    .site-settings-status.success {
+      color: #81c995;
+    }
+    .site-settings-status.error {
+      color: #f28b82;
+    }
+    .site-settings-list {
+      margin-top: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .site-settings-row {
+      display: grid;
+      grid-template-columns: minmax(180px, 1fr) minmax(180px, 280px);
+      align-items: center;
+      gap: 14px;
+    }
+    .site-settings-label {
+      display: flex;
+      align-items: flex-start;
+      gap: 14px;
+      min-width: 0;
+    }
+    .site-settings-icon {
+      width: 28px;
+      height: 28px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: #9aa0a6;
+      flex-shrink: 0;
+    }
+    .site-settings-name {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: #e8eaed;
+    }
+    .site-settings-description {
+      display: block;
+      margin-top: 4px;
+      font-size: 10px;
+      line-height: 1.45;
+      color: #9aa0a6;
+    }
+    .site-settings-select {
+      width: 100%;
+      padding: 11px 14px;
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,0.16);
+      background: #2b2c2f;
+      color: #e8eaed;
+      font-size: 12px;
+      outline: none;
+      appearance: none;
+      cursor: pointer;
+    }
+    .site-settings-empty {
+      padding: 18px 0;
+      color: #9aa0a6;
+      font-size: 13px;
+    }
+    @media (max-width: 900px) {
+      .site-settings-page {
+        padding: 14px 14px 22px;
+      }
+      .site-settings-header,
+      .site-settings-usage {
+        flex-direction: column;
+        align-items: stretch;
+      }
+      .site-settings-row {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="site-settings-page">
+    <div class="site-settings-header">
+      <div class="site-settings-headline">
+        <button id="site-settings-back" class="site-settings-back" type="button" aria-label="Go back">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M15 18l-6-6 6-6"></path>
+            <path d="M9 12h10"></path>
+          </svg>
+        </button>
+        <div class="site-settings-title-wrap">
+          <div id="site-settings-title" class="site-settings-title">Site settings</div>
+          <div id="site-settings-subtitle" class="site-settings-subtitle"></div>
+        </div>
+      </div>
+      <div class="site-settings-actions">
+        <button id="site-settings-clear-data" class="site-settings-btn" type="button">Delete data</button>
+        <button id="site-settings-reset" class="site-settings-btn" type="button">Reset permissions</button>
+      </div>
+    </div>
+
+    <div class="site-settings-section">
+      <div class="site-settings-section-title">Usage</div>
+      <div class="site-settings-usage">
+        <div>
+          <div id="site-settings-usage-value" class="site-settings-usage-value">--</div>
+          <div id="site-settings-usage-meta" class="site-settings-usage-meta">Loading site data...</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="site-settings-section">
+      <div class="site-settings-section-title">Permissions</div>
+      <div id="site-settings-status" class="site-settings-status"></div>
+      <div id="site-settings-list" class="site-settings-list"></div>
+    </div>
+  </div>
+
+  <script type="module" src="../../java/renderer/siteSettingsRenderer.js"></script>
+</body>
+</html>

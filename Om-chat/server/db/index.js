@@ -195,6 +195,7 @@ async function hydrateMongoChatState() {
     id: String(row.id || ''),
     createdAt: String(row.createdAt || now()),
     dayKey: String(row.dayKey || dayKeyFromDate(row.createdAt)),
+    meta: row.meta && typeof row.meta === 'object' ? clone(row.meta) : null,
     reactions: row.reactions && typeof row.reactions === 'object' ? row.reactions : {},
     attachments: Array.isArray(row.attachments) ? row.attachments : []
   })).filter((row) => row.id) : [];
@@ -249,6 +250,7 @@ function normalizeMessageForStorage(message) {
     avatarUrl: String(message?.avatarUrl || ''),
     content: String(message?.content || ''),
     type: String(message?.type || 'text'),
+    meta: message?.meta && typeof message.meta === 'object' ? clone(message.meta) : null,
     attachments: Array.isArray(message?.attachments) ? message.attachments : [],
     reactions: message?.reactions && typeof message.reactions === 'object' ? message.reactions : {},
     replyTo: message?.replyTo || null,
@@ -494,6 +496,18 @@ function memberRoleName(server, userId) {
   return String(role?.name || '').toLowerCase();
 }
 
+function isAdminOrOp(server, userId) {
+  if (!server || !userId) return false;
+  if (server.ownerId === userId) return true;
+  if (isAdmin(server, userId)) return true;
+  if (hasPermission(server, userId, 'manage_server')) return true;
+  if (hasPermission(server, userId, 'manage_channels')) return true;
+  if (hasPermission(server, userId, 'manage_members')) return true;
+
+  const roleName = memberRoleName(server, userId);
+  return roleName === 'operator' || roleName === 'op';
+}
+
 /**
  * Check whether a member has a permission in a server.
  * @param {Record<string, unknown>|null|undefined} server Assembled server object.
@@ -724,7 +738,7 @@ async function createServer({ name, icon, owner }) {
     {
       id: createId(12),
       name: 'announcements',
-      type: 'announcement',
+      type: 'announce',
       category: 'TEXT CHANNELS',
       topic: 'Server announcements',
       slowMode: 0,
@@ -1217,10 +1231,10 @@ function getMessage(messageId) {
 
 /**
  * Create a message in the local JSON store.
- * @param {{serverId: string|null, channelId: string, userId: string, username?: string, avatarColor?: string, avatarUrl?: string, content?: string, type?: string, attachments?: Array<Record<string, unknown>>, replyTo?: string|null}} input Message payload.
+ * @param {{serverId: string|null, channelId: string, userId: string, username?: string, avatarColor?: string, avatarUrl?: string, content?: string, type?: string, meta?: Record<string, unknown>|null, attachments?: Array<Record<string, unknown>>, replyTo?: string|null}} input Message payload.
  * @returns {Promise<Record<string, unknown>>} Stored message row.
  */
-async function createMessage({ serverId, channelId, userId, username, avatarColor, avatarUrl, content, type = 'text', attachments = [], replyTo = null }) {
+async function createMessage({ serverId, channelId, userId, username, avatarColor, avatarUrl, content, type = 'text', meta = null, attachments = [], replyTo = null }) {
   const isDm = serverId == null;
   let dm = null;
 
@@ -1245,6 +1259,7 @@ async function createMessage({ serverId, channelId, userId, username, avatarColo
     avatarUrl: avatarUrl || user?.avatarUrl || '',
     content: String(content || ''),
     type,
+    meta: meta && typeof meta === 'object' ? clone(meta) : null,
     attachments: Array.isArray(attachments) ? attachments : [],
     reactions: {},
     replyTo: replyTo || null,
@@ -1888,6 +1903,7 @@ module.exports = {
   hideDmConversation,
   initDb,
   isAdmin,
+  isAdminOrOp,
   isBanned,
   isMemberMuted,
   isOperator,
@@ -1915,8 +1931,3 @@ module.exports = {
   updateUserProfile,
   userMembers
 };
-
-
-
-
-

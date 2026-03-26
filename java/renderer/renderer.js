@@ -30,6 +30,7 @@ const GAMES_URL           = new URL('../../html/pages/games.html',             i
 const SERVER_OPERATOR_URL = new URL('../../html/pages/server-operator.html',   import.meta.url).href;
 const DOWNLOADS_URL       = new URL('../../html/pages/downloads.html',         import.meta.url).href;
 const SCRABER_URL         = new URL('../../html/pages/scraper.html',           import.meta.url).href;
+const SITE_SETTINGS_URL   = new URL('../../html/pages/site-settings.html',     import.meta.url).href;
 const BOOKMARK_FALLBACK_ICON = new URL('../../assets/icons/app.ico',           import.meta.url).href;
 
 const OM_CHAT_DEFAULT_PORT = 3031;
@@ -315,22 +316,24 @@ document.addEventListener('DOMContentLoaded', async () => {
     siteInfoOverlay.id        = 'site-info-overlay';
     siteInfoOverlay.className = 'site-info-top-panel hidden';
     siteInfoOverlay.innerHTML = `
-      <div id="site-info-panel" style="
-          width:min(420px,calc(100vw - 20px));
-          display:flex;flex-direction:column;
-          background:linear-gradient(180deg,rgba(28,29,33,0.98),rgba(34,35,40,0.96));
-          border:1px solid rgba(255,255,255,0.08);border-top:none;
-          border-radius:0 0 16px 16px;
-          box-shadow:0 8px 20px rgba(0,0,0,0.22);
-          padding:10px;overflow:hidden;color:rgba(255,255,255,0.94);">
-        <div style="display:flex;align-items:center;justify-content:center;margin-bottom:8px;
-                    padding:1px 2px 8px;border-bottom:1px solid rgba(255,255,255,0.08);">
-          <div style="width:100%;text-align:center;font-size:11px;font-weight:700;
-                      letter-spacing:.12em;text-transform:uppercase;color:rgba(255,255,255,0.72);">Page Info</div>
+      <div id="site-info-panel" class="site-info-card">
+        <div class="site-info-header chrome">
+          <div class="site-info-header-main">
+            <div id="site-info-host" class="site-info-host">This site</div>
+            <div id="site-info-origin" class="site-info-origin"></div>
+          </div>
+          <div class="site-info-actions">
+            <button id="site-info-open-settings" class="site-info-action" type="button" title="Open site settings">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M14 3h7v7"></path>
+                <path d="M10 14 21 3"></path>
+                <path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"></path>
+              </svg>
+            </button>
+            <button id="site-info-close" class="site-info-action close" type="button" title="Close">&times;</button>
+          </div>
         </div>
-        <div id="site-info-grid" style="
-            display:grid;grid-template-columns:minmax(86px,108px) minmax(0,1fr);
-            gap:6px 8px;align-content:start;"></div>
+        <div id="site-info-list" class="site-info-list chrome"></div>
       </div>`;
     document.body.appendChild(siteInfoOverlay);
 
@@ -357,10 +360,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.body.appendChild(mp4LinksOverlay);
 
     const siteInfoPanel = document.getElementById('site-info-panel');
-    const siteInfoGrid  = document.getElementById('site-info-grid');
+    const siteInfoHost = document.getElementById('site-info-host');
+    const siteInfoOrigin = document.getElementById('site-info-origin');
+    const siteInfoList  = document.getElementById('site-info-list');
+    const siteInfoClose = document.getElementById('site-info-close');
+    const siteInfoOpenSettings = document.getElementById('site-info-open-settings');
     const mp4LinksList  = document.getElementById('mp4-links-list');
     const mp4LinksCount = document.getElementById('mp4-links-count');
     let siteInfoRefreshToken = 0;
+    let latestSiteInfoUrl = '';
     
     // MP4 Links popup handlers
     const showMp4LinksPopup = (links) => {
@@ -524,23 +532,81 @@ document.addEventListener('DOMContentLoaded', async () => {
     const setSiteInfoVisible  = (v) => siteInfoOverlay?.classList.toggle('hidden', !v);
     const hideSiteInfoPopup   = ()  => setSiteInfoVisible(false);
 
-    const renderSiteInfoRows = (rows = []) => {
-        if (!siteInfoGrid) return;
-        siteInfoGrid.innerHTML = rows.map(({ label = '', value, clickable = false }) => {
-            const lbl = String(label);
-            const val = String(value ?? 'N/A');
-            let tone  = 'neutral';
-            if (lbl.toLowerCase() === 'safety') {
-                if      (/^safe$/i.test(val))                                  tone = 'ok';
-                else if (/^(danger|unsafe)$/i.test(val) || /failed/i.test(val)) tone = 'error';
-                else if (/^suspicious$/i.test(val))                            tone = 'warn';
-                else if (/^checking/i.test(val))                               tone = 'info';
+    const formatBytes = (value = 0) => {
+        const bytes = Number(value);
+        if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
+        const units = ['B', 'KB', 'MB', 'GB'];
+        let size = bytes;
+        let unit = 0;
+        while (size >= 1024 && unit < units.length - 1) {
+            size /= 1024;
+            unit += 1;
+        }
+        return `${size.toFixed(size >= 10 || unit === 0 ? 0 : 1)} ${units[unit]}`;
+    };
+
+    const renderSiteInfoRows = (payload = {}) => {
+        if (!siteInfoList) return;
+        const host = String(payload.host || 'This site');
+        const origin = String(payload.origin || '');
+        if (siteInfoHost) siteInfoHost.textContent = host;
+        if (siteInfoOrigin) siteInfoOrigin.textContent = origin;
+
+        const rows = [
+            {
+                action: payload.siteSettingsClickable ? 'settings' : 'none',
+                icon: `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V8a4 4 0 0 1 8 0v3"></path></svg>`,
+                label: payload.connectionLabel || 'Connection',
+                value: payload.connectionValue || 'Unknown',
+                tone: payload.connectionTone || 'info'
+            },
+            {
+                action: 'none',
+                icon: `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M12 3l7 3v5c0 5-3.5 8-7 10-3.5-2-7-5-7-10V6l7-3z"></path><path d="m9.5 12 1.7 1.7L15 10"></path></svg>`,
+                label: 'Site safety',
+                value: payload.safetyValue || 'Not scanned',
+                tone: payload.safetyTone || 'neutral'
+            },
+            {
+                action: payload.siteSettingsClickable ? 'settings' : 'none',
+                icon: `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M21 12a9 9 0 1 1-9-9c0 1.7 1.3 3 3 3s3-1.3 3-3c1.66 0 3 1.34 3 3 0 .7-.24 1.35-.64 1.87A3 3 0 0 0 21 12Z"></path><circle cx="8.5" cy="12.5" r="1"></circle><circle cx="12" cy="16" r="1"></circle><circle cx="15.5" cy="10.5" r="1"></circle></svg>`,
+                label: 'Cookies and site data',
+                value: payload.cookiesValue || 'Unavailable',
+                tone: 'neutral'
+            },
+            {
+                action: payload.siteSettingsClickable ? 'settings' : 'none',
+                icon: `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.55-1 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34H9a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87V9c0 .66.39 1.26 1 1.55.18.08.37.13.56.13H21a2 2 0 1 1 0 4h-.09c-.66 0-1.26.39-1.55 1Z"></path></svg>`,
+                label: 'Permissions',
+                value: payload.permissionsValue || 'Default',
+                tone: 'neutral'
+            },
+            {
+                action: payload.linksClickable ? 'links' : 'none',
+                icon: `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M10 13a5 5 0 0 0 7.54.54l2.92-2.92a5 5 0 0 0-7.07-7.08L11.72 5"></path><path d="M14 11a5 5 0 0 0-7.54-.54L3.54 13.4a5 5 0 0 0 7.07 7.07L12.28 19"></path></svg>`,
+                label: 'Video links',
+                value: payload.linksValue || '0 found',
+                tone: payload.linksClickable ? 'info' : 'neutral'
+            },
+            {
+                action: 'settings',
+                icon: `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M14 3h7v7"></path><path d="M10 14 21 3"></path><path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"></path></svg>`,
+                label: 'Site settings',
+                value: 'Open in new tab',
+                tone: 'neutral'
             }
-            const valueClass = clickable ? 'site-info-value site-info-value-clickable' : 'site-info-value';
-            const clickAttr = clickable ? 'data-clickable="true" style="cursor:pointer;"' : '';
-            return `<div class="site-info-label">${escapeHtml(lbl)}</div>`
-                 + `<div class="${valueClass}" data-tone="${escapeHtml(tone)}" ${clickAttr}>${escapeHtml(val)}</div>`;
-        }).join('');
+        ];
+
+        siteInfoList.innerHTML = rows.map((row) => `
+            <button class="site-info-row chrome ${row.action !== 'none' ? 'is-clickable' : ''}" type="button" data-action="${escapeHtml(row.action)}">
+              <span class="site-info-row-icon">${row.icon}</span>
+              <span class="site-info-row-copy">
+                <span class="site-info-row-label">${escapeHtml(row.label)}</span>
+                <span class="site-info-row-value" data-tone="${escapeHtml(row.tone || 'neutral')}">${escapeHtml(row.value)}</span>
+              </span>
+              <span class="site-info-row-arrow">${row.action === 'settings' ? '&#8599;' : '&#8250;'}</span>
+            </button>
+        `).join('');
     };
 
     let foundMp4Links = [];
@@ -616,11 +682,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     };
     
-    const buildSiteInfoRows = (data) => ([
-        { label: 'URL',    value: data.url    || 'N/A' },
-        { label: 'Safety', value: data.safety || 'Not scanned' },
-        { label: 'LINKS',  value: data.links  || '0', clickable: data.linksClickable || false }
-    ]);
+    const openSiteSettingsTab = (rawUrl = '') => {
+        const currentUrl = String(rawUrl || latestSiteInfoUrl || '').trim();
+        if (!isHttpWebsiteUrl(currentUrl)) return;
+        tabManager.createTab(`${SITE_SETTINGS_URL}?url=${encodeURIComponent(currentUrl)}`);
+        hideSiteInfoPopup();
+    };
 
     const resolveSiteSafetyLabel = (result = null, rawUrl = '') => {
         if (!isHttpWebsiteUrl(rawUrl)) return 'Not available for this page';
@@ -693,19 +760,40 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
 
         const currentUrl = String(activeTab?.url || activeWebview?.getURL?.() || '').trim();
-        renderSiteInfoRows(buildSiteInfoRows({
-            url:    currentUrl || 'N/A',
-            safety: isHttpWebsiteUrl(currentUrl) ? 'Checking safety...' : 'Not available for this page',
-            links: 'Scanning...',
+        latestSiteInfoUrl = currentUrl;
+        let hostLabel = 'This site';
+        let originLabel = currentUrl || '';
+        try {
+            const parsed = new URL(currentUrl);
+            hostLabel = parsed.hostname || hostLabel;
+            originLabel = parsed.origin || originLabel;
+        } catch (_) {}
+        renderSiteInfoRows({
+            host: hostLabel,
+            origin: originLabel,
+            connectionLabel: 'Checking connection',
+            connectionValue: isHttpWebsiteUrl(currentUrl)
+                ? (currentUrl.startsWith('https:') ? 'Your connection to this site is encrypted' : 'This page is not using HTTPS')
+                : 'Not available for this page',
+            connectionTone: 'info',
+            safetyValue: 'Checking safety...',
+            safetyTone: 'info',
+            cookiesValue: 'Loading site data...',
+            permissionsValue: 'Loading permissions...',
+            linksValue: 'Scanning...',
             linksClickable: false
-        }));
+        });
 
         let siteSafety = null;
+        let siteSettings = null;
         let mp4Links = [];
         
         if (isHttpWebsiteUrl(currentUrl)) {
             try {
                 siteSafety = await window.browserAPI?.security?.getSiteSafetyStatus?.({ url: currentUrl, allowScan: true });
+            } catch (_) {}
+            try {
+                siteSettings = await window.browserAPI?.security?.getSiteSettings?.({ url: currentUrl });
             } catch (_) {}
         }
         
@@ -719,12 +807,44 @@ document.addEventListener('DOMContentLoaded', async () => {
         
         if (token !== siteInfoRefreshToken) return;
 
-        renderSiteInfoRows(buildSiteInfoRows({
-            url:    currentUrl || 'N/A',
-            safety: resolveSiteSafetyLabel(siteSafety, currentUrl),
-            links: mp4Links.length > 0 ? String(mp4Links.length) : '0',
+        const site = siteSettings?.success ? (siteSettings.site || {}) : {};
+        const safetyLabel = resolveSiteSafetyLabel(siteSafety, currentUrl);
+        const permissionsSummary = site.permissionsSummary || {};
+        const allowedCount = Number(permissionsSummary.allowed) || 0;
+        const blockedCount = Number(permissionsSummary.blocked) || 0;
+        const connectionLabel = site.secure ? 'Connection is secure' : 'Connection';
+        const connectionValue = isHttpWebsiteUrl(currentUrl)
+            ? `${safetyLabel}${site.secure ? '' : ' • This page is not using HTTPS'}`
+            : 'Not available for this page';
+        const cookiesCount = Number(site.cookiesCount) || 0;
+        const cookiesBytes = Number(site.cookiesBytes) || 0;
+        const cookiesValue = `${cookiesCount} cookie${cookiesCount === 1 ? '' : 's'} • ${formatBytes(cookiesBytes)}`;
+        const permissionsValue = blockedCount > 0
+            ? `${allowedCount} allowed, ${blockedCount} blocked`
+            : allowedCount > 0
+                ? `${allowedCount} allowed, others ask`
+                : 'Ask (default)';
+        const normalizedConnectionValue = isHttpWebsiteUrl(currentUrl)
+            ? (site.secure ? 'Your connection to this site is encrypted' : 'This page is not using HTTPS')
+            : 'Not available for this page';
+        const normalizedCookiesValue = `${cookiesCount} cookie${cookiesCount === 1 ? '' : 's'} • ${formatBytes(cookiesBytes)}`;
+        const safetyTone = siteSafety?.success ? (siteSafety?.safe === false ? 'warn' : 'ok') : 'warn';
+        const normalizedLinksValue = mp4Links.length > 0 ? `${mp4Links.length} found` : 'No video links found';
+
+        renderSiteInfoRows({
+            host: site.hostname || hostLabel,
+            origin: site.origin || originLabel,
+            siteSettingsClickable: isHttpWebsiteUrl(currentUrl),
+            connectionLabel,
+            connectionValue: normalizedConnectionValue,
+            connectionTone: site.secure ? 'ok' : 'warn',
+            safetyValue: safetyLabel,
+            safetyTone,
+            cookiesValue: normalizedCookiesValue,
+            permissionsValue,
+            linksValue: normalizedLinksValue,
             linksClickable: mp4Links.length > 0
-        }));
+        });
     };
 
     const openSiteInfoPopup = async () => {
@@ -740,12 +860,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     siteInfoPanel?.addEventListener('mousedown', e => e.stopPropagation());
+
+    siteInfoClose?.addEventListener('click', hideSiteInfoPopup);
+    siteInfoOpenSettings?.addEventListener('click', () => openSiteSettingsTab());
     
-    // Click handler for links row
-    siteInfoGrid?.addEventListener('click', (e) => {
-        const valueEl = e.target.closest('.site-info-value-clickable');
-        if (valueEl && foundMp4Links.length > 0) {
+    siteInfoList?.addEventListener('click', (e) => {
+        const row = e.target.closest('.site-info-row[data-action]');
+        const action = String(row?.dataset?.action || '').trim();
+        if (!action || action === 'none') return;
+        if (action === 'links' && foundMp4Links.length > 0) {
             showMp4LinksPopup(foundMp4Links);
+            return;
+        }
+        if (action === 'settings') {
+            openSiteSettingsTab();
         }
     });
 
@@ -1747,6 +1875,26 @@ document.addEventListener('DOMContentLoaded', async () => {
         try { wv.reload(); } catch (error) { console.warn('[YouTube Addon] Failed to reload watch page:', error); }
     };
 
+    const primeActiveYouTubeCleanUiActivation = async () => {
+        const wv = tabManager?.getActiveWebview?.();
+        if (!wv || !isYouTubeWatchUrl(getActiveTabUrl())) return false;
+        try {
+            const primed = await wv.executeJavaScript(`
+                try {
+                    sessionStorage.setItem('omxYtCleanUiReloadsRemaining', '2');
+                    sessionStorage.setItem('omxYtCleanUiAdBlockUntil', String(Date.now() + 10000));
+                    true;
+                } catch (_) {
+                    false;
+                }
+            `, true);
+            return primed === true;
+        } catch (error) {
+            console.warn('[YouTube Addon] Failed to prime clean UI activation:', error);
+            return false;
+        }
+    };
+
     const persistYouTubeAddonPreferences = async (partialYoutubeAddon = {}, options = {}) => {
         if (_ytSavePending) return;
         _ytSavePending = true;
@@ -1763,7 +1911,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             tabManager?.updateSettings?.(nextSettings);
             const success = await window.browserAPI.settings.save(nextSettings);
             if (!success) console.warn('[YouTube Addon] Failed to save settings.');
-            if (success && shouldReload) window.setTimeout(reloadActiveYouTubeWatchPage, 0);
+            if (success && shouldReload) {
+                const primed = await primeActiveYouTubeCleanUiActivation();
+                window.setTimeout(reloadActiveYouTubeWatchPage, primed ? 50 : 0);
+            }
         } catch (e) {
             console.warn('[YouTube Addon] Save error:', e);
         } finally {
@@ -1793,7 +1944,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!youtubeAddonPanel || youtubeAddonPanel.dataset.bound === '1') return;
         youtubeAddonPanel.dataset.bound = '1';
 
-        youtubeAddonToggleHome?.addEventListener('change',      () => persistYouTubeAddonPreferences({ cleanUi: youtubeAddonToggleHome.checked }));
+        youtubeAddonToggleHome?.addEventListener('change',      () => persistYouTubeAddonPreferences({ cleanUi: youtubeAddonToggleHome.checked }, { reloadOnEnable: youtubeAddonToggleHome.checked }));
         youtubeAddonToggleBlur?.addEventListener('change',      () => persistYouTubeAddonPreferences({ blurThumbnails: youtubeAddonToggleBlur.checked }));
         youtubeAddonToggleChat?.addEventListener('change',      () => persistYouTubeAddonPreferences({ hideChats: youtubeAddonToggleChat.checked }));
         youtubeAddonToggleBw?.addEventListener('change',        () => persistYouTubeAddonPreferences({ blackAndWhiteMode: youtubeAddonToggleBw.checked }));

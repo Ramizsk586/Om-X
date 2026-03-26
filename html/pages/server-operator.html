@@ -3269,9 +3269,34 @@
                             </div>
                         </div>
 
-                        <!-- Compatibility Calculator - DISABLED -->
-                        <div class="section-card" id="llama-compat-section" style="display: none;">
-                            <!-- DISABLED: Compatibility Calculator section hidden -->
+                        <!-- Compatibility Calculator -->
+                        <div class="section-card" id="llama-compat-section">
+                            <div class="section-title">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M3 3h18v18H3z"/>
+                                    <path d="M8 8h8"/>
+                                    <path d="M8 12h8"/>
+                                    <path d="M8 16h5"/>
+                                </svg>
+                                Parameter Calculator
+                            </div>
+                            <div class="config-help" id="llama-compat-desc" style="margin-top: 0; margin-bottom: 16px;">
+                                Choose a `.gguf` model and Om-X will estimate params, quantization, KV cache, memory overhead, and whether it fits your current system.
+                            </div>
+                            <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px;">
+                                <div id="llama-compat-label" style="font-size: 16px; font-weight: 700; color: var(--text);">Waiting for model selection</div>
+                                <div id="kv-cache-indicator" style="display: none; font-size: 11px; color: var(--text-dim); padding: 6px 10px; border-radius: 999px; border: 1px solid var(--border);">KV Cache</div>
+                            </div>
+                            <div class="config-grid" style="margin-bottom: 16px;">
+                                <div class="config-field"><div class="config-field-label">Parameters</div><div style="font-size: 16px; font-weight: 600; color: var(--text);" id="llama-compat-params">--</div></div>
+                                <div class="config-field"><div class="config-field-label">Quantization</div><div style="font-size: 16px; font-weight: 600; color: var(--text);" id="llama-compat-quant">--</div></div>
+                                <div class="config-field"><div class="config-field-label">Run Mode</div><div style="font-size: 16px; font-weight: 600; color: var(--text);" id="llama-compat-mode">--</div></div>
+                                <div class="config-field"><div class="config-field-label">GPU Layers</div><div style="font-size: 16px; font-weight: 600; color: var(--text);" id="llama-compat-gpu-layers">--</div></div>
+                                <div class="config-field"><div class="config-field-label">Weights</div><div style="font-size: 16px; font-weight: 600; color: var(--text);" id="llama-compat-weights">--</div></div>
+                                <div class="config-field"><div class="config-field-label">KV Cache</div><div style="font-size: 16px; font-weight: 600; color: var(--text);" id="llama-compat-kv">--</div></div>
+                                <div class="config-field"><div class="config-field-label">Total Required</div><div style="font-size: 16px; font-weight: 600; color: var(--text);" id="llama-compat-total">--</div></div>
+                                <div class="config-field"><div class="config-field-label">Architecture</div><div style="font-size: 16px; font-weight: 600; color: var(--text);" id="llama-compat-arch">--</div></div>
+                            </div>
                         </div>
 
                         <!-- Actions -->
@@ -3407,7 +3432,7 @@
                                                 <div class="mcp-config-card-kicker">Tools</div>
                                                 <div class="mcp-config-card-title">Tool Toggles</div>
                                             </div>
-                                            <span class="mcp-server-badge" id="mcp-enabled-count-badge">6 Enabled</span>
+                                            <span class="mcp-server-badge" id="mcp-enabled-count-badge">11 Enabled</span>
                                         </div>
                                         <div class="mcp-config-card-body">
                                             <div class="mcp-tool-grid">
@@ -3453,11 +3478,51 @@
                                                 </div>
                                                 <div class="mcp-tool-toggle">
                                                     <div class="mcp-tool-copy">
-                                                        <div class="mcp-tool-title">Diagram</div>
-                                                        <div class="mcp-tool-description">Generate flowchart diagrams as self-contained HTML files with exportable SVG/PNG.</div>
-                                                        <div class="mcp-tool-summary"><span class="mcp-tool-pill">No Key</span><span>`flowchart_generate`, `diagram_generate`, `flowchart_list_types`, `flowchart_list_node_types`, `flowchart_example`</span></div>
+                                                        <div class="mcp-tool-title">Diagram Generation</div>
+                                                        <div class="mcp-tool-description">Create new diagrams from raw node data or templates without loading the editing tools.</div>
+                                                        <div class="mcp-tool-summary"><span class="mcp-tool-pill">No Key</span><span>`flowchart_generate`, `flowchart_from_template`</span></div>
                                                     </div>
-                                                    <label class="switch"><input type="checkbox" id="mcp-tool-diagram" checked><span class="slider"></span></label>
+                                                    <label class="switch"><input type="checkbox" id="mcp-tool-diagram-generation" checked><span class="slider"></span></label>
+                                                </div>
+                                                <div class="mcp-tool-toggle">
+                                                    <div class="mcp-tool-copy">
+                                                        <div class="mcp-tool-title">Diagram Modification</div>
+                                                        <div class="mcp-tool-description">Patch existing diagrams by adding, updating, or removing nodes and edges.</div>
+                                                        <div class="mcp-tool-summary"><span class="mcp-tool-pill">No Key</span><span>`flowchart_modify`</span></div>
+                                                    </div>
+                                                    <label class="switch"><input type="checkbox" id="mcp-tool-diagram-modification" checked><span class="slider"></span></label>
+                                                </div>
+                                                <div class="mcp-tool-toggle">
+                                                    <div class="mcp-tool-copy">
+                                                        <div class="mcp-tool-title">Diagram Validation</div>
+                                                        <div class="mcp-tool-description">Validate nodes and edges before generation so the local model can stay focused on correctness.</div>
+                                                        <div class="mcp-tool-summary"><span class="mcp-tool-pill">No Key</span><span>`flowchart_validate`</span></div>
+                                                    </div>
+                                                    <label class="switch"><input type="checkbox" id="mcp-tool-diagram-validation" checked><span class="slider"></span></label>
+                                                </div>
+                                                <div class="mcp-tool-toggle">
+                                                    <div class="mcp-tool-copy">
+                                                        <div class="mcp-tool-title">Diagram Layout</div>
+                                                        <div class="mcp-tool-description">Expose only auto-layout computation when you want positions without the rest of the diagram stack.</div>
+                                                        <div class="mcp-tool-summary"><span class="mcp-tool-pill">No Key</span><span>`flowchart_compute_layout`</span></div>
+                                                    </div>
+                                                    <label class="switch"><input type="checkbox" id="mcp-tool-diagram-layout" checked><span class="slider"></span></label>
+                                                </div>
+                                                <div class="mcp-tool-toggle">
+                                                    <div class="mcp-tool-copy">
+                                                        <div class="mcp-tool-title">Diagram Analysis</div>
+                                                        <div class="mcp-tool-description">Ask for structural analysis and improvement suggestions without turning on generation tools.</div>
+                                                        <div class="mcp-tool-summary"><span class="mcp-tool-pill">No Key</span><span>`flowchart_analyze`, `flowchart_suggest`</span></div>
+                                                    </div>
+                                                    <label class="switch"><input type="checkbox" id="mcp-tool-diagram-analysis" checked><span class="slider"></span></label>
+                                                </div>
+                                                <div class="mcp-tool-toggle">
+                                                    <div class="mcp-tool-copy">
+                                                        <div class="mcp-tool-title">Diagram Utilities</div>
+                                                        <div class="mcp-tool-description">List templates, themes, types, and examples separately so discovery does not overload the local model.</div>
+                                                        <div class="mcp-tool-summary"><span class="mcp-tool-pill">No Key</span><span>`flowchart_list_types`, `flowchart_list_node_types`, `flowchart_list_themes`, `flowchart_list_templates`, `flowchart_examples`</span></div>
+                                                    </div>
+                                                    <label class="switch"><input type="checkbox" id="mcp-tool-diagram-utilities" checked><span class="slider"></span></label>
                                                 </div>
                                             </div>
                                         </div>
@@ -3482,7 +3547,7 @@
                             </div>
                             <div class="config-section">
                                 <div class="mcp-runtime-copy">
-                                    One MCP runtime exposes only the tool groups you enable in the Configuration tab, so clients connect to one endpoint while you keep tight control over available capabilities.
+                                    One MCP runtime exposes only the tool groups you enable in the Configuration tab. It now supports standard Streamable HTTP for network clients and standard stdio launching for MCP-capable desktop apps, not just llama.cpp workflows.
                                 </div>
                                 <div class="server-controls">
                                     <button class="btn success" id="btn-start-mcp">
@@ -3544,6 +3609,3 @@
     <script src="../../java/renderer/server-renderer.js"></script>
 </body>
 </html>
-
-
-

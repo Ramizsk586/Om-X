@@ -4,7 +4,7 @@ const channelSchema = new Schema({
   id: { type: String, required: true, unique: true, trim: true },
   serverId: { type: String, required: true, index: true, trim: true },
   name: { type: String, required: true, trim: true },
-  type: { type: String, enum: ['text', 'announcement', 'voice-placeholder'], default: 'text' },
+  type: { type: String, enum: ['text', 'announcement', 'announce', 'voice-placeholder'], default: 'text' },
   category: { type: String, default: 'TEXT CHANNELS' },
   topic: { type: String, default: '' },
   slowMode: { type: Number, default: 0 },

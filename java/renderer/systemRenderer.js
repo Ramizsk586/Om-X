@@ -67,6 +67,7 @@ const applyThemeClass = (theme) => {
     featSessionGuard: document.getElementById('feat-sessionguard'),
     featOmchatLocalIp: document.getElementById('feat-omchat-local-ip'),
     featOmchatAlwaysOn: document.getElementById('feat-omchat-always-on'),
+    featMcpAlwaysOn: document.getElementById('feat-mcp-always-on'),
     // Ad Blocker Panel
     featAdblockerMaster: document.getElementById('feat-adblocker-master'),
     featAdblockerPopups: document.getElementById('feat-adblocker-popups'),
@@ -122,6 +123,7 @@ const applyThemeClass = (theme) => {
     omchatBrowseLocalDb: document.getElementById('omchat-browse-local-db'),
     omchatSyncBtn: document.getElementById('omchat-sync-btn'),
     omchatImportBtn: document.getElementById('omchat-import-btn'),
+    omchatDeleteBtn: document.getElementById('omchat-delete-btn'),
     omchatSyncModal: document.getElementById('omchat-sync-modal'),
     omchatSyncClose: document.getElementById('omchat-sync-close'),
     omchatSyncStatus: document.getElementById('omchat-sync-status'),
@@ -487,14 +489,35 @@ const applyThemeClass = (theme) => {
 
   els.omchatSyncClose?.addEventListener('click', () => setOmChatSyncModalVisible(false));
 
+  function setOmChatActionButtonsBusy(isBusy = false, activeKind = 'backup') {
+    if (els.omchatSyncBtn) {
+      els.omchatSyncBtn.disabled = isBusy;
+      els.omchatSyncBtn.textContent = isBusy && activeKind === 'backup' ? 'Working...' : 'Backup Now';
+    }
+    if (els.omchatImportBtn) {
+      els.omchatImportBtn.disabled = isBusy;
+      els.omchatImportBtn.textContent = isBusy && activeKind === 'import' ? 'Working...' : 'Download Zip';
+    }
+    if (els.omchatDeleteBtn) {
+      els.omchatDeleteBtn.disabled = isBusy;
+      els.omchatDeleteBtn.textContent = isBusy && activeKind === 'delete' ? 'Deleting...' : 'Delete Backup';
+    }
+  }
+
   async function runOmChatTransfer(kind = 'backup') {
     const isBackup = kind === 'backup';
-    const invoke = isBackup ? window.browserAPI?.omChat?.syncDatabases : window.browserAPI?.omChat?.importDatabases;
+    const isImport = kind === 'import';
+    const isDelete = kind === 'delete';
+    const invoke = isBackup
+      ? window.browserAPI?.omChat?.syncDatabases
+      : isImport
+        ? window.browserAPI?.omChat?.importDatabases
+        : window.browserAPI?.omChat?.deleteMongoBackup;
     if (!invoke) {
       resetOmChatSyncLog();
       setOmChatSyncModalVisible(true);
       if (els.omchatSyncStatus) {
-        els.omchatSyncStatus.textContent = 'Sync service is unavailable. Restart the app.';
+        els.omchatSyncStatus.textContent = 'MongoDB service is unavailable. Restart the app.';
       }
       appendOmChatSyncLog('Sync API missing. Please restart Om-X to load the latest preload.');
       setOmChatSyncProgress(0);
@@ -502,46 +525,42 @@ const applyThemeClass = (theme) => {
     }
     resetOmChatSyncLog();
     setOmChatSyncModalVisible(true);
+    const requiresLocalPath = isBackup;
     const localPath = String(els.omchatLocalDbPath?.value || '').trim();
-    if (!localPath) {
+    if (requiresLocalPath && !localPath) {
       if (els.omchatSyncStatus) els.omchatSyncStatus.textContent = 'Select a local folder first.';
-      appendOmChatSyncLog('Please choose a local database folder before backup/import.');
+      appendOmChatSyncLog('Please choose a local database folder before running a backup.');
       setOmChatSyncProgress(0);
       return;
     }
-    appendOmChatSyncLog(isBackup ? 'Starting backup...' : 'Starting download...');
+    appendOmChatSyncLog(
+      isBackup ? 'Starting backup...' : isImport ? 'Starting download...' : 'Starting MongoDB cleanup...'
+    );
     setOmChatSyncProgress(5);
-    if (els.omchatSyncBtn) {
-      els.omchatSyncBtn.disabled = true;
-      els.omchatSyncBtn.textContent = 'Working...';
-    }
-    if (els.omchatImportBtn) {
-      els.omchatImportBtn.disabled = true;
-      els.omchatImportBtn.textContent = 'Working...';
-    }
+    setOmChatActionButtonsBusy(true, kind);
     try {
       const result = await invoke();
       if (!result?.success) {
         if (els.omchatSyncStatus) els.omchatSyncStatus.textContent = result?.error || 'Operation failed.';
         appendOmChatSyncLog(result?.error || 'Operation failed.');
+      } else if (isBackup || isDelete) {
+        void refreshOmChatMongoStats();
       }
     } catch (error) {
       if (els.omchatSyncStatus) els.omchatSyncStatus.textContent = error?.message || 'Operation failed.';
       appendOmChatSyncLog(error?.message || 'Operation failed.');
     } finally {
-      if (els.omchatSyncBtn) {
-        els.omchatSyncBtn.disabled = false;
-        els.omchatSyncBtn.textContent = 'Backup Now';
-      }
-      if (els.omchatImportBtn) {
-        els.omchatImportBtn.disabled = false;
-        els.omchatImportBtn.textContent = 'Download Zip';
-      }
+      setOmChatActionButtonsBusy(false, kind);
     }
   }
 
   els.omchatSyncBtn?.addEventListener('click', async () => runOmChatTransfer('backup'));
   els.omchatImportBtn?.addEventListener('click', async () => runOmChatTransfer('import'));
+  els.omchatDeleteBtn?.addEventListener('click', async () => {
+    const confirmed = window.confirm('Delete all OmChat backup data from MongoDB? This cannot be undone.');
+    if (!confirmed) return;
+    await runOmChatTransfer('delete');
+  });
 
   if (window.browserAPI?.omChat?.onSyncProgress) {
     window.browserAPI.omChat.onSyncProgress((payload = {}) => {
@@ -560,9 +579,17 @@ const applyThemeClass = (theme) => {
   if (window.browserAPI?.omChat?.onSyncDone) {
     window.browserAPI.omChat.onSyncDone((payload = {}) => {
       if (payload?.success) {
-        if (els.omchatSyncStatus) els.omchatSyncStatus.textContent = payload?.mode === 'import' ? 'Download completed.' : 'Backup completed.';
-        appendOmChatSyncLog(payload?.mode === 'import' ? 'Download completed.' : 'Backup completed.');
+        const mode = payload?.mode;
+        const completeLabel =
+          mode === 'import' ? 'Download completed.' :
+          mode === 'delete' ? 'MongoDB backup deleted.' :
+          'Backup completed.';
+        if (els.omchatSyncStatus) els.omchatSyncStatus.textContent = completeLabel;
+        appendOmChatSyncLog(completeLabel);
         setOmChatSyncProgress(100);
+        if (mode === 'backup' || mode === 'delete') {
+          void refreshOmChatMongoStats();
+        }
       } else if (payload?.error) {
         if (els.omchatSyncStatus) els.omchatSyncStatus.textContent = payload.error;
         appendOmChatSyncLog(payload.error);
@@ -803,6 +830,7 @@ const applyThemeClass = (theme) => {
       if (els.featSessionGuard) els.featSessionGuard.checked = s.security?.sessionGuard?.enabled ?? true;
       if (els.featOmchatLocalIp) els.featOmchatLocalIp.checked = s.omchat?.useLocalIpOnly ?? false;
       if (els.featOmchatAlwaysOn) els.featOmchatAlwaysOn.checked = s.omchat?.alwaysOn ?? false;
+      if (els.featMcpAlwaysOn) els.featMcpAlwaysOn.checked = s.mcp?.alwaysOn ?? false;
       
       // Load Ad Blocker settings (default OFF)
       const adBlocker = s.adBlocker || {};
@@ -845,14 +873,7 @@ const applyThemeClass = (theme) => {
     els.btnSave.onclick = async () => {
       const newShortcuts = {};
       document.querySelectorAll('.shortcut-input').forEach(i => newShortcuts[i.dataset.key] = i.value.trim());
-      const omchatPath = els.omchatLocalDbPath?.value.trim() || '';
-      if (!omchatPath) {
-        if (els.status) {
-          els.status.textContent = 'Select an OmChat local folder before saving.';
-          els.status.className = 'save-status visible error';
-        }
-        return;
-      }
+      const omchatPath = els.omchatLocalDbPath?.value.trim() || currentSettings.omchat?.localDbPath || '';
 
       const nextSettings = {
         ...window.omniSettings,
@@ -907,6 +928,10 @@ const applyThemeClass = (theme) => {
             localDbPath: omchatPath,
             useLocalIpOnly: els.featOmchatLocalIp?.checked ?? false,
             alwaysOn: els.featOmchatAlwaysOn?.checked ?? false
+        },
+        mcp: {
+            ...(window.omniSettings.mcp || {}),
+            alwaysOn: els.featMcpAlwaysOn?.checked ?? false
         },
         shortcuts: newShortcuts,
         blocklist: currentSettings.blocklist || [],

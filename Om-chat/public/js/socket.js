@@ -69,6 +69,21 @@ export const socketActions = {
   },
   updateStatus(payload) {
     socket?.emit('update_status', payload);
+  },
+  callStart(payload) {
+    socket?.emit('call_start', payload);
+  },
+  callJoin(payload) {
+    socket?.emit('call_join', payload);
+  },
+  callSignal(payload) {
+    socket?.emit('call_signal', payload);
+  },
+  callLeave(payload) {
+    socket?.emit('call_leave', payload);
+  },
+  callMuteToggle(payload) {
+    socket?.emit('call_mute_toggle', payload);
   }
 };
 

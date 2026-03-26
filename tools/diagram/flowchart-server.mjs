@@ -91,13 +91,19 @@ function addTool(server, name, description, schema, handler) {
   });
 }
 
-export function buildFlowchartTools(server) {
-  
-  // ============================================================
-  // TOOL CATEGORY 1: GENERATION
-  // Create diagrams from data or templates
-  // ============================================================
-  
+export function normalizeDiagramToolOptions(options = {}) {
+  const diagramEnabled = options.diagram !== false;
+  return {
+    generation: diagramEnabled && options.generation !== false,
+    modification: diagramEnabled && options.modification !== false,
+    validation: diagramEnabled && options.validation !== false,
+    layout: diagramEnabled && options.layout !== false,
+    analysis: diagramEnabled && options.analysis !== false,
+    utilities: diagramEnabled && options.utilities !== false
+  };
+}
+
+export function buildFlowchartGenerationTools(server) {
   const generateSchema = {
     title: z.string().min(1).describe("Chart title"),
     type: z.enum(["column", "horizontal", "circle", "tree", "mindmap", "force", "grid", "radial", "dagre", "swimlane", "sequence", "process"]).default("column").describe("Layout type: column=vertical flowchart, horizontal=left-to-right, swimlane=with swimlanes, sequence=actor sequence, process=multi-phase process, tree=hierarchical, mindmap=radial, force=physics, grid=grid, radial=concentric, dagre=optimized hierarchical"),
@@ -183,12 +189,9 @@ export function buildFlowchartTools(server) {
     }
     return { html, saveResult, template: args.template, ...templateData };
   });
+}
 
-  // ============================================================
-  // TOOL CATEGORY 2: MODIFICATION
-  // Add, update, delete nodes and edges
-  // ============================================================
-  
+export function buildFlowchartModificationTools(server) {
   const modifySchema = {
     action: z.enum(["addNode", "updateNode", "deleteNode", "addEdge", "updateEdge", "deleteEdge", "batch"]).describe("Modification action"),
     nodes: z.array(NodeSchema).describe("Current nodes"),
@@ -221,12 +224,9 @@ Returns updated nodes and edges arrays.`, modifySchema, async (args) => {
                      edgeFrom && edgeTo ? { from: edgeFrom, to: edgeTo, ...newData } : newData;
     return modifyFlowchart({ action, nodes, edges: edges || [], nodeId, newData: edgeData || {} });
   });
+}
 
-  // ============================================================
-  // TOOL CATEGORY 3: VALIDATION  
-  // Check diagram data for errors
-  // ============================================================
-  
+export function buildFlowchartValidationTools(server) {
   const validateSchema = {
     nodes: z.array(NodeSchema).min(1).describe("Nodes to validate"),
     edges: z.array(EdgeSchema).optional().describe("Edges to validate")
@@ -243,12 +243,9 @@ Checks:
 Returns valid status and list of errors.`, validateSchema, async (args) => {
     return validateFlowchartData(args);
   });
+}
 
-  // ============================================================
-  // TOOL CATEGORY 4: LAYOUT
-  // Compute positions, auto-layout
-  // ============================================================
-  
+export function buildFlowchartLayoutTools(server) {
   const layoutSchema = {
     nodes: z.array(NodeSchema).describe("Nodes to layout"),
     edges: z.array(EdgeSchema).optional().describe("Edges"),
@@ -275,12 +272,9 @@ Returns position coordinates for each node.`, layoutSchema, async (args) => {
     const positions = computeLayout(args.nodes, args.edges || [], args.layoutType, args.width, args.height, args.options || {});
     return { positions, layoutType: args.layoutType };
   });
+}
 
-  // ============================================================
-  // TOOL CATEGORY 5: ANALYSIS
-  // Get insights about diagrams
-  // ============================================================
-  
+export function buildFlowchartAnalysisTools(server) {
   const analyzeSchema = {
     nodes: z.array(NodeSchema).describe("Nodes to analyze"),
     edges: z.array(EdgeSchema).optional().describe("Edges")
@@ -312,12 +306,9 @@ Analyzes the diagram and suggests:
 - Clarity enhancements`, suggestSchema, async (args) => {
     return { suggestions: suggestImprovements(args.nodes, args.edges || []) };
   });
+}
 
-  // ============================================================
-  // TOOL CATEGORY 6: UTILITIES
-  // List options, get examples
-  // ============================================================
-  
+export function buildFlowchartUtilityTools(server) {
   addTool(server, "flowchart_list_types", "List all supported layout types.", {}, async () => ({ chartTypes: listChartTypes() }));
   addTool(server, "flowchart_list_node_types", "List all supported node types with shapes.", {}, async () => ({ nodeTypes: listNodeTypes() }));
   addTool(server, "flowchart_list_themes", "List all available color themes.", {}, async () => ({ themes: listThemes() }));
@@ -336,16 +327,25 @@ Without template parameter, returns examples for all templates.`, exampleSchema,
     for (const t of templates) examples[t.name] = generateTemplate(t.name);
     return { examples };
   });
+}
 
+export function buildFlowchartTools(server, options = {}) {
+  const normalized = normalizeDiagramToolOptions(options);
+  if (normalized.generation) buildFlowchartGenerationTools(server);
+  if (normalized.modification) buildFlowchartModificationTools(server);
+  if (normalized.validation) buildFlowchartValidationTools(server);
+  if (normalized.layout) buildFlowchartLayoutTools(server);
+  if (normalized.analysis) buildFlowchartAnalysisTools(server);
+  if (normalized.utilities) buildFlowchartUtilityTools(server);
   return server;
 }
 
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 3100;
 
-function buildServer() {
+function buildServer(options = {}) {
   const server = new McpServer({ name: "mcp-flowchart", version: "2.0.0" });
-  buildFlowchartTools(server);
+  buildFlowchartTools(server, options);
   return server;
 }
 
@@ -388,17 +388,19 @@ app.get("/mcp", (_req, res) => res.status(405).json({ error: "Use POST for MCP r
 app.get("/sse", (_req, res) => res.status(410).json({ error: "Legacy SSE removed. Use POST /mcp." }));
 
 app.get("/health", (_req, res) => {
+  const enabledCategories = normalizeDiagramToolOptions();
+  const toolCategories = {
+    generation: enabledCategories.generation ? ["flowchart_generate", "flowchart_from_template"] : [],
+    modification: enabledCategories.modification ? ["flowchart_modify"] : [],
+    validation: enabledCategories.validation ? ["flowchart_validate"] : [],
+    layout: enabledCategories.layout ? ["flowchart_compute_layout"] : [],
+    analysis: enabledCategories.analysis ? ["flowchart_analyze", "flowchart_suggest"] : [],
+    utilities: enabledCategories.utilities ? ["flowchart_list_types", "flowchart_list_node_types", "flowchart_list_themes", "flowchart_list_templates", "flowchart_examples"] : []
+  };
   res.json({
     status: "ok", server: "mcp-flowchart", version: "2.0.0",
-    toolCategories: {
-      generation: ["flowchart_generate", "flowchart_from_template"],
-      modification: ["flowchart_modify"],
-      validation: ["flowchart_validate"],
-      layout: ["flowchart_compute_layout"],
-      analysis: ["flowchart_analyze", "flowchart_suggest"],
-      utilities: ["flowchart_list_types", "flowchart_list_node_types", "flowchart_list_themes", "flowchart_list_templates", "flowchart_examples"]
-    },
-    totalTools: 14
+    toolCategories,
+    totalTools: Object.values(toolCategories).reduce((sum, tools) => sum + tools.length, 0)
   });
 });
 

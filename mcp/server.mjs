@@ -2,11 +2,12 @@ import express from "express";
 import { tavily } from "@tavily/core";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { pathToFileURL } from "url";
 import { wikiSearch, wikiPage } from "../tools/wiki/mcp-wiki.mjs";
 import { ddgWebSearch, ddgImageSearch, ddgVideoSearch } from "../tools/ddg/mcp-ddg.mjs";
-import { buildFlowchartTools } from "../tools/diagram/flowchart-server.mjs";
+import { buildFlowchartTools, normalizeDiagramToolOptions } from "../tools/diagram/flowchart-server.mjs";
 
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 3000;
@@ -17,10 +18,18 @@ const DEFAULT_ENABLED_TOOLS = Object.freeze({
   duckduckgo: true,
   tavily: true,
   news: true,
-  diagram: true
+  diagramGeneration: true,
+  diagramModification: true,
+  diagramValidation: true,
+  diagramLayout: true,
+  diagramAnalysis: true,
+  diagramUtilities: true
 });
 
 let activeHttpServer = null;
+let activeStdioServer = null;
+let activeStdioTransport = null;
+let activeTransportMode = null;
 let activeServerOptions = {
   enabledTools: { ...DEFAULT_ENABLED_TOOLS },
   apiKeys: {
@@ -39,13 +48,27 @@ process.on("unhandledRejection", (err) => {
 });
 
 function normalizeEnabledTools(enabledTools = {}) {
+  const diagramGroups = normalizeDiagramToolOptions({
+    diagram: enabledTools.diagram,
+    generation: enabledTools.diagramGeneration,
+    modification: enabledTools.diagramModification,
+    validation: enabledTools.diagramValidation,
+    layout: enabledTools.diagramLayout,
+    analysis: enabledTools.diagramAnalysis,
+    utilities: enabledTools.diagramUtilities
+  });
   return {
     wiki: enabledTools.wiki !== false,
     webSearch: enabledTools.webSearch !== false,
     duckduckgo: enabledTools.duckduckgo !== false,
     tavily: enabledTools.tavily !== false,
     news: enabledTools.news !== false,
-    diagram: enabledTools.diagram !== false
+    diagramGeneration: diagramGroups.generation,
+    diagramModification: diagramGroups.modification,
+    diagramValidation: diagramGroups.validation,
+    diagramLayout: diagramGroups.layout,
+    diagramAnalysis: diagramGroups.analysis,
+    diagramUtilities: diagramGroups.utilities
   };
 }
 
@@ -448,8 +471,22 @@ function buildServer() {
     );
   }
 
-  if (enabledTools.diagram) {
-    buildFlowchartTools(server);
+  const hasDiagramTools = enabledTools.diagramGeneration
+    || enabledTools.diagramModification
+    || enabledTools.diagramValidation
+    || enabledTools.diagramLayout
+    || enabledTools.diagramAnalysis
+    || enabledTools.diagramUtilities;
+
+  if (hasDiagramTools) {
+    buildFlowchartTools(server, {
+      generation: enabledTools.diagramGeneration,
+      modification: enabledTools.diagramModification,
+      validation: enabledTools.diagramValidation,
+      layout: enabledTools.diagramLayout,
+      analysis: enabledTools.diagramAnalysis,
+      utilities: enabledTools.diagramUtilities
+    });
   }
 
   return server;
@@ -533,8 +570,6 @@ app.get("/sse", async (_req, res) => {
 app.post("/sse", handleStreamableRequest);
 
 export async function startServer(options = {}) {
-  if (activeHttpServer?.listening) return activeHttpServer;
-
   const enabledTools = normalizeEnabledTools(options.enabledTools || {});
   activeServerOptions = {
     enabledTools,
@@ -544,6 +579,24 @@ export async function startServer(options = {}) {
       newsApiKey: String(options.apiKeys?.newsApiKey || "").trim()
     }
   };
+
+  const transportMode = String(options.transport || process.env.MCP_TRANSPORT || "http").trim().toLowerCase();
+  if (transportMode === "stdio") {
+    if (activeTransportMode === "stdio" && activeStdioServer && activeStdioTransport) {
+      return { mode: "stdio" };
+    }
+    if (activeHttpServer?.listening) return activeHttpServer;
+    const server = buildServer();
+    const transport = new StdioServerTransport();
+    await server.connect(transport);
+    activeStdioServer = server;
+    activeStdioTransport = transport;
+    activeTransportMode = "stdio";
+    console.error(`Om-X MCP stdio server started with tool groups: ${Object.entries(enabledTools).filter(([, enabled]) => enabled).map(([name]) => name).join(", ") || "none"}`);
+    return { mode: "stdio" };
+  }
+
+  if (activeHttpServer?.listening) return activeHttpServer;
 
   const port = Number(options.port ?? process.env.PORT ?? DEFAULT_PORT);
   const host = String(options.host ?? process.env.HOST ?? DEFAULT_HOST);
@@ -557,6 +610,7 @@ export async function startServer(options = {}) {
       console.log(`Unified MCP HTTP server listening at http://${host}:${port}/mcp`);
       console.log(`Unified MCP Streamable HTTP alias listening at http://${host}:${port}/sse`);
       console.log(`Enabled MCP tool groups: ${enabledSummary || "none"}`);
+      activeTransportMode = "http";
       resolve(server);
     });
     server.once("error", reject);
@@ -565,9 +619,33 @@ export async function startServer(options = {}) {
 }
 
 export async function stopServer() {
+  if (activeTransportMode === "stdio" && activeStdioServer && activeStdioTransport) {
+    const server = activeStdioServer;
+    const transport = activeStdioTransport;
+    activeStdioServer = null;
+    activeStdioTransport = null;
+    activeTransportMode = null;
+    activeServerOptions = {
+      enabledTools: { ...DEFAULT_ENABLED_TOOLS },
+      apiKeys: {
+        serpApiKey: "",
+        tavilyApiKey: "",
+        newsApiKey: ""
+      }
+    };
+    try {
+      await transport.close();
+    } catch {}
+    try {
+      await server.close();
+    } catch {}
+    return;
+  }
+
   if (!activeHttpServer) return;
   const server = activeHttpServer;
   activeHttpServer = null;
+  activeTransportMode = null;
   activeServerOptions = {
     enabledTools: { ...DEFAULT_ENABLED_TOOLS },
     apiKeys: {
@@ -588,7 +666,8 @@ export async function stopServer() {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  startServer().catch((error) => {
+  const cliTransport = process.argv.includes("--stdio") ? "stdio" : "http";
+  startServer({ transport: cliTransport }).catch((error) => {
     console.error("[MCP] Failed to start:", error);
     process.exit(1);
   });

@@ -189,8 +189,23 @@ class LlamaServerRenderer {
         const memoryEl = document.getElementById('gpu-memory-available');
         if (!memoryEl) return;
 
-        const available = await this.getAvailableGPUMemory();
-        memoryEl.textContent = `${available} MB`;
+        let gpuInfo = null;
+        if (window.browserAPI && window.browserAPI.llama) {
+            try {
+                gpuInfo = await window.browserAPI.llama.getGPUInfo();
+            } catch (_) {}
+        }
+
+        const available = Number(gpuInfo?.availableMemory || 0);
+        const dedicated = Number(gpuInfo?.dedicatedMemoryMB || 0);
+        const shared = Number(gpuInfo?.sharedMemoryMB || 0);
+        const isIntegrated = gpuInfo?.isIntegrated === true;
+        memoryEl.textContent = available > 0 ? `${available} MB` : '-- MB';
+        memoryEl.title = available > 0
+            ? (isIntegrated
+                ? `Integrated GPU${dedicated > 0 ? ` reserved VRAM ${dedicated} MB` : ''}${shared > 0 ? `, shared system memory ${shared} MB` : ''}`
+                : `Dedicated GPU${dedicated > 0 ? ` VRAM ${dedicated} MB` : ''}${shared > 0 ? `, shared memory ${shared} MB` : ''}`)
+            : 'GPU VRAM could not be detected reliably on this device';
         this.updateCompatibilityCalculator();
     }
 
@@ -451,12 +466,6 @@ class LlamaServerRenderer {
         return `${numeric.toFixed(1)} GB`;
     }
 
-    getColorForPercent(percent) {
-        if (percent < 60) return 'var(--success)';
-        if (percent < 90) return 'var(--warning)';
-        return 'var(--danger)';
-    }
-
     parseModelMetadata(modelName, info = null) {
         const raw = String(modelName || '').trim();
         const lower = raw.toLowerCase();
@@ -588,56 +597,9 @@ class LlamaServerRenderer {
         };
     }
 
-    buildCompatibilityRecommendations(summary) {
-        const recos = [];
-        const {
-            runMode,
-            totalRequiredGB,
-            availableVramGB,
-            availableRamGB,
-            paramsB,
-            bits,
-            contextLength,
-            quantName,
-            modelWeightsGB,
-            kvCacheGB,
-            layers,
-            gpuLayers
-        } = summary;
-
-        if (runMode === 'none') {
-            recos.push({ tone: 'danger', text: `This model needs about ${this.formatGB(totalRequiredGB * 1.1)} of usable memory, but the system currently has only ${this.formatGB(availableVramGB + availableRamGB)} available.` });
-            recos.push({ tone: 'warning', text: `Try a smaller model or a stronger quantization. A Q4 or Q3 variant of roughly ${Math.max(1, Math.floor(paramsB / 2))}B would be much safer on this machine.` });
-            return recos;
-        }
-
-        if (bits <= 3) {
-            recos.push({ tone: 'warning', text: `Low-bit quantization (${bits}-bit) should fit more easily, but quality loss is noticeable. Q4_K_M is usually the better balance when it fits.` });
-        } else if (quantName === 'Q4_K_M' || bits === 4) {
-            recos.push({ tone: 'success', text: `Q4-class quantization is usually the sweet spot here: much smaller than FP16 while keeping strong quality.` });
-        } else if (bits >= 8) {
-            recos.push({ tone: 'info', text: `This is a higher-precision file. If memory gets tight, a Q5_K_M or Q4_K_M build would save a lot of space with small quality loss.` });
-        }
-
-        if (kvCacheGB > modelWeightsGB * 0.5) {
-            recos.push({ tone: 'warning', text: `KV cache is heavy at the current context length. Dropping context from ${contextLength} to ${Math.max(1024, Math.round(contextLength / 2 / 512) * 512)} would noticeably reduce memory pressure.` });
-        }
-
-        if (runMode === 'partial') {
-            recos.push({ tone: 'warning', text: `This should run in hybrid GPU+RAM mode with about ${gpuLayers}/${layers} layers on GPU. It will work, but speed will be limited by CPU/RAM offload.` });
-        } else if (runMode === 'cpu') {
-            recos.push({ tone: 'warning', text: `This looks CPU-only on current free resources. It may still run, but expect slow generation compared with full GPU fit.` });
-        } else if (runMode === 'full') {
-            recos.push({ tone: 'success', text: `This model should fully fit in current GPU memory. You have headroom for this setup and can likely increase context moderately if needed.` });
-        }
-
-        return recos;
-    }
-
     async updateCompatibilityCalculator(info = this.latestModelInfo) {
-        // DISABLED: Compatibility Calculator UI is hidden
         const compatSection = document.getElementById('llama-compat-section');
-        if (!compatSection || compatSection.style.display === 'none') {
+        if (!compatSection) {
             return;
         }
         
@@ -658,14 +620,6 @@ class LlamaServerRenderer {
             setText('llama-compat-kv', '--');
             setText('llama-compat-total', '--');
             setText('llama-compat-arch', '--');
-            const metersEl = document.getElementById('llama-compat-meters');
-            if (metersEl) metersEl.innerHTML = '';
-            const configBody = document.getElementById('llama-compat-config-body');
-            if (configBody) {
-                configBody.innerHTML = '<tr><td style="padding: 10px 12px; color: var(--text-dim); border-bottom: 1px solid var(--border);">Status</td><td style="padding: 10px 12px; color: var(--text); border-bottom: 1px solid var(--border);">Select a model to calculate</td></tr>';
-            }
-            const recosEl = document.getElementById('llama-compat-recos');
-            if (recosEl) recosEl.innerHTML = '';
             if (labelEl) labelEl.textContent = 'Waiting for model selection';
             if (descEl) descEl.textContent = 'Choose a `.gguf` model and Om-X will estimate params, quantization, KV cache, memory overhead, and whether it fits your current system.';
             return;
@@ -765,70 +719,6 @@ class LlamaServerRenderer {
                         : 'Model should fit the current system.';
         }
 
-        const metersEl = document.getElementById('llama-compat-meters');
-        if (metersEl) {
-            const vramPercent = Math.min(100, (totalRequiredGB / Math.max(availableVramGB, 0.1)) * 100);
-            const ramPercent = Math.min(100, (totalRequiredGB / Math.max(availableRamGB, 0.1)) * 100);
-            metersEl.innerHTML = [
-                { label: 'Available GPU Memory', value: `${this.formatGB(Math.min(totalRequiredGB, availableVramGB))} / ${this.formatGB(availableVramGB)}`, pct: vramPercent },
-                { label: 'Free System RAM', value: `${this.formatGB(totalRequiredGB)} / ${this.formatGB(availableRamGB)}`, pct: ramPercent }
-            ].map((item) => `
-                <div style="margin-bottom: 12px;">
-                    <div style="display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 6px;">
-                        <span style="color: var(--text-dim);">${item.label}</span>
-                        <span style="color: var(--text);">${item.value}</span>
-                    </div>
-                    <div style="height: 8px; background: rgba(255,255,255,0.08); border-radius: 999px; overflow: hidden;">
-                        <div style="height: 100%; width: ${Math.min(100, item.pct)}%; background: ${this.getColorForPercent(item.pct)}; border-radius: 999px;"></div>
-                    </div>
-                </div>
-            `).join('');
-        }
-
-        const configBody = document.getElementById('llama-compat-config-body');
-        if (configBody) {
-            const rows = [
-                ['Detected model file', metadata.modelName],
-                ['Current context', `${contextLength} tokens`],
-                ['Recommended GPU layers', runMode === 'none' ? '0' : runMode === 'full' ? 'All layers' : `${gpuLayers} of ${layers}`],
-                ['Suggested threads', runMode === 'cpu' ? `${Math.min(navigator.hardwareConcurrency || 8, 8)}` : `${Math.min(navigator.hardwareConcurrency || 4, 4)}`],
-                ['Suggested quant', runMode === 'none' ? 'Try Q4_K_M / Q3_K_M / smaller model' : metadata.quantName],
-                ['Current system RAM', `${this.formatGB(system.totalRamGB)} total, ${this.formatGB(system.freeRamGB)} free`]
-            ];
-            configBody.innerHTML = rows.map(([key, value]) => `
-                <tr>
-                    <td style="padding: 10px 12px; color: var(--text-dim); border-bottom: 1px solid var(--border); white-space: nowrap;">${escapeHtml(key)}</td>
-                    <td style="padding: 10px 12px; color: var(--text); border-bottom: 1px solid var(--border);">${escapeHtml(String(value))}</td>
-                </tr>
-            `).join('');
-        }
-
-        const recosEl = document.getElementById('llama-compat-recos');
-        if (recosEl) {
-            const recommendations = this.buildCompatibilityRecommendations({
-                runMode,
-                totalRequiredGB,
-                availableVramGB,
-                availableRamGB,
-                paramsB: metadata.paramsB,
-                bits: metadata.bits,
-                contextLength,
-                quantName: metadata.quantName,
-                modelWeightsGB,
-                kvCacheGB,
-                layers,
-                gpuLayers
-            });
-            recosEl.innerHTML = recommendations.map((item) => {
-                const color = item.tone === 'success' ? 'var(--success)' : item.tone === 'warning' ? 'var(--warning)' : item.tone === 'danger' ? 'var(--danger)' : 'var(--accent-light)';
-                return `
-                    <div style="display: flex; gap: 10px; align-items: flex-start; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: rgba(255,255,255,0.02);">
-                        <div style="width: 8px; height: 8px; border-radius: 999px; margin-top: 6px; background: ${color}; flex: 0 0 auto;"></div>
-                        <div style="font-size: 12px; line-height: 1.6; color: var(--text);">${item.text}</div>
-                    </div>
-                `;
-            }).join('');
-        }
     }
 
     generateServerCommand() {
@@ -1313,16 +1203,25 @@ class LlamaServerRenderer {
         if (window.browserAPI && window.browserAPI.llama) {
             try {
                 const gpuInfo = await window.browserAPI.llama.getGPUInfo();
-                return gpuInfo.availableMemory || 8000;
+                return Number(gpuInfo?.availableMemory || 0);
             } catch (err) {
-                return 8000;
+                return 0;
             }
         }
-        return 8000;
+        return 0;
     }
 
     async canLoadModel(modelSizeMB) {
         const availableMemory = await this.getAvailableGPUMemory();
+        if (availableMemory <= 0) {
+            const statusEl = document.getElementById('model-status');
+            const warningEl = document.getElementById('model-warning');
+            if (statusEl) {
+                statusEl.textContent = 'GPU Unknown';
+            }
+            if (warningEl) warningEl.classList.add('hidden');
+            return true;
+        }
         const maxAllowed = availableMemory * 0.95;
 
         const statusEl = document.getElementById('model-status');
@@ -1900,7 +1799,12 @@ class UnifiedMcpServerRenderer {
             duckduckgo: true,
             tavily: true,
             news: true,
-            diagram: true
+            diagramGeneration: true,
+            diagramModification: true,
+            diagramValidation: true,
+            diagramLayout: true,
+            diagramAnalysis: true,
+            diagramUtilities: true
         };
     }
 
@@ -1949,7 +1853,12 @@ class UnifiedMcpServerRenderer {
             ['mcp-tool-ddg', 'duckduckgo'],
             ['mcp-tool-tavily', 'tavily'],
             ['mcp-tool-news', 'news'],
-            ['mcp-tool-diagram', 'diagram']
+            ['mcp-tool-diagram-generation', 'diagramGeneration'],
+            ['mcp-tool-diagram-modification', 'diagramModification'],
+            ['mcp-tool-diagram-validation', 'diagramValidation'],
+            ['mcp-tool-diagram-layout', 'diagramLayout'],
+            ['mcp-tool-diagram-analysis', 'diagramAnalysis'],
+            ['mcp-tool-diagram-utilities', 'diagramUtilities']
         ].forEach(([id, key]) => {
             const input = document.getElementById(id);
             input?.addEventListener('change', () => {
@@ -2000,7 +1909,12 @@ class UnifiedMcpServerRenderer {
             'mcp-tool-ddg': 'duckduckgo',
             'mcp-tool-tavily': 'tavily',
             'mcp-tool-news': 'news',
-            'mcp-tool-diagram': 'diagram'
+            'mcp-tool-diagram-generation': 'diagramGeneration',
+            'mcp-tool-diagram-modification': 'diagramModification',
+            'mcp-tool-diagram-validation': 'diagramValidation',
+            'mcp-tool-diagram-layout': 'diagramLayout',
+            'mcp-tool-diagram-analysis': 'diagramAnalysis',
+            'mcp-tool-diagram-utilities': 'diagramUtilities'
         };
         Object.entries(toolInputMap).forEach(([id, key]) => {
             const input = document.getElementById(id);
@@ -2010,6 +1924,12 @@ class UnifiedMcpServerRenderer {
         const names = this.getEnabledToolEntries().map(([key]) => {
             if (key === 'webSearch') return 'Web Search';
             if (key === 'duckduckgo') return 'DuckDuckGo';
+            if (key === 'diagramGeneration') return 'Diagram Generation';
+            if (key === 'diagramModification') return 'Diagram Modification';
+            if (key === 'diagramValidation') return 'Diagram Validation';
+            if (key === 'diagramLayout') return 'Diagram Layout';
+            if (key === 'diagramAnalysis') return 'Diagram Analysis';
+            if (key === 'diagramUtilities') return 'Diagram Utilities';
             return key.charAt(0).toUpperCase() + key.slice(1);
         });
         const count = names.length;
@@ -2222,7 +2142,16 @@ class UnifiedMcpServerRenderer {
                 const settings = JSON.parse(saved);
                 this.host = settings.host || this.host;
                 this.port = Number(settings.port) || this.port;
-                this.enabledTools = { ...this.enabledTools, ...(settings.enabledTools || {}) };
+                const enabledTools = settings.enabledTools || {};
+                if (enabledTools.diagram === false) {
+                    enabledTools.diagramGeneration = false;
+                    enabledTools.diagramModification = false;
+                    enabledTools.diagramValidation = false;
+                    enabledTools.diagramLayout = false;
+                    enabledTools.diagramAnalysis = false;
+                    enabledTools.diagramUtilities = false;
+                }
+                this.enabledTools = { ...this.enabledTools, ...enabledTools };
             }
             this.updateEndpointDisplay();
             this.updateToolSummary();
@@ -2236,7 +2165,16 @@ class UnifiedMcpServerRenderer {
         try {
             const statusRes = await window.browserAPI.servers.getStatus('mcp');
             if (statusRes?.success && statusRes.status?.config?.enabledTools) {
-                this.enabledTools = { ...this.enabledTools, ...statusRes.status.config.enabledTools };
+                const enabledTools = { ...statusRes.status.config.enabledTools };
+                if (enabledTools.diagram === false) {
+                    enabledTools.diagramGeneration = false;
+                    enabledTools.diagramModification = false;
+                    enabledTools.diagramValidation = false;
+                    enabledTools.diagramLayout = false;
+                    enabledTools.diagramAnalysis = false;
+                    enabledTools.diagramUtilities = false;
+                }
+                this.enabledTools = { ...this.enabledTools, ...enabledTools };
             }
             if (statusRes?.success && statusRes.status?.running) {
                 const status = statusRes.status;
@@ -2794,10 +2732,3 @@ if (document.readyState === 'loading') {
 } else {
     initMinecraft();
 }
-
-
-
-
-
-
-

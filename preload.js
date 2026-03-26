@@ -166,6 +166,7 @@ contextBridge.exposeInMainWorld('browserAPI', {
     selectDbFolder: () => ipcRenderer.invoke('omchat:select-db-folder'),
     syncDatabases: () => ipcRenderer.invoke('omchat:sync-db'),
     importDatabases: () => ipcRenderer.invoke('omchat:import-db'),
+    deleteMongoBackup: () => ipcRenderer.invoke('omchat:delete-mongo-backup'),
     getMongoStats: () => ipcRenderer.invoke('omchat:get-mongo-stats'),
     onOutput: (callback) => ipcRenderer.on('omchat-server-output', (event, data) => callback(data)),
     onExit: (callback) => ipcRenderer.on('omchat-server-exit', (event, data) => callback(data)),

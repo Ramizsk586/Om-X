@@ -112,6 +112,9 @@
             <p id="active-channel-topic">No topic</p>
           </div>
           <div class="chat-toolbar">
+            <button id="announce-call-btn" class="icon-btn hidden" type="button" aria-label="Start voice call" title="Start voice call">
+              <span aria-hidden="true">&#128222;</span>
+            </button>
             <button id="search-toggle" class="icon-btn" type="button" aria-label="Search messages">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="11" cy="11" r="7"></circle>
@@ -167,7 +170,7 @@
             <path d="M4 11V8a2 2 0 0 1 2-2h2l7-3v18l-7-3H6a2 2 0 0 1-2-2v-3" />
             <path d="M16 8a4 4 0 0 1 0 8" />
           </svg>
-          <span>Only admins can post in announcement channels</span>
+          <span>You cannot post in this channel</span>
         </div>
 
         <div id="composer" class="composer">
@@ -361,7 +364,7 @@
           <label class="section-label" for="create-channel-type">Channel type</label>
           <select id="create-channel-type" class="modal-input">
             <option value="text">Text</option>
-            <option value="announcement">Announcement</option>
+            <option value="announce">Announcement</option>
             <option value="voice-placeholder">Voice</option>
           </select>
 
@@ -460,6 +463,40 @@
       <div class="modal-inner switcher-inner">
         <input id="channel-switch-input" placeholder="Jump to a channel or DM" />
         <div id="channel-switch-list" class="switcher-list"></div>
+      </div>
+    </div>
+
+    <div id="call-member-modal" class="modal hidden">
+      <div class="modal-inner call-member-modal-inner">
+        <div class="modal-head">
+          <strong>&#128222; Start a Voice Call</strong>
+          <button id="call-member-close" type="button" class="icon-btn" aria-label="Close start call dialog">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M18 6 6 18"></path>
+              <path d="m6 6 12 12"></path>
+            </svg>
+          </button>
+        </div>
+        <p class="modal-description">Select members to invite:</p>
+        <div id="call-member-list" class="call-member-list"></div>
+        <div class="modal-actions">
+          <button id="call-member-cancel" type="button" class="btn-secondary">Cancel</button>
+          <button id="call-member-start" type="button" class="btn-primary" disabled>Start Call &#8594;</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="call-overlay" class="call-overlay hidden" aria-live="polite">
+      <div class="call-overlay-shell">
+        <div class="call-overlay-head">
+          <strong id="call-overlay-title">&#128266; Voice Call</strong>
+          <span id="call-overlay-subtitle">Connecting...</span>
+        </div>
+        <div id="call-participant-grid" class="call-participant-grid"></div>
+        <div class="call-controls">
+          <button id="call-mute-btn" type="button" class="call-control-btn">&#127908; Mute</button>
+          <button id="call-leave-btn" type="button" class="call-control-btn is-danger">&#128245; Leave Call</button>
+        </div>
       </div>
     </div>
 
@@ -606,8 +643,6 @@
     <script src="/js/app.js" type="module"></script>
   </body>
 </html>
-
-
 
 
 

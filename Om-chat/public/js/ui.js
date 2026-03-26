@@ -72,6 +72,7 @@ export function messageShouldGroup(prevMessage, nextMessage) {
   if (!prevMessage || !nextMessage) return false;
   if (prevMessage.userId !== nextMessage.userId) return false;
   if (prevMessage.type === 'system' || nextMessage.type === 'system') return false;
+  if (prevMessage.type === 'call_invite' || nextMessage.type === 'call_invite') return false;
   const gap = new Date(nextMessage.createdAt) - new Date(prevMessage.createdAt);
   return gap < 7 * 60 * 1000;
 }
@@ -150,7 +151,7 @@ function readCollapsedCategories() {
 }
 
 function getChannelIconLabel(type) {
-  if (type === 'announcement') return '??';
+  if (type === 'announcement' || type === 'announce') return '!';
   if (type === 'voice-placeholder') return '??';
   return '#';
 }
@@ -281,6 +282,26 @@ export function createMessageElement(message, grouped = false, currentUserId = n
   row.className = `chat-message ${message.type === 'system' ? 'system' : ''} ${grouped ? 'is-grouped' : 'is-first'}`;
   row.dataset.id = message.id;
   row.dataset.createdAt = message.createdAt || '';
+
+  if (message.type === 'call_invite') {
+    const invitedUserIds = Array.isArray(message.meta?.invitedUserIds) ? message.meta.invitedUserIds : [];
+    const invitedUsernames = Array.isArray(message.meta?.invitedUsernames) ? message.meta.invitedUsernames : [];
+    const invited = invitedUserIds.includes(currentUserId);
+    const callEnded = Boolean(message.meta?.callEnded);
+
+    const card = document.createElement('div');
+    card.className = 'call-invite-card';
+    card.innerHTML = `
+      <div class="call-invite-title">&#128222; Voice call started</div>
+      <div class="call-invite-copy">Invited: ${escapeHtml(invitedUsernames.join(', ') || 'No one')}</div>
+      <div class="call-invite-actions">
+        <button type="button" class="call-invite-btn" data-action="join-call" data-call-id="${escapeHtml(message.meta?.callId || '')}" ${invited && !callEnded ? '' : 'disabled'} title="${invited ? (callEnded ? 'Call ended' : 'Join call') : 'You were not invited to this call'}">Join Call</button>
+        <span class="call-invite-status">${escapeHtml(callEnded ? 'Call ended' : invited ? 'You were invited' : 'You were not invited to this call')}</span>
+      </div>
+    `;
+    row.appendChild(card);
+    return row;
+  }
 
   if (message.type === 'system') {
     const text = document.createElement('p');
@@ -453,7 +474,7 @@ export function renderChannels(channels, unread, active, container, isAdmin = fa
       row.className = `channel-item ${channel.id === active ? 'active' : ''} ${unread && unread[channel.id] ? 'is-unread' : ''}`;
       row.dataset.channel = channel.id;
       row.dataset.channelType = channel.type || 'text';
-      if (channel.type === 'announcement') row.classList.add('channel-announcement');
+      if (channel.type === 'announcement' || channel.type === 'announce') row.classList.add('channel-announcement');
 
       const left = document.createElement('span');
       left.className = 'channel-label';
@@ -462,7 +483,7 @@ export function renderChannels(channels, unread, active, container, isAdmin = fa
       const right = document.createElement('span');
       right.className = 'channel-meta';
 
-      if (channel.type === 'announcement' && !isAdmin) {
+      if ((channel.type === 'announcement' || channel.type === 'announce') && !isAdmin) {
         const badge = document.createElement('span');
         badge.className = 'channel-badge';
         badge.textContent = 'Read only';

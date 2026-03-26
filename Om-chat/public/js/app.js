@@ -45,6 +45,7 @@ const el = {
   activeChannelName: $('#active-channel-name'),
   activeChannelTopic: $('#active-channel-topic'),
   searchToggle: $('#search-toggle'),
+  announceCallBtn: $('#announce-call-btn'),
   dmWallpaperBtn: $('#dm-wallpaper-btn'),
   pinToggle: $('#pin-toggle'),
   memberToggle: $('#member-toggle'),
@@ -138,6 +139,17 @@ const el = {
   channelSwitcher: $('#channel-switcher'),
   switchInput: $('#channel-switch-input'),
   switchList: $('#channel-switch-list'),
+  callMemberModal: $('#call-member-modal'),
+  callMemberClose: $('#call-member-close'),
+  callMemberCancel: $('#call-member-cancel'),
+  callMemberStart: $('#call-member-start'),
+  callMemberList: $('#call-member-list'),
+  callOverlay: $('#call-overlay'),
+  callOverlayTitle: $('#call-overlay-title'),
+  callOverlaySubtitle: $('#call-overlay-subtitle'),
+  callParticipantGrid: $('#call-participant-grid'),
+  callMuteBtn: $('#call-mute-btn'),
+  callLeaveBtn: $('#call-leave-btn'),
   userMicBtn: $('#user-mic-btn'),
   userDeafenBtn: $('#user-deafen-btn'),
   serverIconInput: $('#server-icon-input'),
@@ -184,6 +196,9 @@ const state = {
   pendingUploadItems: [],
   pendingUploads: [],
   gifPickerReady: false,
+  gifLibrary: [],
+  gifFolders: [],
+  gifManifestPromise: null,
   avatarUploadPending: false,
   deleteTargetId: null,
   actionModal: {
@@ -192,6 +207,7 @@ const state = {
   mobileNavOpen: false,
   mobileMembersOpen: false,
   announcementAlert: false,
+  activeCallIds: new Set(),
   voice: {
     active: false,
     mediaRecorder: null,
@@ -200,12 +216,25 @@ const state = {
     startedAt: 0,
     timerId: null
   },
+  call: {
+    currentCallId: null,
+    serverId: null,
+    channelId: null,
+    channelName: '',
+    localMuted: false,
+    localStream: null,
+    audioContext: null,
+    peers: new Map(),
+    participants: new Map(),
+    analysers: new Map(),
+    animationFrameId: 0,
+    pendingInvites: [],
+    selectedInviteUserIds: new Set()
+  },
   serverMenuPortal: null
 };
 
-const SLASH_COMMANDS = Object.freeze([
-  { name: '/gif', usage: '/gif', description: 'Open GIF picker', role: 'all' },
-  { name: '/png', usage: '/png', description: 'Open PNG picker', role: 'all' },
+const BASE_SLASH_COMMANDS = Object.freeze([
   { name: '/mute', usage: '/mute @username', description: 'Mute a member from chat', role: 'operator' },
   { name: '/unmute', usage: '/unmute @username', description: 'Allow a muted member to chat again', role: 'operator' },
   { name: '/gender', usage: '/gender @username `F`', description: 'Set a member gender badge', role: 'admin' },
@@ -273,6 +302,146 @@ const GIF_LIBRARY = ["___Itachi__Naruto__Itachi_Uchiha.png","akikunbeam.gif","An
     tags
   };
 });
+
+function normalizeGifPackItem(raw = {}) {
+  const name = String(raw.name || '').trim();
+  if (!name) return null;
+  const type = String(raw.type || '').toLowerCase() === 'gif' ? 'gif' : 'png';
+  const folder = String(raw.folder || 'general').trim().toLowerCase() || 'general';
+  const baseName = name.replace(/\.[^.]+$/, '');
+  const normalized = baseName
+    .toLowerCase()
+    .replace(/[_-]+/g, ' ')
+    .replace(/[^\w\s]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const tags = Array.from(new Set([
+    normalized,
+    folder,
+    ...normalized.split(' ').filter(Boolean),
+    ...(Array.isArray(raw.tags) ? raw.tags.map((tag) => String(tag || '').trim().toLowerCase()).filter(Boolean) : [])
+  ]));
+
+  return {
+    url: String(raw.url || ''),
+    type,
+    name,
+    folder,
+    tags
+  };
+}
+
+function getGifLibrary() {
+  if (Array.isArray(state.gifLibrary) && state.gifLibrary.length) return state.gifLibrary;
+  return GIF_LIBRARY.map((item) => ({ ...item, folder: item.folder || 'general' }));
+}
+
+function getGifFolderCommands() {
+  const folders = Array.isArray(state.gifFolders) && state.gifFolders.length
+    ? state.gifFolders
+    : Array.from(new Set(getGifLibrary().map((item) => String(item.folder || 'general').toLowerCase()).filter(Boolean))).sort((a, b) => a.localeCompare(b));
+  return folders.map((folder) => ({
+    name: `/${folder}`,
+    usage: `/${folder}`,
+    description: `Open ${folder} media folder`,
+    role: 'all',
+    mediaFolder: folder
+  }));
+}
+
+function getChatSlashCommands() {
+  return BASE_SLASH_COMMANDS;
+}
+
+function getMediaSlashCommands() {
+  return [
+    { name: '/gif', usage: '/gif', description: 'Show only GIF media', role: 'all', mediaMode: 'gif' },
+    { name: '/png', usage: '/png', description: 'Show only PNG stickers', role: 'all', mediaMode: 'png' },
+    ...getGifFolderCommands()
+  ];
+}
+
+function getAllSlashCommands() {
+  return [...getChatSlashCommands(), ...getMediaSlashCommands()];
+}
+
+async function ensureGifManifestLoaded() {
+  if (Array.isArray(state.gifLibrary) && state.gifLibrary.length) return state.gifLibrary;
+  if (state.gifManifestPromise) return state.gifManifestPromise;
+
+  state.gifManifestPromise = fetch('/api/gif-pack-manifest', { cache: 'no-store' })
+    .then((response) => {
+      if (!response.ok) throw new Error(`gif_manifest_${response.status}`);
+      return response.json();
+    })
+    .then((payload) => {
+      const items = Array.isArray(payload?.items)
+        ? payload.items.map(normalizeGifPackItem).filter(Boolean)
+        : [];
+      const folders = Array.isArray(payload?.folders)
+        ? payload.folders.map((folder) => String(folder || '').trim().toLowerCase()).filter(Boolean)
+        : [];
+
+      if (items.length) state.gifLibrary = items;
+      if (folders.length) state.gifFolders = Array.from(new Set(folders)).sort((a, b) => a.localeCompare(b));
+      if (!state.gifFolders.length && items.length) {
+        state.gifFolders = Array.from(new Set(items.map((item) => item.folder).filter(Boolean))).sort((a, b) => a.localeCompare(b));
+      }
+      return state.gifLibrary;
+    })
+    .catch(() => {
+      state.gifLibrary = getGifLibrary();
+      state.gifFolders = Array.from(new Set(state.gifLibrary.map((item) => String(item.folder || 'general').toLowerCase()).filter(Boolean))).sort((a, b) => a.localeCompare(b));
+      return state.gifLibrary;
+    })
+    .finally(() => {
+      state.gifManifestPromise = null;
+      updateSlashCommandMenu();
+    });
+
+  return state.gifManifestPromise;
+}
+
+function parseGifPickerQuery(query = '') {
+  let raw = String(query || '').trim().toLowerCase();
+  let mode = 'all';
+  let folder = '';
+  const availableFolders = new Set(getGifFolderCommands().map((item) => String(item.mediaFolder || '').toLowerCase()).filter(Boolean));
+
+  let changed = true;
+  while (raw.startsWith('/') && changed) {
+    changed = false;
+    if (raw.startsWith('/png')) {
+      mode = 'png';
+      raw = raw.replace(/^\/png\b/, '').trim();
+      changed = true;
+      continue;
+    }
+    if (raw.startsWith('/gif')) {
+      mode = 'gif';
+      raw = raw.replace(/^\/gif\b/, '').trim();
+      changed = true;
+      continue;
+    }
+    const folderMatch = raw.match(/^\/([a-z0-9_-]+)\b/);
+    const nextFolder = String(folderMatch?.[1] || '').toLowerCase();
+    if (nextFolder && availableFolders.has(nextFolder)) {
+      folder = nextFolder;
+      raw = raw.replace(/^\/[a-z0-9_-]+\b/, '').trim();
+      changed = true;
+    }
+  }
+
+  return { mode, folder, term: raw };
+}
+
+function getAvailableMediaCommands(query = '') {
+  const term = String(query || '').trim().toLowerCase();
+  return getMediaSlashCommands().filter((item) => {
+    if (!term || term === '/') return true;
+    return item.name.includes(term) || item.usage.includes(term) || item.description.toLowerCase().includes(term);
+  });
+}
 
 // ─── E2EE Core ────────────────────────────────────────────────────────────────
 //
@@ -1767,6 +1936,7 @@ function updateActiveHeader() {
     el.activeChannelTopic.textContent = partnerStatus || (partner ? `Direct message with ${partner.username}` : 'Direct message');
     el.composerInput.placeholder = partner ? `Message @${partner.username}` : 'Message direct message';
     el.pinToggle.classList.add('hidden');
+    el.announceCallBtn?.classList.add('hidden');
     el.dmWallpaperBtn?.classList.remove('hidden');
     el.pinnedPanel.classList.add('hidden');
     el.pinnedBanner.classList.add('hidden');
@@ -1782,6 +1952,7 @@ function updateActiveHeader() {
   el.activeChannelTopic.textContent = channel?.topic || 'No topic';
   el.composerInput.placeholder = channel ? `Message #${channel.name}` : 'Message #channel';
   el.pinToggle.classList.remove('hidden');
+  el.announceCallBtn?.classList.toggle('hidden', !(isAnnouncementChannel(channel) && canUseAdminOrOpFeatures()));
   el.dmWallpaperBtn?.classList.add('hidden');
   applyChatBackground(normalizeAssetUrl(state.server?.chatBackgroundUrl || state.server?.bannerUrl || ''), '');
   // Refresh badge to show group encryption state
@@ -1790,11 +1961,525 @@ function updateActiveHeader() {
 
 function applyAnnouncementLock() {
   const channel = state.currentView === 'server' ? getCurrentServerChannel() : null;
-  const isAnnouncement = channel?.type === 'announcement';
-  const canPost = !isAnnouncement || state.isAdmin;
+  const isAnnouncement = isAnnouncementChannel(channel);
+  const canPost = !isAnnouncement || canPostToChannel(channel);
 
   el.composer.style.display = canPost ? '' : 'none';
-  el.announcementNotice.classList.toggle('hidden', !isAnnouncement || state.isAdmin);
+  el.announcementNotice.classList.toggle('hidden', !isAnnouncement || canPost);
+}
+
+function getRtcConfig() {
+  return {
+    iceServers: [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' }
+    ],
+    sdpSemantics: 'unified-plan'
+  };
+}
+
+function getCallParticipant(userId) {
+  return state.call.participants.get(userId) || null;
+}
+
+function upsertCallParticipant(userId, patch = {}) {
+  if (!userId) return null;
+  const existing = getCallParticipant(userId) || {};
+  const next = {
+    userId,
+    username: existing.username || 'User',
+    avatarColor: existing.avatarColor || '#5865F2',
+    avatarUrl: existing.avatarUrl || '',
+    muted: Boolean(existing.muted),
+    speaking: Boolean(existing.speaking),
+    stream: existing.stream || null,
+    audioEl: existing.audioEl || null,
+    ...patch
+  };
+  state.call.participants.set(userId, next);
+  return next;
+}
+
+function stopCallSpeakingMonitor() {
+  if (state.call.animationFrameId) {
+    cancelAnimationFrame(state.call.animationFrameId);
+    state.call.animationFrameId = 0;
+  }
+}
+
+function ensureCallAudioContext() {
+  if (!state.call.audioContext) {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return null;
+    state.call.audioContext = new AudioCtx();
+  }
+  return state.call.audioContext;
+}
+
+function attachCallAnalyser(userId, stream, { playAudio = false } = {}) {
+  if (!stream) return;
+  const audioContext = ensureCallAudioContext();
+  if (!audioContext) return;
+
+  const existing = state.call.analysers.get(userId);
+  if (existing?.source) {
+    try { existing.source.disconnect(); } catch (_) {}
+  }
+
+  const analyser = audioContext.createAnalyser();
+  analyser.fftSize = 512;
+  analyser.smoothingTimeConstant = 0.75;
+
+  const source = audioContext.createMediaStreamSource(stream);
+  source.connect(analyser);
+
+  let audioEl = getCallParticipant(userId)?.audioEl || null;
+  if (playAudio) {
+    if (!audioEl) {
+      audioEl = document.createElement('audio');
+      audioEl.autoplay = true;
+      audioEl.playsInline = true;
+      audioEl.hidden = true;
+      document.body.appendChild(audioEl);
+    }
+    audioEl.srcObject = stream;
+    audioEl.play().catch(() => {});
+    upsertCallParticipant(userId, { audioEl });
+  }
+
+  state.call.analysers.set(userId, {
+    analyser,
+    source,
+    data: new Uint8Array(analyser.frequencyBinCount)
+  });
+}
+
+function attachRemoteStream(stream, userId) {
+  if (!stream || !userId) return null;
+  removeRemoteAudio(userId);
+
+  const audio = document.createElement('audio');
+  audio.id = `audio-${userId}`;
+  audio.autoplay = true;
+  audio.controls = false;
+  audio.playsInline = true;
+  audio.srcObject = stream;
+  audio.hidden = true;
+  document.body.appendChild(audio);
+  audio.play().catch(() => {});
+  return audio;
+}
+
+function removeRemoteAudio(userId) {
+  const audio = document.getElementById(`audio-${userId}`);
+  if (!audio) return;
+  audio.srcObject = null;
+  audio.remove();
+}
+
+function startCallSpeakingMonitor() {
+  stopCallSpeakingMonitor();
+
+  const tick = () => {
+    let changed = false;
+    for (const [userId, entry] of state.call.analysers.entries()) {
+      entry.analyser.getByteFrequencyData(entry.data);
+      const avg = entry.data.reduce((sum, value) => sum + value, 0) / Math.max(1, entry.data.length);
+      const participant = getCallParticipant(userId);
+      if (!participant) continue;
+      const speaking = avg > 18 && !participant.muted;
+      if (participant.speaking !== speaking) {
+        upsertCallParticipant(userId, { speaking });
+        changed = true;
+      }
+    }
+
+    if (changed) renderCallOverlay();
+    state.call.animationFrameId = requestAnimationFrame(tick);
+  };
+
+  state.call.animationFrameId = requestAnimationFrame(tick);
+}
+
+function syncCallInviteState(callId, active) {
+  if (!callId) return;
+  if (active) state.activeCallIds.add(callId);
+  else state.activeCallIds.delete(callId);
+
+  let changed = false;
+  state.messages = state.messages.map((message) => {
+    if (message?.type !== 'call_invite' || message?.meta?.callId !== callId) return message;
+    changed = true;
+    return {
+      ...message,
+      meta: {
+        ...(message.meta || {}),
+        callEnded: !active
+      }
+    };
+  });
+
+  if (changed) renderMessages();
+}
+
+function applyCallInviteState(message) {
+  if (!message || message.type !== 'call_invite') return message;
+  const callId = String(message.meta?.callId || '').trim();
+  return {
+    ...message,
+    meta: {
+      ...(message.meta || {}),
+      callEnded: callId ? !state.activeCallIds.has(callId) : true
+    }
+  };
+}
+
+function renderCallOverlay() {
+  if (!el.callOverlay || !el.callParticipantGrid) return;
+  const participants = Array.from(state.call.participants.values());
+  el.callOverlayTitle.textContent = `Voice Call - #${state.call.channelName || 'announce'}`;
+  el.callOverlaySubtitle.textContent = participants.length > 1
+    ? `${participants.length} people in call`
+    : 'Waiting for participants...';
+  el.callMuteBtn.textContent = state.call.localMuted ? 'Unmute' : 'Mute';
+
+  el.callParticipantGrid.innerHTML = '';
+  participants.forEach((participant) => {
+    const tile = document.createElement('article');
+    tile.className = `call-participant-tile ${participant.speaking ? 'is-speaking' : ''}`;
+
+    const avatar = document.createElement('div');
+    avatar.className = 'call-participant-avatar';
+    avatar.style.background = participant.avatarColor || '#5865F2';
+
+    if (participant.avatarUrl) {
+      const image = document.createElement('img');
+      image.src = participant.avatarUrl;
+      image.alt = '';
+      avatar.appendChild(image);
+    } else {
+      avatar.textContent = String(participant.username || '?').slice(0, 1).toUpperCase() || '?';
+    }
+
+    tile.appendChild(avatar);
+
+    if (participant.muted) {
+      const muted = document.createElement('div');
+      muted.className = 'call-muted-badge';
+      muted.textContent = 'Muted';
+      tile.appendChild(muted);
+    }
+
+    el.callParticipantGrid.appendChild(tile);
+  });
+}
+
+function closeCallMemberModal() {
+  state.call.selectedInviteUserIds = new Set();
+  el.callMemberModal?.classList.add('hidden');
+  if (el.callMemberList) el.callMemberList.innerHTML = '';
+  if (el.callMemberStart) el.callMemberStart.disabled = true;
+}
+
+function getMemberRoleLabel(member) {
+  const role = state.roles.find((entry) => entry.id === member?.roleId);
+  const label = String(role?.name || 'member').trim().toLowerCase();
+  return label === 'operator' ? 'op' : label;
+}
+
+function renderCallMemberPicker() {
+  if (!el.callMemberList) return;
+  const members = state.members
+    .filter((member) => member?.userId && member.userId !== state.user?.id)
+    .sort((a, b) => String(a.username || '').localeCompare(String(b.username || '')));
+
+  el.callMemberList.innerHTML = '';
+  members.forEach((member) => {
+    const label = document.createElement('label');
+    label.className = 'call-member-item';
+    label.innerHTML = `
+      <input type="checkbox" value="${escapeHtml(member.userId)}" ${state.call.selectedInviteUserIds.has(member.userId) ? 'checked' : ''} />
+      <span class="call-member-copy">
+        <span class="call-member-name">${escapeHtml(member.username || 'User')}</span>
+        <span class="call-member-role">${escapeHtml(getMemberRoleLabel(member))}</span>
+      </span>
+    `;
+    const input = label.querySelector('input');
+    input?.addEventListener('change', () => {
+      if (input.checked) state.call.selectedInviteUserIds.add(member.userId);
+      else state.call.selectedInviteUserIds.delete(member.userId);
+      el.callMemberStart.disabled = state.call.selectedInviteUserIds.size === 0;
+    });
+    el.callMemberList.appendChild(label);
+  });
+}
+
+function openCallMemberModal() {
+  if (!state.server?.id || !canUseAdminOrOpFeatures()) return;
+  state.call.selectedInviteUserIds = new Set();
+  renderCallMemberPicker();
+  el.callMemberStart.disabled = true;
+  el.callMemberModal?.classList.remove('hidden');
+}
+
+function setOpusParameters(sdp) {
+  const source = String(sdp || '');
+  const opusMatch = source.match(/a=rtpmap:(\d+) opus\/48000\/2/i);
+  if (!opusMatch) return source;
+
+  const payloadType = opusMatch[1];
+  let result = source.replace(new RegExp(`a=fmtp:${payloadType} .*\\r\\n`, 'g'), '');
+  const opusParams = [
+    'minptime=10',
+    'useinbandfec=1',
+    'stereo=0',
+    'maxaveragebitrate=32000',
+    'cbr=0',
+    'usedtx=1'
+  ].join(';');
+
+  result = result.replace(
+    `a=rtpmap:${payloadType} opus/48000/2\r\n`,
+    `a=rtpmap:${payloadType} opus/48000/2\r\na=fmtp:${payloadType} ${opusParams}\r\n`
+  );
+  return result;
+}
+
+function destroyParticipantAudio(participant) {
+  if (participant?.audioEl) {
+    participant.audioEl.srcObject = null;
+    participant.audioEl.remove();
+  }
+}
+
+function getPeer(userId) {
+  return state.call.peers.get(userId) || null;
+}
+
+function closePeer(userId) {
+  const peer = state.call.peers.get(userId);
+  if (peer) {
+    peer.ontrack = null;
+    peer.onicecandidate = null;
+    peer.onconnectionstatechange = null;
+    try { peer.close(); } catch (_) {}
+    state.call.peers.delete(userId);
+  }
+  const analyser = state.call.analysers.get(userId);
+  if (analyser?.source) {
+    try { analyser.source.disconnect(); } catch (_) {}
+  }
+  state.call.analysers.delete(userId);
+  removeRemoteAudio(userId);
+  const participant = getCallParticipant(userId);
+  destroyParticipantAudio(participant);
+  state.call.participants.delete(userId);
+}
+
+function closeAllPeers() {
+  for (const userId of Array.from(state.call.peers.keys())) {
+    closePeer(userId);
+  }
+}
+
+function teardownCallUi() {
+  stopCallSpeakingMonitor();
+  for (const analyser of state.call.analysers.values()) {
+    if (analyser?.source) {
+      try { analyser.source.disconnect(); } catch (_) {}
+    }
+  }
+  closeAllPeers();
+  for (const participant of state.call.participants.values()) destroyParticipantAudio(participant);
+  state.call.participants.clear();
+  state.call.analysers.clear();
+  if (state.call.localStream) {
+    state.call.localStream.getTracks().forEach((track) => track.stop());
+  }
+  if (state.call.audioContext && typeof state.call.audioContext.close === 'function') {
+    state.call.audioContext.close().catch(() => {});
+  }
+  state.call.localStream = null;
+  state.call.audioContext = null;
+  state.call.localMuted = false;
+  state.call.currentCallId = null;
+  state.call.serverId = null;
+  state.call.channelId = null;
+  state.call.channelName = '';
+  el.callOverlay?.classList.add('hidden');
+}
+
+async function ensureLocalCallStream(callId) {
+  if (state.call.localStream) return state.call.localStream;
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: { ideal: true },
+        noiseSuppression: { ideal: true },
+        autoGainControl: { ideal: true },
+        sampleRate: { ideal: 48000 },
+        channelCount: { ideal: 1 },
+        latency: { ideal: 0.01 },
+        suppressLocalAudioPlayback: true
+      },
+      video: false
+    });
+    state.call.localStream = stream;
+    const localUser = state.user || {};
+    upsertCallParticipant(localUser.id, {
+      username: localUser.username || 'You',
+      avatarColor: localUser.avatarColor || '#5865F2',
+      avatarUrl: localUser.avatarUrl || '',
+      muted: false,
+      stream
+    });
+    attachCallAnalyser(localUser.id, stream);
+    startCallSpeakingMonitor();
+    if (location.hostname === 'localhost') {
+      stream.getAudioTracks().forEach((track) => {
+        console.log('[Om Chat Call] Audio track settings:', track.getSettings());
+      });
+    }
+    return stream;
+  } catch (error) {
+    socketActions.callLeave({ callId });
+    showVoiceTooltip('Microphone access denied. Cannot join call.');
+    teardownCallUi();
+    throw error;
+  }
+}
+
+function createCallPeer(targetUserId) {
+  if (!targetUserId) return null;
+  closePeer(targetUserId);
+
+  const peer = new RTCPeerConnection(getRtcConfig());
+  if (state.call.localStream) {
+    state.call.localStream.getTracks().forEach((track) => peer.addTrack(track, state.call.localStream));
+  }
+
+  peer.onicecandidate = (event) => {
+    if (!event.candidate || !state.call.currentCallId) return;
+    socketActions.callSignal({
+      callId: state.call.currentCallId,
+      targetUserId,
+      signal: { type: 'candidate', candidate: event.candidate }
+    });
+  };
+
+  peer.ontrack = (event) => {
+    const [stream] = event.streams || [];
+    if (!stream) return;
+    const audioEl = attachRemoteStream(stream, targetUserId);
+    upsertCallParticipant(targetUserId, { stream, audioEl });
+    attachCallAnalyser(targetUserId, stream);
+    renderCallOverlay();
+  };
+
+  peer.onconnectionstatechange = () => {
+    if (['failed', 'disconnected', 'closed'].includes(peer.connectionState)) {
+      closePeer(targetUserId);
+      renderCallOverlay();
+    }
+  };
+
+  state.call.peers.set(targetUserId, peer);
+  return peer;
+}
+
+async function startCallOffer(targetUserId) {
+  const peer = createCallPeer(targetUserId);
+  if (!peer || !state.call.currentCallId) return;
+  const offer = await peer.createOffer({
+    offerToReceiveAudio: true,
+    offerToReceiveVideo: false,
+    voiceActivityDetection: true
+  });
+  const mungedSdp = setOpusParameters(offer.sdp);
+  await peer.setLocalDescription({ type: 'offer', sdp: mungedSdp });
+  socketActions.callSignal({
+    callId: state.call.currentCallId,
+    targetUserId,
+    signal: { type: 'offer', sdp: mungedSdp }
+  });
+}
+
+async function handleIncomingCallSignal({ fromUserId, signal }) {
+  if (!fromUserId || !signal) return;
+  const peer = signal.type === 'offer'
+    ? createCallPeer(fromUserId)
+    : getPeer(fromUserId) || createCallPeer(fromUserId);
+  if (!peer) return;
+
+  if (signal.type === 'offer') {
+    await peer.setRemoteDescription(new RTCSessionDescription(signal));
+    const answer = await peer.createAnswer();
+    await peer.setLocalDescription(answer);
+    socketActions.callSignal({
+      callId: state.call.currentCallId,
+      targetUserId: fromUserId,
+      signal: { type: 'answer', sdp: answer.sdp }
+    });
+    return;
+  }
+
+  if (signal.type === 'answer') {
+    await peer.setRemoteDescription(new RTCSessionDescription(signal));
+    return;
+  }
+
+  if (signal.type === 'candidate' && signal.candidate) {
+    await peer.addIceCandidate(new RTCIceCandidate(signal.candidate));
+  }
+}
+
+async function joinCallSession(callId, details = {}) {
+  if (!callId) return;
+  if (state.call.currentCallId && state.call.currentCallId !== callId) {
+    socketActions.callLeave({ callId: state.call.currentCallId });
+    teardownCallUi();
+  }
+
+  state.call.currentCallId = callId;
+  state.call.serverId = details.serverId || state.server?.id || null;
+  state.call.channelId = details.channelId || state.currentChannelId || null;
+  state.call.channelName = details.channelName || state.channels.find((channel) => channel.id === details.channelId)?.name || 'announce';
+  el.callOverlay?.classList.remove('hidden');
+  renderCallOverlay();
+  await ensureLocalCallStream(callId);
+  renderCallOverlay();
+  socketActions.callJoin({ callId });
+}
+
+function openHostedCall(callId, details = {}) {
+  if (!callId) return;
+  state.call.currentCallId = callId;
+  state.call.serverId = details.serverId || state.server?.id || null;
+  state.call.channelId = details.channelId || state.currentChannelId || null;
+  state.call.channelName = details.channelName || state.channels.find((channel) => channel.id === details.channelId)?.name || 'announce';
+  el.callOverlay?.classList.remove('hidden');
+  ensureLocalCallStream(callId)
+    .then(() => renderCallOverlay())
+    .catch(() => {});
+}
+
+function leaveCurrentCall({ notifyServer = true } = {}) {
+  const callId = state.call.currentCallId;
+  if (notifyServer && callId) socketActions.callLeave({ callId });
+  teardownCallUi();
+}
+
+function toggleCurrentCallMute() {
+  const track = state.call.localStream?.getAudioTracks?.()[0];
+  if (!track || !state.call.currentCallId) return;
+  track.enabled = !track.enabled;
+  state.call.localMuted = !track.enabled;
+  upsertCallParticipant(state.user?.id, { muted: state.call.localMuted });
+  socketActions.callMuteToggle({
+    callId: state.call.currentCallId,
+    muted: state.call.localMuted
+  });
+  renderCallOverlay();
 }
 
 function renderStatusPopover() {
@@ -1978,7 +2663,7 @@ async function submitCreateChannel() {
   const category = String(el.createChannelCategory.value || 'TEXT CHANNELS').trim() || 'TEXT CHANNELS';
   let type = String(el.createChannelType.value || 'text');
   const who = String(el.createChannelPerms.value || 'everyone');
-  if (type === 'text' && who === 'admins') type = 'announcement';
+  if (type === 'text' && who === 'admins') type = 'announce';
 
   const topic = String(el.createChannelTopic.value || '').trim();
   const slowMode = Number(el.createChannelSlow.value || 0);
@@ -2505,7 +3190,7 @@ function renderSidebar() {
     el.mobileNavToggle.setAttribute('aria-label', 'Open navigation for ' + state.server.name);
   }
 
-  renderChannels(state.channels, state.unread, state.currentView === 'server' ? state.currentChannelId : null, el.channelNav, state.isAdmin);
+  renderChannels(state.channels, state.unread, state.currentView === 'server' ? state.currentChannelId : null, el.channelNav, canUseAdminOrOpFeatures());
   renderMembers(state.members, state.roles, el.membersList);
   renderDMListUI();
 
@@ -2762,7 +3447,8 @@ function closeFloatingPanels(except = '') {
   if (except !== 'gif') el.gifPicker.classList.add('hidden');
 }
 
-function openGifPickerWithQuery(query = '') {
+async function openGifPickerWithQuery(query = '') {
+  await ensureGifManifestLoaded();
   closeFloatingPanels('gif');
   el.emojiPicker.classList.add('hidden');
   el.gifPicker.classList.remove('hidden');
@@ -2920,48 +3606,123 @@ function showVoiceTooltip(message) {
 function initGifPicker(onPick) {
   if (state.gifPickerReady) return;
   state.gifPickerReady = true;
+  const PAGE_SIZE = 10;
+  let currentPage = 0;
+  let currentQuery = '';
 
   const search = document.createElement('input');
   search.className = 'gif-picker-search';
-  search.placeholder = 'Search GIFs (type /png for PNG stickers)';
+  search.placeholder = 'Search media or type /gif, /png, /general, /anime...';
+
+  const commandMenu = document.createElement('div');
+  commandMenu.className = 'slash-command-menu gif-picker-command-menu hidden';
 
   const grid = document.createElement('div');
   grid.className = 'gif-picker-grid';
 
-  function resolveFilter(query = '') {
-    const raw = query.trim().toLowerCase();
-    let mode = 'all';
-    let term = raw;
+  const pager = document.createElement('div');
+  pager.className = 'gif-picker-pager hidden';
 
-    if (raw.startsWith('/png')) {
-      mode = 'png';
-      term = raw.replace(/^\/png\b/, '').trim();
-    } else if (raw.startsWith('/gif')) {
-      mode = 'gif';
-      term = raw.replace(/^\/gif\b/, '').trim();
-    }
+  const prevButton = document.createElement('button');
+  prevButton.type = 'button';
+  prevButton.className = 'btn-secondary gif-picker-page-btn';
+  prevButton.textContent = 'Previous';
 
-    return { mode, term };
+  const pageLabel = document.createElement('div');
+  pageLabel.className = 'gif-picker-page-label';
+
+  const nextButton = document.createElement('button');
+  nextButton.type = 'button';
+  nextButton.className = 'btn-secondary gif-picker-page-btn';
+  nextButton.textContent = 'Next';
+
+  pager.append(prevButton, pageLabel, nextButton);
+  commandMenu.addEventListener('mousedown', (event) => event.stopPropagation());
+  commandMenu.addEventListener('click', (event) => event.stopPropagation());
+  pager.addEventListener('mousedown', (event) => event.stopPropagation());
+  pager.addEventListener('click', (event) => event.stopPropagation());
+
+  function applyGifCommandSuggestion(command) {
+    if (!command) return;
+    currentPage = 0;
+    search.value = `${command.usage} `;
+    render(search.value);
+    search.focus();
   }
 
-  function render(query = '') {
-    const { mode, term } = resolveFilter(query);
-    const items = GIF_LIBRARY.filter((item) => {
+  function updateGifCommandMenu(value = '') {
+    const raw = String(value || '').trim();
+    if (!raw.startsWith('/')) {
+      commandMenu.classList.add('hidden');
+      commandMenu.innerHTML = '';
+      return;
+    }
+
+    const commands = getAvailableMediaCommands(raw);
+    if (!commands.length) {
+      commandMenu.classList.add('hidden');
+      commandMenu.innerHTML = '';
+      return;
+    }
+
+    const exactCommandMatch = commands.some((command) => String(command.name || '').toLowerCase() === raw);
+    if (exactCommandMatch) {
+      commandMenu.classList.add('hidden');
+      commandMenu.innerHTML = '';
+      return;
+    }
+
+    commandMenu.innerHTML = '';
+    commands.forEach((command, index) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'slash-command-item' + (index === 0 ? ' is-active' : '');
+      button.innerHTML = `<span class="slash-command-name">${escapeHtml(command.name)}</span><span class="slash-command-meta">${escapeHtml(command.description)}</span>`;
+      button.addEventListener('click', () => applyGifCommandSuggestion(command));
+      commandMenu.appendChild(button);
+    });
+    commandMenu.classList.remove('hidden');
+  }
+
+  function render(query = '', options = {}) {
+    const preservePage = options.preservePage === true;
+    if (!preservePage) currentPage = 0;
+    currentQuery = query;
+    updateGifCommandMenu(query);
+    const { mode, folder, term } = parseGifPickerQuery(query);
+    const raw = String(query || '').trim();
+    if (raw.startsWith('/') && mode === 'all' && !folder && getAvailableMediaCommands(raw).length) {
+      grid.innerHTML = '<div class="gif-empty">Choose a media command above.</div>';
+      pager.classList.add('hidden');
+      return;
+    }
+    const items = getGifLibrary().filter((item) => {
       if (mode !== 'all' && item.type !== mode) return false;
+      if (folder && item.folder !== folder) return false;
       if (!term) return true;
       return item.tags.some((tag) => tag.includes(term));
     });
 
     grid.innerHTML = '';
     if (!items.length) {
+      currentPage = 0;
       const empty = document.createElement('div');
       empty.className = 'gif-empty';
-      empty.textContent = mode === 'png' ? 'No PNG stickers matched that search.' : 'No media matched that search.';
+      if (folder && mode === 'png') empty.textContent = `No PNG stickers matched in ${folder}.`;
+      else if (folder && mode === 'gif') empty.textContent = `No GIFs matched in ${folder}.`;
+      else if (folder) empty.textContent = `No media matched in ${folder}.`;
+      else if (mode === 'png') empty.textContent = 'No PNG stickers matched that search.';
+      else empty.textContent = 'No media matched that search.';
       grid.appendChild(empty);
+      pager.classList.add('hidden');
       return;
     }
 
-    for (const item of items) {
+    const totalPages = Math.max(1, Math.ceil(items.length / PAGE_SIZE));
+    currentPage = Math.min(currentPage, totalPages - 1);
+    const pageItems = items.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
+
+    for (const item of pageItems) {
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'gif-item';
@@ -2970,10 +3731,33 @@ function initGifPicker(onPick) {
       button.addEventListener('click', () => onPick(item));
       grid.appendChild(button);
     }
+
+    if (items.length > PAGE_SIZE) {
+      pager.classList.remove('hidden');
+      pageLabel.textContent = `Page ${currentPage + 1} of ${totalPages}`;
+      prevButton.disabled = currentPage <= 0;
+      nextButton.disabled = currentPage >= totalPages - 1;
+    } else {
+      pager.classList.add('hidden');
+    }
   }
 
   search.addEventListener('input', () => render(search.value));
-  el.gifPicker.append(search, grid);
+  prevButton.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (currentPage <= 0) return;
+    currentPage -= 1;
+    render(currentQuery, { preservePage: true });
+  });
+  nextButton.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    currentPage += 1;
+    render(currentQuery, { preservePage: true });
+  });
+
+  el.gifPicker.append(search, commandMenu, grid, pager);
   render();
 }
 async function uploadFile(file) {
@@ -3164,6 +3948,12 @@ function queueAttachmentUpload(file) {
 async function sendCurrentMessage() {
   if (state.pendingUploads.length) {
     await Promise.allSettled([...state.pendingUploads]);
+  }
+
+  const currentChannel = state.currentView === 'server' ? getCurrentServerChannel() : null;
+  if (state.currentView === 'server' && isAnnouncementChannel(currentChannel) && !canPostToChannel(currentChannel)) {
+    showVoiceTooltip('You cannot post in this channel');
+    return;
   }
 
   const text = el.composerInput.value.trim();
@@ -3378,6 +4168,24 @@ function canUseOperatorCommands() {
   return Boolean(role && Array.isArray(role.permissions) && role.permissions.includes('manage_members'));
 }
 
+function isAnnouncementChannel(channel) {
+  return channel?.type === 'announcement' || channel?.type === 'announce';
+}
+
+function canUseAdminOrOpFeatures() {
+  const role = getSelfRole();
+  if (!role || !Array.isArray(role.permissions)) return false;
+  return role.permissions.includes('manage_server')
+    || role.permissions.includes('manage_channels')
+    || role.permissions.includes('manage_members');
+}
+
+function canPostToChannel(channel) {
+  if (!channel) return false;
+  if (!isAnnouncementChannel(channel)) return true;
+  return canUseAdminOrOpFeatures();
+}
+
 function isMutedMember(member) {
   return Boolean(String(member?.mutedAt || '').trim());
 }
@@ -3403,7 +4211,7 @@ function findMemberByCommandTarget(targetRaw) {
 
 function getAvailableSlashCommands(query = '') {
   const term = String(query || '').trim().toLowerCase();
-  return SLASH_COMMANDS.filter((item) => {
+  return getChatSlashCommands().filter((item) => {
     if (item.role === 'admin' && !canUseAdminOnlyCommands()) return false;
     if (item.role === 'operator' && !canUseOperatorCommands()) return false;
     if (!term) return true;
@@ -3627,7 +4435,7 @@ function selectChannel(channelId) {
   state.editing.draft = '';
   clearReplyTarget();
   clearUnread(channelId);
-  if (channel.type === 'announcement') {
+  if (isAnnouncementChannel(channel)) {
     setAnnouncementAlert(false);
   }
   applyChatBackground(normalizeAssetUrl(state.server?.chatBackgroundUrl || state.server?.bannerUrl || ''), '');
@@ -3989,6 +4797,7 @@ function bind() {
     });
     clearReplyTarget();
   });
+  void ensureGifManifestLoaded();
 
   el.emojiButton.addEventListener('click', (event) => {
     event.stopPropagation();
@@ -4000,7 +4809,7 @@ function bind() {
   el.giftButton.addEventListener('click', (event) => {
     event.stopPropagation();
     if (el.gifPicker.classList.contains('hidden')) {
-      openGifPickerWithQuery('');
+      void openGifPickerWithQuery('');
       return;
     }
 
@@ -4040,10 +4849,11 @@ function bind() {
       return;
     }
     if (event.key === 'Enter' && !event.shiftKey) {
-      const command = el.composerInput.value.trim().toLowerCase();
-      if (command === '/png' || command === '/gif') {
+      const command = el.composerInput.value.trim();
+      const parsedMediaCommand = parseGifPickerQuery(command);
+      if (String(command).startsWith('/') && (parsedMediaCommand.mode !== 'all' || parsedMediaCommand.folder || !parsedMediaCommand.term)) {
         event.preventDefault();
-        openGifPickerWithQuery(command);
+        await openGifPickerWithQuery(command);
         el.composerInput.value = '';
         el.composerInput.style.height = 'auto';
         return;
@@ -4236,6 +5046,23 @@ function bind() {
   el.voiceBtn.addEventListener('mousedown', startVoiceRecording);
   el.voiceBtn.addEventListener('mouseup', stopVoiceRecording);
   el.voiceBtn.addEventListener('mouseleave', stopVoiceRecording);
+  el.announceCallBtn?.addEventListener('click', openCallMemberModal);
+  el.callMemberClose?.addEventListener('click', closeCallMemberModal);
+  el.callMemberCancel?.addEventListener('click', closeCallMemberModal);
+  el.callMemberModal?.addEventListener('click', (event) => {
+    if (event.target === el.callMemberModal) closeCallMemberModal();
+  });
+  el.callMemberStart?.addEventListener('click', () => {
+    if (!state.server?.id || !state.currentChannelId || !state.call.selectedInviteUserIds.size) return;
+    socketActions.callStart({
+      serverId: state.server.id,
+      channelId: state.currentChannelId,
+      invitedUserIds: Array.from(state.call.selectedInviteUserIds)
+    });
+    closeCallMemberModal();
+  });
+  el.callMuteBtn?.addEventListener('click', toggleCurrentCallMute);
+  el.callLeaveBtn?.addEventListener('click', () => leaveCurrentCall());
 
   el.messageList.addEventListener('click', async (event) => {
     const image = event.target.closest('.attachment-image');
@@ -4278,6 +5105,19 @@ function bind() {
     if (replyJump) {
       const replyId = replyJump.dataset.replyId;
       if (!jumpToMessage(replyId)) showVoiceTooltip('Original message is not loaded right now');
+      return;
+    }
+
+    const joinCallButton = event.target.closest('[data-action="join-call"]');
+    if (joinCallButton) {
+      if (joinCallButton.disabled) return;
+      const callId = joinCallButton.dataset.callId;
+      const message = state.messages.find((item) => item?.meta?.callId === callId);
+      await joinCallSession(callId, {
+        serverId: state.server?.id,
+        channelId: message?.meta?.channelId || state.currentChannelId,
+        channelName: message?.meta?.channelName || ''
+      });
       return;
     }
 
@@ -4637,6 +5477,9 @@ function bind() {
     state.hasFocus = false;
     if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission();
   });
+  window.addEventListener('beforeunload', () => {
+    if (state.call.currentCallId) leaveCurrentCall();
+  });
   window.addEventListener('pageshow', refreshStoredE2EEState);
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') refreshStoredE2EEState();
@@ -4670,7 +5513,7 @@ function wireSocket() {
       const previousHeight = el.messageList.scrollHeight;
       const previousTop = el.messageList.scrollTop;
       state.remoteTypingUsers = [];
-      const decoded = await decodeMessageListForDisplay(messages || []);
+      const decoded = (await decodeMessageListForDisplay(messages || [])).map(applyCallInviteState);
       state.messages = older ? [...decoded, ...state.messages] : decoded;
       renderMessages();
       renderTypingIndicator();
@@ -4698,7 +5541,7 @@ function wireSocket() {
       renderTypingIndicator();
     },
     new_message: async ({ message }) => {
-      const decodedMessage = await decodeMessageForDisplay(message);
+      const decodedMessage = applyCallInviteState(await decodeMessageForDisplay(message));
       // Clear error status if this message decrypted successfully
       if (decodedMessage._encrypted && !decodedMessage._decryptFailed && e2ee.status === 'error') {
         e2ee.status = 'on';
@@ -4728,7 +5571,7 @@ function wireSocket() {
       }
       if (String(decodedMessage.channelId).startsWith('dm_')) await refreshDmList();
       const channelMeta = state.channels.find((item) => item.id === decodedMessage.channelId);
-      const isAnnouncement = channelMeta?.type === 'announcement';
+      const isAnnouncement = isAnnouncementChannel(channelMeta);
       const isDmChannel = String(decodedMessage.channelId || '').startsWith('dm_');
       const notificationAllowed = canUseNotifications();
       if (decodedMessage.userId !== state.user.id) {
@@ -4871,6 +5714,56 @@ function wireSocket() {
       updateActiveHeader();
     },
     typing_update: ({ channelId, typingUsers }) => { if (channelId === state.currentChannelId) { state.remoteTypingUsers = typingUsers || []; renderTypingIndicator(); } },
+    call_invite: async ({ callId, channelId, serverId, channelName }) => {
+      syncCallInviteState(callId, true);
+      await joinCallSession(callId, { channelId, serverId, channelName });
+    },
+    call_started: ({ callId, channelId, channelName }) => {
+      syncCallInviteState(callId, true);
+      openHostedCall(callId, { channelId, serverId: state.server?.id, channelName });
+    },
+    call_joined: async ({ callId, channelId, channelName, participants }) => {
+      state.call.currentCallId = callId;
+      state.call.channelId = channelId || state.call.channelId;
+      state.call.channelName = channelName || state.call.channelName;
+      (participants || []).forEach((participant) => {
+        upsertCallParticipant(participant.userId, participant);
+      });
+      renderCallOverlay();
+      for (const participant of participants || []) {
+        await startCallOffer(participant.userId);
+      }
+    },
+    call_participant_joined: ({ callId, userId, username, avatarColor, avatarUrl }) => {
+      syncCallInviteState(callId, true);
+      upsertCallParticipant(userId, { username, avatarColor, avatarUrl, muted: false });
+      renderCallOverlay();
+    },
+    call_participant_left: ({ callId, userId }) => {
+      if (callId !== state.call.currentCallId) return;
+      closePeerConnection(userId);
+      renderCallOverlay();
+    },
+    call_signal_received: async ({ callId, fromUserId, signal }) => {
+      if (callId !== state.call.currentCallId) return;
+      try {
+        await handleIncomingCallSignal({ fromUserId, signal });
+      } catch (error) {
+        console.warn('[Om Chat] Call signal failed:', error);
+      }
+    },
+    call_mute_update: ({ callId, userId, muted }) => {
+      if (callId !== state.call.currentCallId) return;
+      upsertCallParticipant(userId, { muted: Boolean(muted) });
+      renderCallOverlay();
+    },
+    call_ended: ({ callId }) => {
+      syncCallInviteState(callId, false);
+      if (callId === state.call.currentCallId) {
+        showVoiceTooltip('Call ended');
+        leaveCurrentCall({ notifyServer: false });
+      }
+    },
     error: (payload) => {
       console.warn('[Om Chat] Socket error:', payload);
       const code = String(payload?.code || '').trim();
@@ -4942,5 +5835,3 @@ async function bootstrap() {
 }
 
 bootstrap().catch((error) => console.error(error));
-
-

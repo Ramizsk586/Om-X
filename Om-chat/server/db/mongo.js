@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { applyMongoDnsOverrides } = require('../../../java/utils/mongoDns');
 
 const config = require('../config');
 const { createLogger } = require('../utils/logger');
@@ -22,6 +23,15 @@ async function connectMongo() {
   }
 
   if (!connectPromise) {
+    applyMongoDnsOverrides(config.mongo.uri, {
+      onApplied(servers) {
+        logger.info('Applied MongoDB DNS override', { servers });
+      },
+      onError(error) {
+        logger.warn('Failed to apply MongoDB DNS override', { message: error?.message || String(error) });
+      }
+    });
+
     connectPromise = mongoose.connect(config.mongo.uri, {
       dbName: config.mongo.dbName
     }).then((instance) => {

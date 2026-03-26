@@ -38,8 +38,9 @@ export class TabManager {
     this.SESSIONGUARD_SCRIPT_URL = new URL('../../sessionGuard.js', import.meta.url).href;
     this.APP_ROOT_URL = new URL('../../../', import.meta.url).href;
     this.OMX_ICON_URL = new URL('../../../assets/icons/app.ico', import.meta.url).href;
+    this.OMCHAT_ICON_URL = new URL('../../../Om-chat/public/assets/omx-browser.png', import.meta.url).href;
     
-    this.APP_ICON = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%236366f1'%3E%3Cpath d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z'/%3E%3C/svg%3E";
+    this.APP_ICON = this.OMX_ICON_URL;
     this.SETTINGS_ICON = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23ffffff'%3E%3Cpath d='M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.56-1.62.94l2.39-.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47.12.61l2.03 1.58c-.05.3-.07.63-.07.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l0.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-0.24,1.13-0.56,1.62-0.94l2.39.96 c0.22,0.08,0.47,0,0.59-0.22l1.92-3.32c0.12-0.22,0.07-0.47-0.12-0.61L19.14,12.94z M12,15.6c-1.98,0-3.6-1.62-3.6-3.6 s1.62-3.6,3.6-3.6s3.6,1.62,3.6,3.6S13.98,15.6,12,15.6z'/%3E%3C/svg%3E";
     this.TEXT_STUDIO_ICON = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%237c4dff'%3E%3Cpath d='M9.4 16.6L4.8 12l4.6-4.6L8 6l-6 6 6 6 1.4-1.4zm5.2 0l4.6-4.6-4.6-4.6L16 6l6 6-6 6-1.4-1.4z'/%3E%3C/svg%3E";
     this.HISTORY_ICON = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23ffffff'%3E%3Cpath d='M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-1 6v5l4.28 2.54.72-1.21-3.5-2.08V9H12z'/%3E%3C/svg%3E";
@@ -89,6 +90,218 @@ export class TabManager {
 
   _normalizeUrlForCompare(url) {
     return String(url || '').trim().toLowerCase();
+  }
+
+  getSiteOrigin(url = '') {
+    const value = String(url || '').trim();
+    if (!value) return '';
+    try {
+      const parsed = new URL(value, window.location.href);
+      if (!/^https?:$/i.test(parsed.protocol)) return '';
+      return parsed.origin.toLowerCase();
+    } catch (_) {
+      return '';
+    }
+  }
+
+  getStoredSitePermission(url = '', permission = '') {
+    const origin = this.getSiteOrigin(url);
+    const key = String(permission || '').trim().toLowerCase();
+    if (!origin || !key) return '';
+    const websitePermissions = this.settings?.websitePermissions;
+    const decision = websitePermissions?.[origin]?.[key];
+    return decision === 'allow' || decision === 'deny' ? decision : '';
+  }
+
+  getSitePermissionSnapshot(url = '') {
+    const origin = this.getSiteOrigin(url);
+    if (!origin) return {};
+    const websitePermissions = this.settings?.websitePermissions;
+    const stored = websitePermissions?.[origin];
+    return stored && typeof stored === 'object' ? { ...stored } : {};
+  }
+
+  async applySitePermissions(webview, url = '') {
+    if (!webview) return;
+    const currentUrl = String(url || (webview.getURL ? webview.getURL() : '') || '').trim();
+    const sitePermissions = this.getSitePermissionSnapshot(currentUrl);
+    const soundDecision = this.getStoredSitePermission(currentUrl, 'sound');
+    const muteAudio = soundDecision === 'deny';
+
+    try {
+      if (typeof webview.setAudioMuted === 'function') {
+        webview.setAudioMuted(muteAudio);
+      }
+    } catch (_) {}
+
+    if (!webview.executeJavaScript) return;
+    try {
+      await webview.executeJavaScript(`
+        (() => {
+          const permissions = ${JSON.stringify(sitePermissions)};
+          const mute = ${muteAudio ? 'true' : 'false'};
+          const deny = (key) => permissions[key] === 'deny';
+          const blockedError = (name, message) => {
+            try {
+              return new DOMException(message, name);
+            } catch (_) {
+              const error = new Error(message);
+              error.name = name;
+              return error;
+            }
+          };
+
+          const media = document.querySelectorAll('audio, video');
+          media.forEach((element) => {
+            element.muted = mute;
+            if (mute) {
+              element.setAttribute('muted', '');
+            } else {
+              element.removeAttribute('muted');
+            }
+          });
+          window.__omxSiteSoundBlocked = mute;
+
+          if (deny('fullscreen')) {
+            try {
+              const blockFullscreen = function blockFullscreen() {
+                return Promise.reject(blockedError('NotAllowedError', 'Fullscreen is blocked for this site.'));
+              };
+              if (Document.prototype.exitFullscreen && document.fullscreenElement) {
+                document.exitFullscreen().catch?.(() => {});
+              }
+              if (Element.prototype.requestFullscreen) Element.prototype.requestFullscreen = blockFullscreen;
+            } catch (_) {}
+          }
+
+          if (deny('pointer-lock')) {
+            try {
+              if (document.pointerLockElement && document.exitPointerLock) {
+                document.exitPointerLock();
+              }
+              if (Element.prototype.requestPointerLock) {
+                Element.prototype.requestPointerLock = function requestPointerLock() {};
+              }
+            } catch (_) {}
+          }
+
+          if (deny('clipboard')) {
+            try {
+              const clipboardApi = navigator.clipboard || {};
+              navigator.clipboard = {
+                ...clipboardApi,
+                read: () => Promise.reject(blockedError('NotAllowedError', 'Clipboard access is blocked for this site.')),
+                readText: () => Promise.reject(blockedError('NotAllowedError', 'Clipboard access is blocked for this site.')),
+                write: () => Promise.reject(blockedError('NotAllowedError', 'Clipboard access is blocked for this site.')),
+                writeText: () => Promise.reject(blockedError('NotAllowedError', 'Clipboard access is blocked for this site.'))
+              };
+            } catch (_) {}
+            ['copy', 'cut', 'paste'].forEach((eventName) => {
+              window.addEventListener(eventName, (event) => {
+                event.preventDefault();
+                event.stopImmediatePropagation();
+              }, true);
+            });
+          }
+
+          if (deny('geolocation')) {
+            try {
+              if (navigator.geolocation) {
+                const blockGeo = (errorCallback) => {
+                  if (typeof errorCallback === 'function') {
+                    errorCallback({ code: 1, message: 'Geolocation is blocked for this site.' });
+                  }
+                };
+                navigator.geolocation.getCurrentPosition = (_success, errorCallback) => blockGeo(errorCallback);
+                navigator.geolocation.watchPosition = (_success, errorCallback) => {
+                  blockGeo(errorCallback);
+                  return 0;
+                };
+              }
+            } catch (_) {}
+          }
+
+          if (navigator.mediaDevices) {
+            const originalGetUserMedia = navigator.mediaDevices.getUserMedia?.bind(navigator.mediaDevices);
+            const originalGetDisplayMedia = navigator.mediaDevices.getDisplayMedia?.bind(navigator.mediaDevices);
+            if (originalGetUserMedia && (deny('camera') || deny('microphone'))) {
+              navigator.mediaDevices.getUserMedia = (constraints = {}) => {
+                const wantsAudio = constraints === true || !!constraints?.audio;
+                const wantsVideo = constraints === true || !!constraints?.video;
+                if ((wantsAudio && deny('microphone')) || (wantsVideo && deny('camera'))) {
+                  return Promise.reject(blockedError('NotAllowedError', 'Media capture is blocked for this site.'));
+                }
+                return originalGetUserMedia(constraints);
+              };
+            }
+            if (originalGetDisplayMedia && deny('display-capture')) {
+              navigator.mediaDevices.getDisplayMedia = () => Promise.reject(blockedError('NotAllowedError', 'Screen capture is blocked for this site.'));
+            }
+          }
+
+          if (deny('notifications')) {
+            try {
+              if (typeof window.Notification === 'function') {
+                window.Notification.requestPermission = () => Promise.resolve('denied');
+                Object.defineProperty(window.Notification, 'permission', {
+                  configurable: true,
+                  get: () => 'denied'
+                });
+              }
+            } catch (_) {}
+          }
+
+          if (deny('midi') || deny('midi-sysex')) {
+            try {
+              if (typeof navigator.requestMIDIAccess === 'function') {
+                const originalRequestMidIAccess = navigator.requestMIDIAccess.bind(navigator);
+                navigator.requestMIDIAccess = (options = {}) => {
+                  if (deny('midi') || (options?.sysex && deny('midi-sysex'))) {
+                    return Promise.reject(blockedError('NotAllowedError', 'MIDI access is blocked for this site.'));
+                  }
+                  return originalRequestMidIAccess(options);
+                };
+              }
+            } catch (_) {}
+          }
+
+          if (deny('storage-access') || deny('top-level-storage-access')) {
+            try {
+              if (typeof document.requestStorageAccess === 'function') {
+                document.requestStorageAccess = () => Promise.reject(blockedError('NotAllowedError', 'Storage access is blocked for this site.'));
+              }
+              if (typeof document.hasStorageAccess === 'function') {
+                document.hasStorageAccess = () => Promise.resolve(false);
+              }
+            } catch (_) {}
+          }
+
+          if (deny('window-management')) {
+            try {
+              if (typeof window.getScreenDetails === 'function') {
+                window.getScreenDetails = () => Promise.reject(blockedError('NotAllowedError', 'Window management is blocked for this site.'));
+              }
+            } catch (_) {}
+          }
+
+          if (deny('fonts')) {
+            try {
+              if (typeof window.queryLocalFonts === 'function') {
+                window.queryLocalFonts = () => Promise.reject(blockedError('NotAllowedError', 'Local font access is blocked for this site.'));
+              }
+            } catch (_) {}
+          }
+
+          if (deny('your-device-use')) {
+            try {
+              if (typeof IdleDetector !== 'undefined' && IdleDetector?.requestPermission) {
+                IdleDetector.requestPermission = () => Promise.resolve('denied');
+              }
+            } catch (_) {}
+          }
+        })();
+      `, true);
+    } catch (_) {}
   }
 
   isPdfUrl(url = '') {
@@ -203,6 +416,7 @@ export class TabManager {
     this.tabs.forEach((tab) => {
       if (!tab?.webview) return;
       tab.webview.setAttribute('allowpopups', 'yes');
+      this.applySitePermissions(tab.webview, tab.webview.getURL ? tab.webview.getURL() : tab.url);
       if (!tab.domReady) return;
       this.applyGlobalWebsiteCss(tab.webview);
       this.applyYouTubeAddon(tab.webview);
@@ -3985,7 +4199,10 @@ body[class*="overflow-hidden"]:not([data-legit]) {
           const cleanUiAttr = 'data-omx-yt-clean-ui';
           const blurAttr = 'data-omx-blur-thumbnails';
           const bwAttr = 'data-omx-yt-bw';
+          const adGraceAttr = 'data-omx-yt-ad-grace';
           const blurMarkerAttr = 'data-omx-thumb-blur';
+          const reloadRemainingKey = 'omxYtCleanUiReloadsRemaining';
+          const adGraceKey = 'omxYtCleanUiAdBlockUntil';
 
           const state = window[stateKey] || (window[stateKey] = {});
           if (typeof state.cleanup === 'function') {
@@ -3993,6 +4210,34 @@ body[class*="overflow-hidden"]:not([data-legit]) {
           }
           if (state.adSkipInterval) clearInterval(state.adSkipInterval);
           if (state.adSkipObserver) state.adSkipObserver.disconnect();
+
+          const getSessionNumber = (key) => {
+            try {
+              const raw = Number(sessionStorage.getItem(key) || '0');
+              return Number.isFinite(raw) ? raw : 0;
+            } catch (_) {
+              return 0;
+            }
+          };
+
+          const isAdGraceActive = () => getSessionNumber(adGraceKey) > Date.now();
+
+          const refreshAdGraceAttr = () => {
+            const active = isAdGraceActive();
+            root.setAttribute(adGraceAttr, active ? '1' : '0');
+            if (state.adGraceTimer) {
+              clearTimeout(state.adGraceTimer);
+              state.adGraceTimer = null;
+            }
+            if (active) {
+              const msLeft = Math.max(getSessionNumber(adGraceKey) - Date.now(), 0);
+              state.adGraceTimer = setTimeout(() => {
+                state.adGraceTimer = null;
+                root.setAttribute(adGraceAttr, '0');
+              }, msLeft + 50);
+            }
+            return active;
+          };
 
           const clearInlineBlur = () => {
             document.querySelectorAll('[' + blurMarkerAttr + '="1"]').forEach(node => {
@@ -4012,6 +4257,7 @@ body[class*="overflow-hidden"]:not([data-legit]) {
             root.removeAttribute(cleanUiAttr);
             root.removeAttribute(blurAttr);
             root.removeAttribute(bwAttr);
+            root.removeAttribute(adGraceAttr);
             // Restore any fast-forwarded video
             try {
               const v = document.querySelector('.html5-main-video') || document.querySelector('video');
@@ -4028,17 +4274,34 @@ body[class*="overflow-hidden"]:not([data-legit]) {
             } catch (e) { return false; }
           };
 
+          const scheduleCleanUiRecoveryReload = () => {
+            if (!${cfg.cleanUi} || !isWatchPath()) return;
+            const remainingReloads = getSessionNumber(reloadRemainingKey);
+            if (remainingReloads <= 0) return;
+            try {
+              sessionStorage.setItem(reloadRemainingKey, String(Math.max(remainingReloads - 1, 0)));
+            } catch (_) {}
+            if (state.cleanUiReloadTimer) clearTimeout(state.cleanUiReloadTimer);
+            state.cleanUiReloadTimer = setTimeout(() => {
+              state.cleanUiReloadTimer = null;
+              try { location.reload(); } catch (_) {}
+            }, remainingReloads > 1 ? 180 : 320);
+          };
+
           const updateCleanUiAttr = () => {
             const shouldCleanUi = ${cfg.cleanUi} && isWatchPath();
             root.setAttribute(cleanUiAttr, shouldCleanUi ? '1' : '0');
           };
           updateCleanUiAttr();
+          refreshAdGraceAttr();
+          scheduleCleanUiRecoveryReload();
 
           const onLocationChange = () => {
             if (state.cleanUiFrame) cancelAnimationFrame(state.cleanUiFrame);
             state.cleanUiFrame = requestAnimationFrame(() => {
               state.cleanUiFrame = null;
               updateCleanUiAttr();
+              refreshAdGraceAttr();
             });
           };
 
@@ -4073,6 +4336,8 @@ body[class*="overflow-hidden"]:not([data-legit]) {
           rules.push('html[' + cleanUiAttr + '="1"] ytd-rich-grid-renderer ytd-rich-item-renderer, html[' + cleanUiAttr + '="1"] ytd-rich-section-renderer, html[' + cleanUiAttr + '="1"] ytd-reel-shelf-renderer, html[' + cleanUiAttr + '="1"] ytd-watch-flexy #secondary, html[' + cleanUiAttr + '="1"] ytd-watch-flexy #secondary-inner, html[' + cleanUiAttr + '="1"] ytd-watch-next-secondary-results-renderer, html[' + cleanUiAttr + '="1"] ytd-watch-next-secondary-results-renderer #related, html[' + cleanUiAttr + '="1"] #items.ytd-watch-next-secondary-results-renderer, html[' + cleanUiAttr + '="1"] ytd-compact-video-renderer, html[' + cleanUiAttr + '="1"] ytd-compact-autoplay-renderer, html[' + cleanUiAttr + '="1"] .ytp-endscreen-content, html[' + cleanUiAttr + '="1"] .ytp-endscreen-next, html[' + cleanUiAttr + '="1"] .ytp-ce-element, html[' + cleanUiAttr + '="1"] .ytp-videowall-still, html[' + cleanUiAttr + '="1"] .ytp-upnext, html[' + cleanUiAttr + '="1"] .ytp-pause-overlay { display: none !important; }');
           ` : ''}
 
+          rules.push('html[' + adGraceAttr + '="1"] .video-ads, html[' + adGraceAttr + '="1"] .ytp-ad-module, html[' + adGraceAttr + '="1"] .ytp-ad-player-overlay, html[' + adGraceAttr + '="1"] .ytp-ad-overlay-container, html[' + adGraceAttr + '="1"] .ytp-ad-survey, html[' + adGraceAttr + '="1"] .ytp-ad-message-container, html[' + adGraceAttr + '="1"] .ytd-display-ad-renderer, html[' + adGraceAttr + '="1"] ytd-promoted-sparkles-web-renderer { display: none !important; visibility: hidden !important; opacity: 0 !important; }');
+
           style.textContent = rules.join('\\n');
 
           state.cleanup = () => {
@@ -4083,6 +4348,14 @@ body[class*="overflow-hidden"]:not([data-legit]) {
             if (state.cleanUiFrame) {
               cancelAnimationFrame(state.cleanUiFrame);
               state.cleanUiFrame = null;
+            }
+            if (state.cleanUiReloadTimer) {
+              clearTimeout(state.cleanUiReloadTimer);
+              state.cleanUiReloadTimer = null;
+            }
+            if (state.adGraceTimer) {
+              clearTimeout(state.adGraceTimer);
+              state.adGraceTimer = null;
             }
             if (state.adSkipInterval) {
               clearInterval(state.adSkipInterval);
@@ -4097,7 +4370,7 @@ body[class*="overflow-hidden"]:not([data-legit]) {
           // ════════════════════════════════════════════════════════════════
           //  AD SKIPPER — skips skippable ads, fast-forwards the rest
           // ════════════════════════════════════════════════════════════════
-          if (${cfg.adSkipper}) {
+          if (${cfg.adSkipper} || isAdGraceActive()) {
             const AD_SPEED = 16;
             const NORMAL_SPEED = 1;
             const SKIP_BTN_SELECTORS = [
@@ -4140,6 +4413,7 @@ body[class*="overflow-hidden"]:not([data-legit]) {
 
             const tick = () => {
               try {
+                const graceBlocking = refreshAdGraceAttr();
                 const adActive = isAdPlaying();
                 const video = getAdVideo();
 
@@ -4150,6 +4424,11 @@ body[class*="overflow-hidden"]:not([data-legit]) {
                   // Fast-forward the ad video
                   if (video && video.playbackRate !== AD_SPEED) {
                     video.playbackRate = AD_SPEED;
+                  }
+                  if (graceBlocking && video && Number.isFinite(video.duration) && video.duration > 0) {
+                    try {
+                      video.currentTime = Math.max(video.currentTime || 0, Math.max(video.duration - 0.05, 0));
+                    } catch (_) {}
                   }
                   // Mute ad audio so fast playback isn't jarring
                   if (video && !video.muted) {
@@ -4176,11 +4455,17 @@ body[class*="overflow-hidden"]:not([data-legit]) {
 
             // Poll every 300ms — lightweight and catches all ad states
             state.adSkipInterval = setInterval(tick, 800);
+            tick();
 
             // Also react instantly to DOM mutations (skip button appearing)
             if (state.adSkipObserver) state.adSkipObserver.disconnect();
             state.adSkipObserver = new MutationObserver(() => {
-              if (isAdPlaying()) tryClickSkip();
+              if (isAdPlaying()) {
+                tryClickSkip();
+                tick();
+              } else {
+                refreshAdGraceAttr();
+              }
             });
             state.adSkipObserver.observe(document.documentElement || document.body, {
               childList: true, subtree: true, attributes: true,
@@ -4894,7 +5179,7 @@ body[class*="overflow-hidden"]:not([data-legit]) {
 
     const { tabItem, titleEl, iconEl, spinnerEl } = this.createTabUI(id, {
         isSystemPage, isTextStudio, isHistoryPage, isGamesPage, isDefensePage,
-        isHomePage, isTodoPage, isScraberPage, isServerOperatorPage, isLocalAIPage
+        isHomePage, isTodoPage, isScraberPage, isServerOperatorPage, isLocalAIPage, isOmChat
     }, finalUrl);
     const tabState = {
       id, webview: null, tabItem, titleEl, iconEl, spinnerEl, url: finalUrl,
@@ -4902,7 +5187,7 @@ body[class*="overflow-hidden"]:not([data-legit]) {
       isTextStudio, isHistoryPage, isGamesPage, isDefensePage,
       isHomePage, isTodoPage, isScraberPage, isServerOperatorPage, isLocalAIPage,
       isOmChat, noSuspend: isOmChat,
-      isLoading: true, isMainFrameLoading: true, customIcon: false, audible: false,
+      isLoading: true, isMainFrameLoading: true, customIcon: isOmChat, audible: false,
       interactiveSearch: options.interactiveSearch || null
     };
     this.tabs.push(tabState);
@@ -4913,45 +5198,19 @@ body[class*="overflow-hidden"]:not([data-legit]) {
     return id;
   }
 
-  _hashSeed(seed = '') {
-    let h = 0;
-    const s = String(seed || '');
-    for (let i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0;
-    return Math.abs(h);
+  _createTabFallbackIcon(_url = '', _id = 0, _title = '') {
+    return this.OMX_ICON_URL;
   }
 
-  _escapeSvgText(value = '') {
-    return String(value).replace(/[&<>"']/g, (ch) => ({
-      '&': '&amp;',
-      '<': '&lt;',
-      '>': '&gt;',
-      '"': '&quot;',
-      "'": '&#39;'
-    }[ch]));
-  }
-
-  _createTabFallbackIcon(url = '', id = 0, title = '') {
-    const palette = ['#3b82f6', '#14b8a6', '#8b5cf6', '#f59e0b', '#ef4444', '#22c55e', '#ec4899', '#0ea5e9'];
-    let letter = 'N';
-    try {
-      const parsed = new URL(String(url || ''), window.location.href);
-      if (parsed.hostname && parsed.hostname !== 'localhost') {
-        letter = parsed.hostname.replace(/^www\./, '').charAt(0).toUpperCase() || 'N';
-      } else if (parsed.pathname) {
-        letter = parsed.pathname.replace(/\/+/g, '').charAt(0).toUpperCase() || 'N';
-      }
-    } catch (_) {
-      letter = String(title || 'N').trim().charAt(0).toUpperCase() || 'N';
+  applyOmChatTabIcon(tabState) {
+    if (!tabState?.iconEl) return;
+    tabState.customIcon = true;
+    tabState.iconEl.src = this.OMCHAT_ICON_URL;
+    if (!tabState.isLoading) tabState.iconEl.style.visibility = 'visible';
+    tabState.iconEl.style.display = 'block';
+    if (tabState.titleEl && (!tabState.titleEl.textContent || tabState.titleEl.textContent === 'Loading...' || tabState.titleEl.textContent === 'New Tab')) {
+      tabState.titleEl.textContent = 'OmChat';
     }
-    const seed = `${url}|${id}|${title}`;
-    const color = palette[this._hashSeed(seed) % palette.length];
-    const safeLetter = this._escapeSvgText(letter);
-    return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
-      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-         <rect x="1.5" y="1.5" width="21" height="21" rx="6" fill="${color}"/>
-         <text x="12" y="16" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="11" font-weight="700" fill="#ffffff">${safeLetter}</text>
-       </svg>`
-    )}`;
   }
 
   createTabUI(id, flags, url = '') {
@@ -4959,7 +5218,8 @@ body[class*="overflow-hidden"]:not([data-legit]) {
     tabItem.className = 'tab-item';
     let iconSrc = this.APP_ICON;
     let title = 'Loading...';
-    if (flags.isHomePage) { iconSrc = this.HOME_ICON; title = 'Home'; }
+    if (flags.isOmChat) { iconSrc = this.OMCHAT_ICON_URL; title = 'OmChat'; }
+    else if (flags.isHomePage) { iconSrc = this.HOME_ICON; title = 'Home'; }
     else if (flags.isServerOperatorPage) { iconSrc = this.MINECRAFT_ICON; title = 'Server'; }
     else if (flags.isSystemPage) { iconSrc = this.SETTINGS_ICON; title = 'System'; }
     else if (flags.isTextStudio) { iconSrc = this.TEXT_STUDIO_ICON; title = 'Text Studio'; }
@@ -5064,6 +5324,7 @@ body[class*="overflow-hidden"]:not([data-legit]) {
     webview.addEventListener('did-start-loading', async () => {
       try {
         const url = webview.getURL ? webview.getURL() : '';
+        await this.applySitePermissions(webview, url);
         const isWebsite = this.isWebsiteUrl(url);
         const isYT = this.isYouTubeUrl(url);
         const isSearchEngine = this.isSearchEngineUrl(url);
@@ -5113,6 +5374,7 @@ body[class*="overflow-hidden"]:not([data-legit]) {
     webview.addEventListener('dom-ready', async () => {
         try {
             tabState.domReady = true;
+            await this.applySitePermissions(webview, webview.getURL ? webview.getURL() : tabState.url);
             await this.applyGlobalWebsiteCss(webview);
             await this.applyYouTubeAddon(webview);
             await this.applyFloatingAdBlocker(webview);
@@ -5357,6 +5619,7 @@ body[class*="overflow-hidden"]:not([data-legit]) {
       const isOmChatNow = this.isOmChatUrl(e.url);
       tabState.isOmChat = isOmChatNow;
       tabState.noSuspend = isOmChatNow;
+      if (isOmChatNow) this.applyOmChatTabIcon(tabState);
       tabState.url = e.url; 
       if (this.isPdfUrl(e.url) && !tabState.customIcon) {
         tabState.titleEl.textContent = webview.getTitle() || 'PDF Viewer';
@@ -5387,6 +5650,7 @@ body[class*="overflow-hidden"]:not([data-legit]) {
       // ── End Security Check ─────────────────────────────────────────────
 
       setTimeout(() => {
+        this.applySitePermissions(webview, e.url);
         this.applyGlobalWebsiteCss(webview);
         this.applyYouTubeAddon(webview);
         this.applyFloatingAdBlocker(webview);
@@ -5406,9 +5670,11 @@ body[class*="overflow-hidden"]:not([data-legit]) {
       const isOmChatNow = this.isOmChatUrl(e.url);
       tabState.isOmChat = isOmChatNow;
       tabState.noSuspend = isOmChatNow;
+      if (isOmChatNow) this.applyOmChatTabIcon(tabState);
       tabState.url = e.url;
       if (this.activeTabId === tabState.id) this.onTabStateChange(e.url, false);
       setTimeout(() => {
+        this.applySitePermissions(webview, e.url);
         this.applyGlobalWebsiteCss(webview);
         this.applyYouTubeAddon(webview);
         this.applyFloatingAdBlocker(webview);

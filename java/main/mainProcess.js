@@ -8,6 +8,7 @@ const os = require('os');
 const { MongoClient } = require('mongodb');
 const { pathToFileURL, fileURLToPath } = require('url');
 const dotenv = require('dotenv');
+const { applyMongoDnsOverrides } = require('../utils/mongoDns');
 
 function loadOmxEnvFiles() {
   const candidates = [
@@ -26,7 +27,7 @@ function loadOmxEnvFiles() {
     const target = String(candidate || '').trim();
     if (!target || seen.has(target)) continue;
     seen.add(target);
-    dotenv.config({ path: target, override: false });
+    dotenv.config({ path: target, override: false, quiet: true });
   }
 }
 
@@ -241,12 +242,15 @@ const OMX_GAMES_ROOT = path.resolve(OMX_APP_ROOT, 'game', 'electron');
 const OMX_LAN_SERVER_ENTRY = path.resolve(OMX_GAMES_ROOT, 'chessly electron', 'java', 'lanServer.js');
 const OMX_LAN_DEFAULT_PORT = 3001;
 const OMX_MCP_MODULE = path.resolve(OMX_APP_ROOT, 'mcp', 'server.mjs');
+const OMX_MCP_BOOTSTRAP = path.resolve(OMX_APP_ROOT, 'java', 'main', 'mcpBootstrap.cjs');
 const OMX_OMCHAT_ROOT = path.resolve(OMX_APP_ROOT, 'Om-chat');
 const OMX_OMCHAT_ENTRY = path.resolve(OMX_OMCHAT_ROOT, 'server', 'index.js');
 const OMX_OMCHAT_NGROK_HELPER = path.resolve(OMX_OMCHAT_ROOT, 'scripts', 'run-with-ngrok.js');
 const OMX_OMCHAT_BG_LAUNCHER = path.resolve(OMX_OMCHAT_ROOT, 'backgroundLauncher.js');
 const OMX_OMCHAT_BG_PID_FILE = path.resolve(OMX_OMCHAT_ROOT, '.background-server.pid');
 const OMX_OMCHAT_BG_URL_FILE = path.resolve(OMX_OMCHAT_ROOT, '.background-server.url');
+const OMX_MCP_BG_PID_FILE = path.resolve(__dirname, '../../.mcp-background.pid');
+const OMX_MCP_BG_CONFIG_FILE = path.resolve(__dirname, '../../.mcp-background.json');
 const OMX_OMCHAT_DEFAULT_PORT = 3031;
 const OMX_FIREWALL_RULE_STATE_VERSION = 2;
 const OMX_ALLOWED_SCRIPT_ENTRY_EXTENSIONS = new Set(['.js', '.cjs', '.mjs']);
@@ -365,11 +369,29 @@ async function getCachedGpuInfoPayload() {
           && (
             !value.availableMemory
             || value.availableMemory <= 0
-            || dxdiagInfo.isIntegrated
-            || Math.abs(dxdiagInfo.availableMemory - value.availableMemory) > 512
+            || (!dxdiagInfo.isIntegrated && value.isIntegrated)
+            || dxdiagInfo.dedicatedMemoryMB > value.dedicatedMemoryMB
+            || (value.isIntegrated && dxdiagInfo.availableMemory < value.availableMemory)
           )
         ) {
           value = dxdiagInfo;
+        }
+      } catch (_) {
+        // ignore and return best-known value
+      }
+
+      try {
+        const controllerInfo = await getWindowsVideoControllerInfoPayload();
+        if (
+          controllerInfo.availableMemory > 0
+          && (
+            !value.availableMemory
+            || value.availableMemory <= 0
+            || (controllerInfo.isIntegrated && value.isIntegrated && (!value.dedicatedMemoryMB || value.dedicatedMemoryMB <= 0))
+            || (controllerInfo.isIntegrated && !value.isIntegrated && !value.dedicatedMemoryMB)
+          )
+        ) {
+          value = controllerInfo;
         }
       } catch (_) {
         // ignore and return best-known value
@@ -1302,6 +1324,104 @@ function isBackgroundServerRunning() {
   }
 }
 
+function readMcpBackgroundConfig() {
+  try {
+    if (!fs.existsSync(OMX_MCP_BG_CONFIG_FILE)) return null;
+    const parsed = JSON.parse(fs.readFileSync(OMX_MCP_BG_CONFIG_FILE, 'utf-8'));
+    if (!parsed || typeof parsed !== 'object') return null;
+    return {
+      host: String(parsed.host || '127.0.0.1').trim() || '127.0.0.1',
+      port: Number(parsed.port || 3000) || 3000,
+      enabledTools: (parsed.enabledTools && typeof parsed.enabledTools === 'object') ? parsed.enabledTools : {}
+    };
+  } catch (_) {
+    return null;
+  }
+}
+
+function writeMcpBackgroundMetadata(pid, config = {}) {
+  try {
+    fs.writeFileSync(OMX_MCP_BG_PID_FILE, String(pid || '').trim(), 'utf-8');
+    fs.writeFileSync(OMX_MCP_BG_CONFIG_FILE, JSON.stringify({
+      host: String(config.host || '127.0.0.1').trim() || '127.0.0.1',
+      port: Number(config.port || 3000) || 3000,
+      enabledTools: (config.enabledTools && typeof config.enabledTools === 'object') ? config.enabledTools : {}
+    }, null, 2), 'utf-8');
+  } catch (_) {}
+}
+
+function clearMcpBackgroundMetadata() {
+  try { if (fs.existsSync(OMX_MCP_BG_PID_FILE)) fs.unlinkSync(OMX_MCP_BG_PID_FILE); } catch (_) {}
+  try { if (fs.existsSync(OMX_MCP_BG_CONFIG_FILE)) fs.unlinkSync(OMX_MCP_BG_CONFIG_FILE); } catch (_) {}
+}
+
+function isMcpBackgroundRunning() {
+  try {
+    if (!fs.existsSync(OMX_MCP_BG_PID_FILE)) return false;
+    const pid = Number(fs.readFileSync(OMX_MCP_BG_PID_FILE, 'utf-8').trim());
+    if (!pid || Number.isNaN(pid)) return false;
+    process.kill(pid, 0);
+    return true;
+  } catch (_) {
+    clearMcpBackgroundMetadata();
+    return false;
+  }
+}
+
+async function startMcpBackground(config = {}) {
+  const host = String(config.host || '127.0.0.1').trim() || '127.0.0.1';
+  const port = Number(config.port || 3000) || 3000;
+  const enabledTools = (config.enabledTools && typeof config.enabledTools === 'object') ? config.enabledTools : {};
+
+  if (isMcpBackgroundRunning()) {
+    writeMcpBackgroundMetadata(fs.readFileSync(OMX_MCP_BG_PID_FILE, 'utf-8').trim(), { host, port, enabledTools });
+    return { success: true, host, port, alreadyRunning: true, pid: Number(fs.readFileSync(OMX_MCP_BG_PID_FILE, 'utf-8').trim()) || null };
+  }
+
+  return await new Promise((resolve) => {
+    try {
+      const childEnv = {
+        ...process.env,
+        MCP_TRANSPORT: 'http',
+        MCP_SERVER_OPTIONS: JSON.stringify({ host, port, enabledTools })
+      };
+      const child = spawn(process.execPath, [OMX_MCP_BOOTSTRAP, 'mcp'], {
+        detached: true,
+        stdio: 'ignore',
+        windowsHide: true,
+        env: childEnv
+      });
+      child.unref();
+      writeMcpBackgroundMetadata(child.pid, { host, port, enabledTools });
+      setTimeout(() => resolve({ success: true, host, port, pid: child.pid }), 400);
+    } catch (error) {
+      clearMcpBackgroundMetadata();
+      resolve({ success: false, error: error?.message || 'Failed to spawn MCP background server.' });
+    }
+  });
+}
+
+async function stopMcpBackground() {
+  try {
+    if (!fs.existsSync(OMX_MCP_BG_PID_FILE)) {
+      clearMcpBackgroundMetadata();
+      return false;
+    }
+    const pid = Number(fs.readFileSync(OMX_MCP_BG_PID_FILE, 'utf-8').trim());
+    if (pid && !Number.isNaN(pid)) {
+      try {
+        process.kill(pid, 'SIGTERM');
+      } catch (_) {
+        if (process.platform === 'win32') {
+          try { exec(`taskkill /pid ${pid} /T /F`); } catch (_) {}
+        }
+      }
+    }
+  } catch (_) {}
+  clearMcpBackgroundMetadata();
+  return true;
+}
+
 function getBackgroundServerUrl() {
   try {
     if (fs.existsSync(OMX_OMCHAT_BG_URL_FILE)) {
@@ -1648,6 +1768,47 @@ function resolveSyncConflict(localDoc, mongoDoc) {
   return mongoDoc;
 }
 
+function getMongoUriHostLabel(mongoUri = '') {
+  const value = String(mongoUri || '').trim();
+  if (!value) return '';
+  const normalized = value.replace(/^mongodb(\+srv)?:\/\//i, '');
+  const afterAuth = normalized.includes('@') ? normalized.split('@').pop() : normalized;
+  const hostPart = String(afterAuth || '').split('/')[0].split('?')[0].trim();
+  return hostPart;
+}
+
+function normalizeMongoConnectionError(error, mongoUri = '') {
+  const raw = String(error?.message || error || '').trim();
+  if (!raw) {
+    return 'Could not connect to MongoDB.';
+  }
+
+  const host = getMongoUriHostLabel(mongoUri);
+  const isSrvUri = /^mongodb\+srv:\/\//i.test(String(mongoUri || '').trim());
+  const lower = raw.toLowerCase();
+  const isDnsSrvFailure =
+    lower.includes('querysrv') ||
+    lower.includes('enotfound') ||
+    lower.includes('eservfail') ||
+    lower.includes('erefused') ||
+    lower.includes('dns') ||
+    lower.includes('srv');
+
+  if (isSrvUri && isDnsSrvFailure) {
+    return `MongoDB DNS lookup failed for ${host || 'the cluster host'}. The app could not resolve the SRV records for your mongodb+srv address. Check your internet/DNS settings, or replace MONGODB_URI with a standard mongodb:// host list from MongoDB Atlas.`;
+  }
+
+  if (lower.includes('authentication failed')) {
+    return 'MongoDB authentication failed. Check the username, password, and database user permissions in MONGODB_URI.';
+  }
+
+  if (lower.includes('server selection timed out')) {
+    return `MongoDB server selection timed out${host ? ` for ${host}` : ''}. Check network access, Atlas IP allowlist, and the connection string in MONGODB_URI.`;
+  }
+
+  return raw;
+}
+
 async function syncOmChatDatabases(event) {
   if (omchatSyncRunning) {
     return { success: false, error: 'A backup is already running.' };
@@ -1668,6 +1829,7 @@ async function syncOmChatDatabases(event) {
 
   const localDbDir = resolveOmChatLocalDbPath();
   const mongoUri = String(process.env.MONGODB_URI || '').trim();
+  applyMongoDnsOverrides(mongoUri);
   if (!mongoUri) {
     const error = 'MongoDB URI is not configured in .env.';
     sendDone({ success: false, error });
@@ -1739,8 +1901,114 @@ async function syncOmChatDatabases(event) {
     sendDone({ success: true, mode: 'backup' });
     return { success: true };
   } catch (error) {
-    const message = error?.message || 'Database backup failed.';
+    const message = normalizeMongoConnectionError(error, mongoUri) || 'Database backup failed.';
     sendDone({ success: false, error: message, mode: 'backup' });
+    return { success: false, error: message };
+  } finally {
+    try {
+      await client.close();
+    } catch (_) {}
+    omchatSyncRunning = false;
+  }
+}
+
+async function deleteOmChatMongoBackup(event) {
+  if (omchatSyncRunning) {
+    return { success: false, error: 'Another MongoDB operation is already running.' };
+  }
+  omchatSyncRunning = true;
+
+  const sendProgress = (payload) => {
+    try {
+      event?.sender?.send('omchat-sync-progress', payload);
+    } catch (_) {}
+  };
+
+  const sendDone = (payload) => {
+    try {
+      event?.sender?.send('omchat-sync-done', payload);
+    } catch (_) {}
+  };
+
+  const mongoUri = String(process.env.MONGODB_URI || '').trim();
+  applyMongoDnsOverrides(mongoUri);
+  if (!mongoUri) {
+    const error = 'MongoDB URI is not configured in .env.';
+    sendDone({ success: false, error, mode: 'delete' });
+    omchatSyncRunning = false;
+    return { success: false, error };
+  }
+
+  const collections = [
+    'users',
+    'servers',
+    'channels',
+    'roles',
+    'members',
+    'invites',
+    'bans',
+    'chat_messages',
+    'dm_conversations',
+    'upload_blobs',
+    'refresh_tokens',
+    'device_tokens',
+    'session_log',
+    'otpcodes'
+  ];
+
+  const client = new MongoClient(mongoUri, { ignoreUndefined: true });
+
+  try {
+    sendProgress({ status: 'Connecting to MongoDB...', percent: 2, message: 'Connecting to MongoDB...' });
+    await client.connect();
+    const db = client.db('omchat');
+    sendProgress({ status: 'MongoDB connected.', percent: 8, message: 'MongoDB connected.' });
+
+    let completedCollections = 0;
+    let removedCollections = 0;
+    const totalCollections = collections.length;
+
+    for (const collectionName of collections) {
+      const percentBase = 8 + Math.round((completedCollections / totalCollections) * 84);
+      sendProgress({
+        status: `Removing ${collectionName}...`,
+        percent: percentBase,
+        message: `Deleting MongoDB backup collection ${collectionName}`
+      });
+
+      try {
+        await db.collection(collectionName).drop();
+        removedCollections += 1;
+        sendProgress({
+          status: `Removed ${collectionName}.`,
+          percent: 8 + Math.round(((completedCollections + 1) / totalCollections) * 84),
+          message: `${collectionName} deleted`
+        });
+      } catch (error) {
+        const codeName = String(error?.codeName || '').toLowerCase();
+        const message = String(error?.message || '').toLowerCase();
+        const isMissing =
+          error?.code === 26 ||
+          codeName === 'namespacenotfound' ||
+          message.includes('ns not found') ||
+          message.includes('namespace not found');
+        if (!isMissing) throw error;
+        sendProgress({
+          status: `Skipped ${collectionName}.`,
+          percent: 8 + Math.round(((completedCollections + 1) / totalCollections) * 84),
+          message: `${collectionName} was already empty`
+        });
+      }
+
+      completedCollections += 1;
+    }
+
+    sendProgress({ status: 'Finalizing cleanup...', percent: 98, message: 'Finalizing cleanup...' });
+    sendDone({ success: true, mode: 'delete' });
+    return { success: true, removedCollections };
+  } catch (error) {
+    const message = normalizeMongoConnectionError(error, mongoUri) || 'Failed to delete MongoDB backup.';
+    sendDone({ success: false, error: message, mode: 'delete' });
     return { success: false, error: message };
   } finally {
     try {
@@ -1770,6 +2038,7 @@ async function importOmChatDatabases(event) {
 
   const localDbDir = resolveOmChatLocalDbPath();
   const mongoUri = String(process.env.MONGODB_URI || '').trim();
+  applyMongoDnsOverrides(mongoUri);
   if (!mongoUri) {
     const error = 'MongoDB URI is not configured in .env.';
     sendDone({ success: false, error, mode: 'import' });
@@ -1879,7 +2148,7 @@ async function importOmChatDatabases(event) {
     sendDone({ success: true, mode: 'import' });
     return { success: true };
   } catch (error) {
-    const message = error?.message || 'Database download failed.';
+    const message = normalizeMongoConnectionError(error, mongoUri) || 'Database download failed.';
     sendDone({ success: false, error: message, mode: 'import' });
     return { success: false, error: message };
   } finally {
@@ -1900,6 +2169,7 @@ function buildMongoFilter(fields, doc) {
 
 async function getOmChatMongoStats() {
   const mongoUri = String(process.env.MONGODB_URI || '').trim();
+  applyMongoDnsOverrides(mongoUri);
   if (!mongoUri) {
     return { success: false, error: 'MongoDB URI is not configured in .env.' };
   }
@@ -1953,7 +2223,7 @@ async function getOmChatMongoStats() {
       }
     };
   } catch (error) {
-    return { success: false, error: error?.message || 'Failed to read MongoDB stats.' };
+    return { success: false, error: normalizeMongoConnectionError(error, mongoUri) || 'Failed to read MongoDB stats.' };
   } finally {
     try {
       await client.close();
@@ -2185,17 +2455,42 @@ async function shutdownManagedServers() {
     await stopLlamaNgrokTunnelInternal().catch(() => {});
 
     if (mcpServerProcess && mcpServerProcess.killed !== true) {
-      pushServerLog('mcp', 'info', 'Om-X is closing. Stopping MCP server.');
-      try {
-        const moduleRef = await loadMcpModule();
-        await moduleRef.stopServer();
-      } catch (_) {}
-      try {
-        mcpServerProcess.kill();
-      } catch (_) {}
-      mcpServerProcess = null;
-      serverStarts.mcp = null;
-      serverConfigs.mcp = null;
+      const alwaysOnMcp = Boolean(cachedSettings?.mcp?.alwaysOn);
+      if (alwaysOnMcp) {
+        pushServerLog('mcp', 'info', 'Om-X is closing. Always On enabled - keeping MCP server running in background.');
+        const currentMcpConfig = serverConfigs.mcp || {};
+        try {
+          const moduleRef = await loadMcpModule();
+          await moduleRef.stopServer();
+        } catch (_) {}
+        try { mcpServerProcess.kill(); } catch (_) {}
+        mcpServerProcess = null;
+        serverStarts.mcp = null;
+        serverConfigs.mcp = {
+          host: String(currentMcpConfig.host || '127.0.0.1').trim() || '127.0.0.1',
+          port: Number(currentMcpConfig.port || 3000) || 3000,
+          enabledTools: (currentMcpConfig.enabledTools && typeof currentMcpConfig.enabledTools === 'object') ? currentMcpConfig.enabledTools : {}
+        };
+        const bgResult = await startMcpBackground(serverConfigs.mcp);
+        if (bgResult?.success) {
+          pushServerLog('mcp', 'success', `MCP background server running at http://${serverConfigs.mcp.host}:${serverConfigs.mcp.port}/mcp`);
+        } else {
+          pushServerLog('mcp', 'error', bgResult?.error || 'Failed to keep MCP running in background.');
+          serverConfigs.mcp = null;
+        }
+      } else {
+        pushServerLog('mcp', 'info', 'Om-X is closing. Stopping MCP server.');
+        try {
+          const moduleRef = await loadMcpModule();
+          await moduleRef.stopServer();
+        } catch (_) {}
+        try {
+          mcpServerProcess.kill();
+        } catch (_) {}
+        mcpServerProcess = null;
+        serverStarts.mcp = null;
+        serverConfigs.mcp = null;
+      }
     }
 
     if (lanServerInstance?.getStatus?.().isRunning) {
@@ -2448,7 +2743,9 @@ if (process.platform === 'win32') {
 const APP_ICON_PATH = path.resolve(__dirname, '../../assets/icons/app.png');
 const APP_ICO_PATH = path.resolve(__dirname, '../../assets/icons/app.ico');
 const HAS_ICON = fs.existsSync(APP_ICON_PATH) || fs.existsSync(APP_ICO_PATH);
-const DISPLAY_ICON = fs.existsSync(APP_ICON_PATH) ? APP_ICON_PATH : APP_ICO_PATH;
+const DISPLAY_ICON = process.platform === 'win32'
+  ? (fs.existsSync(APP_ICO_PATH) ? APP_ICO_PATH : APP_ICON_PATH)
+  : (fs.existsSync(APP_ICON_PATH) ? APP_ICON_PATH : APP_ICO_PATH);
 const SHORTCUT_ICON = fs.existsSync(APP_ICO_PATH) ? APP_ICO_PATH : (fs.existsSync(APP_ICON_PATH) ? APP_ICON_PATH : undefined);
 const ICONS_DIR = path.resolve(__dirname, '../../assets/icons');
 
@@ -2636,6 +2933,9 @@ const DEFAULT_SETTINGS = {
     dbMode: 'local',
     localDbPath: '',
     useLocalIpOnly: false,
+    alwaysOn: false
+  },
+  mcp: {
     alwaysOn: false
   },
   websitePermissions: {}
@@ -2850,6 +3150,19 @@ function normalizePermissionName(permission = '') {
   const value = String(permission || '').trim().toLowerCase();
   if (value === 'audiocapture') return 'microphone';
   if (value === 'videocapture') return 'camera';
+  if (value === 'pointerlock') return 'pointer-lock';
+  if (value === 'midisysex') return 'midi-sysex';
+  if (value === 'windowmanagement') return 'window-management';
+  if (value === 'localfonts') return 'fonts';
+  if (value === 'clipboard-write') return 'clipboard';
+  if (value === 'clipboard-sanitized-write') return 'clipboard';
+  if (value === 'clipboard-read') return 'clipboard';
+  if (value === 'idle-detection') return 'your-device-use';
+  if (value === 'sensors') return 'motion-sensors';
+  if (value === 'window-placement') return 'window-management';
+  if (value === 'local-fonts') return 'fonts';
+  if (value === 'speaker-selection') return 'sound';
+  if (value === 'background-fetch') return 'background-sync';
   if (value === 'display-capture') return 'display-capture';
   return value;
 }
@@ -2868,19 +3181,218 @@ function getPermissionDecisionKeys(permission = '', details = {}) {
 function getPermissionLabel(permission = '') {
   const normalized = normalizePermissionName(permission);
   const labels = {
-    notifications: 'show notifications',
-    microphone: 'use your microphone',
-    camera: 'use your camera',
-    geolocation: 'know your location',
-    midi: 'use MIDI devices',
-    'midi-sysex': 'use MIDI devices with SysEx',
-    'clipboard-read': 'read your clipboard',
+    'top-level-storage-access': 'access top-level storage',
+    'storage-access': 'access site storage',
     'clipboard-sanitized-write': 'write to your clipboard',
-    'pointer-lock': 'lock your pointer',
-    fullscreen: 'enter fullscreen',
-    'display-capture': 'capture your screen'
+    'clipboard-read': 'read your clipboard'
   };
-  return labels[normalized] || `use ${normalized}`;
+  return labels[normalized] || getSitePermissionDefinition(normalized)?.title || `use ${humanizePermissionKey(normalized)}`;
+}
+
+const SITE_PERMISSION_DEFINITIONS = Object.freeze([
+  { key: 'geolocation', title: 'Location', defaultDecision: 'ask' },
+  { key: 'camera', title: 'Camera', defaultDecision: 'ask' },
+  { key: 'microphone', title: 'Microphone', defaultDecision: 'ask' },
+  { key: 'notifications', title: 'Notifications', defaultDecision: 'ask' },
+  { key: 'midi', title: 'MIDI device control', defaultDecision: 'ask' },
+  { key: 'midi-sysex', title: 'MIDI device control & reprogram', defaultDecision: 'ask' },
+  { key: 'clipboard', title: 'Clipboard', defaultDecision: 'ask' },
+  { key: 'sound', title: 'Sound', defaultDecision: 'allow' },
+  { key: 'storage-access', title: 'Site storage access', defaultDecision: 'ask' },
+  { key: 'your-device-use', title: 'Your device use', defaultDecision: 'ask' },
+  { key: 'window-management', title: 'Window management', defaultDecision: 'ask' },
+  { key: 'fonts', title: 'Fonts', defaultDecision: 'ask' },
+  { key: 'top-level-storage-access', title: 'Top-level storage access', defaultDecision: 'ask' },
+  { key: 'fullscreen', title: 'Fullscreen', defaultDecision: 'ask' },
+  { key: 'pointer-lock', title: 'Pointer lock', defaultDecision: 'ask' },
+  { key: 'display-capture', title: 'Screen capture', defaultDecision: 'ask' }
+]);
+
+const SITE_PERMISSION_DEFINITION_MAP = new Map(
+  SITE_PERMISSION_DEFINITIONS.map((entry) => [entry.key, entry])
+);
+
+function getSitePermissionDefinition(permission = '') {
+  return SITE_PERMISSION_DEFINITION_MAP.get(normalizePermissionName(permission)) || null;
+}
+
+function humanizePermissionKey(permission = '') {
+  return String(permission || '')
+    .trim()
+    .replace(/[-_]+/g, ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase()) || 'Permission';
+}
+
+function getSitePermissionDefinitionsForOrigin(origin = '') {
+  const safeOrigin = String(origin || '').trim().toLowerCase();
+  const storedPermissions = normalizeWebsitePermissions(cachedSettings?.websitePermissions)?.[safeOrigin] || {};
+  const fallbackDefinitions = Object.keys(storedPermissions).map((key) => {
+    const normalizedKey = normalizePermissionName(key);
+    return SITE_PERMISSION_DEFINITION_MAP.get(normalizedKey) || {
+      key: normalizedKey,
+      title: humanizePermissionKey(normalizedKey),
+      defaultDecision: 'ask'
+    };
+  });
+
+  const merged = new Map();
+  [...SITE_PERMISSION_DEFINITIONS, ...fallbackDefinitions].forEach((definition) => {
+    merged.set(definition.key, definition);
+  });
+  return [...merged.values()];
+}
+
+function getSiteSession() {
+  return mainWindow?.webContents?.session || session.defaultSession;
+}
+
+function normalizeSiteSettingsUrl(rawUrl = '') {
+  const safe = String(rawUrl || '').trim();
+  if (!safe) return '';
+  try {
+    const parsed = new URL(safe);
+    if (!['http:', 'https:'].includes(String(parsed.protocol || '').toLowerCase())) return '';
+    return parsed.href;
+  } catch (_) {
+    return '';
+  }
+}
+
+function getSiteOriginFromUrl(rawUrl = '') {
+  const safeUrl = normalizeSiteSettingsUrl(rawUrl);
+  if (!safeUrl) return '';
+  try {
+    return new URL(safeUrl).origin.toLowerCase();
+  } catch (_) {
+    return '';
+  }
+}
+
+function getSitePermissionEntries(origin = '') {
+  return getSitePermissionDefinitionsForOrigin(origin).map((definition) => {
+    const storedDecision = getStoredPermissionDecision(origin, definition.key);
+    const effectiveDecision = storedDecision || definition.defaultDecision || 'ask';
+    return {
+      key: definition.key,
+      label: definition.title,
+      description: definition.description || '',
+      defaultDecision: definition.defaultDecision || 'ask',
+      storedDecision: storedDecision || '',
+      effectiveDecision
+    };
+  });
+}
+
+async function getSiteSettingsSnapshot(rawUrl = '') {
+  const url = normalizeSiteSettingsUrl(rawUrl);
+  if (!url) {
+    return { success: false, error: 'A valid website URL is required.' };
+  }
+
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch (_) {
+    return { success: false, error: 'A valid website URL is required.' };
+  }
+
+  const origin = parsed.origin.toLowerCase();
+  const hostname = String(parsed.hostname || '').toLowerCase();
+  const secure = parsed.protocol === 'https:';
+  const permissionEntries = getSitePermissionEntries(origin);
+  const allowedCount = permissionEntries.filter((entry) => entry.effectiveDecision === 'allow').length;
+  const blockedCount = permissionEntries.filter((entry) => entry.effectiveDecision === 'deny').length;
+
+  let cookies = [];
+  try {
+    cookies = await getSiteSession().cookies.get({ url });
+  } catch (_) {}
+
+  const cookieCount = Array.isArray(cookies) ? cookies.length : 0;
+  const cookieBytes = Array.isArray(cookies)
+    ? cookies.reduce((total, cookie) => total + Buffer.byteLength(`${cookie?.name || ''}=${cookie?.value || ''}`, 'utf8'), 0)
+    : 0;
+
+  return {
+    success: true,
+    site: {
+      url,
+      origin,
+      hostname,
+      protocol: parsed.protocol,
+      secure,
+      cookiesCount: cookieCount,
+      cookiesBytes: cookieBytes,
+      permissions: permissionEntries,
+      permissionsSummary: {
+        allowed: allowedCount,
+        blocked: blockedCount,
+        ask: permissionEntries.length - allowedCount - blockedCount
+      }
+    }
+  };
+}
+
+async function updateSitePermissionSetting(rawUrl = '', permission = '', decision = '') {
+  const origin = getSiteOriginFromUrl(rawUrl);
+  const safePermission = normalizePermissionName(permission);
+  const safeDecision = String(decision || '').trim().toLowerCase();
+  if (!origin) return { success: false, error: 'A valid website URL is required.' };
+  if (!SITE_PERMISSION_DEFINITION_MAP.has(safePermission)) {
+    return { success: false, error: 'Unsupported permission.' };
+  }
+
+  const nextPermissions = normalizeWebsitePermissions(cachedSettings?.websitePermissions);
+  if (safeDecision === 'allow' || safeDecision === 'deny') {
+    nextPermissions[origin] = {
+      ...(nextPermissions[origin] || {}),
+      [safePermission]: safeDecision
+    };
+  } else {
+    if (nextPermissions[origin]) {
+      delete nextPermissions[origin][safePermission];
+      if (!Object.keys(nextPermissions[origin]).length) delete nextPermissions[origin];
+    }
+  }
+
+  cachedSettings.websitePermissions = nextPermissions;
+  const didSave = await saveSettings(cachedSettings);
+  if (!didSave) {
+    return { success: false, error: 'Failed to save site permission.' };
+  }
+  return getSiteSettingsSnapshot(rawUrl);
+}
+
+async function resetSitePermissionSettings(rawUrl = '') {
+  const origin = getSiteOriginFromUrl(rawUrl);
+  if (!origin) return { success: false, error: 'A valid website URL is required.' };
+
+  const nextPermissions = normalizeWebsitePermissions(cachedSettings?.websitePermissions);
+  delete nextPermissions[origin];
+  cachedSettings.websitePermissions = nextPermissions;
+  const didSave = await saveSettings(cachedSettings);
+  if (!didSave) {
+    return { success: false, error: 'Failed to reset site permissions.' };
+  }
+  return getSiteSettingsSnapshot(rawUrl);
+}
+
+async function clearSiteStorageData(rawUrl = '') {
+  const url = normalizeSiteSettingsUrl(rawUrl);
+  if (!url) return { success: false, error: 'A valid website URL is required.' };
+  const origin = getSiteOriginFromUrl(url);
+  if (!origin) return { success: false, error: 'A valid website URL is required.' };
+
+  try {
+    const targetSession = getSiteSession();
+    await targetSession.clearStorageData({
+      origin,
+      storages: ['cookies', 'localstorage', 'indexdb', 'serviceworkers', 'cachestorage']
+    });
+    return getSiteSettingsSnapshot(url);
+  } catch (error) {
+    return { success: false, error: error?.message || 'Failed to clear site data.' };
+  }
 }
 
 function getRequestOrigin(details = {}, contents = null) {
@@ -2907,11 +3419,11 @@ function getStoredPermissionDecision(origin = '', permission = '') {
   return cachedSettings?.websitePermissions?.[safeOrigin]?.[safePermission] || null;
 }
 
-function persistPermissionDecision(origin = '', permission = '', decision = '') {
+async function persistPermissionDecision(origin = '', permission = '', decision = '') {
   const safeOrigin = String(origin || '').trim().toLowerCase();
   const safePermission = normalizePermissionName(permission);
   const safeDecision = decision === 'allow' ? 'allow' : (decision === 'deny' ? 'deny' : '');
-  if (!safeOrigin || !safePermission || !safeDecision) return;
+  if (!safeOrigin || !safePermission || !safeDecision) return false;
 
   const nextPermissions = normalizeWebsitePermissions(cachedSettings?.websitePermissions);
   nextPermissions[safeOrigin] = {
@@ -2919,7 +3431,7 @@ function persistPermissionDecision(origin = '', permission = '', decision = '') 
     [safePermission]: safeDecision
   };
   cachedSettings.websitePermissions = nextPermissions;
-  saveSettings(cachedSettings);
+  return saveSettings(cachedSettings);
 }
 
 const configuredPermissionSessions = new WeakSet();
@@ -2955,17 +3467,17 @@ function configureSitePermissions(targetSession) {
       title: 'Website Permission Request',
       message: `${siteLabel} wants to ${permissionLabel}.`,
       detail: `Om-X will let this website ${permissionLabel} only if you approve it.`
-    }).then(({ response }) => {
+    }).then(async ({ response }) => {
       if (response === 1) {
-        decisionKeys.forEach((key) => persistPermissionDecision(origin, key, 'allow'));
-        callback(true);
+        const results = await Promise.all(decisionKeys.map((key) => persistPermissionDecision(origin, key, 'allow')));
+        callback(results.every(Boolean));
         return;
       }
       if (response === 0) {
         callback(true);
         return;
       }
-      decisionKeys.forEach((key) => persistPermissionDecision(origin, key, 'deny'));
+      await Promise.all(decisionKeys.map((key) => persistPermissionDecision(origin, key, 'deny')));
       callback(false);
     }).catch(() => callback(false));
   });
@@ -3045,6 +3557,54 @@ function createCachedJsonListStore(filePath, maxItems) {
     scheduleFlush,
     flush
   };
+}
+
+async function saveSettings(nextSettings = cachedSettings) {
+  const normalizedSearchEngines = normalizeSearchEngines(nextSettings?.searchEngines);
+  const normalizedSettings = normalizeLockedSecuritySettings({
+    ...DEFAULT_SETTINGS,
+    ...(nextSettings || {}),
+    features: {
+      ...DEFAULT_SETTINGS.features,
+      ...(nextSettings?.features || {})
+    },
+    security: {
+      ...DEFAULT_SETTINGS.security,
+      ...(nextSettings?.security || {}),
+      virusTotal: normalizeVirusTotalSettings(nextSettings?.security?.virusTotal)
+    },
+    aiChat: {
+      ...DEFAULT_SETTINGS.aiChat,
+      ...(nextSettings?.aiChat || {})
+    },
+    youtubeAddon: normalizeYouTubeAddonSettings(nextSettings?.youtubeAddon),
+    shortcuts: {
+      ...DEFAULT_SETTINGS.shortcuts,
+      ...(nextSettings?.shortcuts || {})
+    },
+    llm: normalizeSharedLlmSettings(nextSettings?.llm),
+    extensions: normalizeBuiltInExtensionSettings(nextSettings?.extensions),
+    searchEngines: normalizedSearchEngines,
+    defaultSearchEngineId: normalizeDefaultSearchEngineId(nextSettings?.defaultSearchEngineId, normalizedSearchEngines),
+    blocklist: normalizeBlocklistEntries(nextSettings?.blocklist),
+    omchat: {
+      ...DEFAULT_SETTINGS.omchat,
+      ...(nextSettings?.omchat || {})
+    },
+    mcp: {
+      ...DEFAULT_SETTINGS.mcp,
+      ...(nextSettings?.mcp || {})
+    },
+    websitePermissions: normalizeWebsitePermissions(nextSettings?.websitePermissions)
+  });
+  normalizedSettings.aiConfig = normalizePersistedAiConfig(normalizedSettings.aiConfig);
+  cachedSettings = normalizedSettings;
+  const success = await safeWriteJson(settingsPath, normalizedSettings);
+  if (!success) return false;
+  applyPreferredWebTheme();
+  configureSecurity(normalizedSettings, mainWindow);
+  broadcast('settings-updated', normalizedSettings);
+  return true;
 }
 
 const historyStore = createCachedJsonListStore(historyPath, 5000);
@@ -3527,8 +4087,23 @@ function extractGpuInfoPayload(info) {
     ? Math.max(...totalCandidates)
     : Math.max(payload.dedicatedMemoryMB + payload.sharedMemoryMB, payload.dedicatedMemoryMB, payload.sharedMemoryMB);
 
-  payload.availableMemory = payload.totalMemoryMB || payload.sharedMemoryMB || payload.dedicatedMemoryMB || 0;
+  payload.availableMemory = getGpuUsableMemoryMB(payload);
   return payload;
+}
+
+function getGpuUsableMemoryMB(device = {}) {
+  const dedicated = Math.max(0, Number(device?.dedicatedMemoryMB || 0));
+  const shared = Math.max(0, Number(device?.sharedMemoryMB || 0));
+  const total = Math.max(0, Number(device?.totalMemoryMB || 0));
+  const isIntegrated = device?.isIntegrated === true;
+
+  if (dedicated > 0) return dedicated;
+  if (!isIntegrated) return total || shared || 0;
+
+  const integratedCandidate = total || shared || 0;
+  if (!integratedCandidate) return 0;
+  if (integratedCandidate <= 4096) return integratedCandidate;
+  return Math.min(integratedCandidate, 2048);
 }
 
 function parseDxdiagDisplayValue(line = '') {
@@ -3559,9 +4134,10 @@ function parseDxdiagGpuInfo(text = '') {
     const sharedMemoryMB = parseDxdiagDisplayValue(sharedMemoryLine);
     const totalMemoryMB = parseDxdiagDisplayValue(displayMemoryLine) || dedicatedMemoryMB + sharedMemoryMB;
     const isIntegrated = /integrated/i.test(String(hybridLine || '')) || /intel|uhd|iris/i.test(name);
+    const availableMemory = getGpuUsableMemoryMB({ dedicatedMemoryMB, sharedMemoryMB, totalMemoryMB, isIntegrated });
 
     return {
-      availableMemory: totalMemoryMB || sharedMemoryMB || dedicatedMemoryMB || 0,
+      availableMemory,
       totalMemoryMB,
       dedicatedMemoryMB,
       sharedMemoryMB,
@@ -3573,7 +4149,84 @@ function parseDxdiagGpuInfo(text = '') {
 
   const parsedDevices = deviceBlocks.map(parseDevice).filter((device) => device.availableMemory > 0);
   if (!parsedDevices.length) return null;
-  return parsedDevices.sort((a, b) => b.availableMemory - a.availableMemory)[0];
+  return parsedDevices.sort((a, b) => {
+    if ((b.dedicatedMemoryMB || 0) !== (a.dedicatedMemoryMB || 0)) {
+      return (b.dedicatedMemoryMB || 0) - (a.dedicatedMemoryMB || 0);
+    }
+    if (a.isIntegrated !== b.isIntegrated) {
+      return Number(a.isIntegrated) - Number(b.isIntegrated);
+    }
+    if ((b.totalMemoryMB || 0) !== (a.totalMemoryMB || 0)) {
+      return (b.totalMemoryMB || 0) - (a.totalMemoryMB || 0);
+    }
+    return (b.availableMemory || 0) - (a.availableMemory || 0);
+  })[0];
+}
+
+function parseBytesToMB(value = 0) {
+  const numeric = Number(value || 0);
+  if (!Number.isFinite(numeric) || numeric <= 0) return 0;
+  return Math.round(numeric / (1024 * 1024));
+}
+
+function parseWindowsVideoControllerInfo(text = '') {
+  const raw = String(text || '').trim();
+  if (!raw) return null;
+
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (_) {
+    return null;
+  }
+
+  const items = Array.isArray(parsed) ? parsed : [parsed];
+  const devices = items.map((item) => {
+    const name = String(item?.Name || item?.VideoProcessor || '').trim();
+    const adapterRAMMB = parseBytesToMB(item?.AdapterRAM);
+    const isIntegrated = /intel|uhd|iris|integrated/i.test(name);
+    return {
+      availableMemory: adapterRAMMB,
+      totalMemoryMB: adapterRAMMB,
+      dedicatedMemoryMB: adapterRAMMB,
+      sharedMemoryMB: 0,
+      isIntegrated,
+      name,
+      source: 'cim'
+    };
+  }).filter((device) => device.availableMemory > 0);
+
+  if (!devices.length) return null;
+  return devices.sort((a, b) => {
+    if (a.isIntegrated !== b.isIntegrated) return Number(b.isIntegrated) - Number(a.isIntegrated);
+    return (b.availableMemory || 0) - (a.availableMemory || 0);
+  })[0];
+}
+
+function getWindowsVideoControllerInfoPayload() {
+  return new Promise((resolve, reject) => {
+    execFile(
+      'powershell.exe',
+      [
+        '-NoProfile',
+        '-Command',
+        "Get-CimInstance Win32_VideoController | Select-Object Name,AdapterRAM,VideoProcessor | ConvertTo-Json -Compress"
+      ],
+      { windowsHide: true, timeout: 10000 },
+      (error, stdout) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        const parsed = parseWindowsVideoControllerInfo(stdout);
+        if (parsed) {
+          resolve(parsed);
+          return;
+        }
+        reject(new Error('Video controller memory could not be parsed.'));
+      }
+    );
+  });
 }
 
 function getWindowsDxdiagGpuInfoPayload() {
@@ -3780,7 +4433,12 @@ ipcMain.handle('mcp:start-server', async (_event, config = {}) => {
     duckduckgo: config?.enabledTools?.duckduckgo !== false,
     tavily: config?.enabledTools?.tavily !== false,
     news: config?.enabledTools?.news !== false,
-    diagram: config?.enabledTools?.diagram !== false
+    diagramGeneration: config?.enabledTools?.diagram === false ? false : config?.enabledTools?.diagramGeneration !== false,
+    diagramModification: config?.enabledTools?.diagram === false ? false : config?.enabledTools?.diagramModification !== false,
+    diagramValidation: config?.enabledTools?.diagram === false ? false : config?.enabledTools?.diagramValidation !== false,
+    diagramLayout: config?.enabledTools?.diagram === false ? false : config?.enabledTools?.diagramLayout !== false,
+    diagramAnalysis: config?.enabledTools?.diagram === false ? false : config?.enabledTools?.diagramAnalysis !== false,
+    diagramUtilities: config?.enabledTools?.diagram === false ? false : config?.enabledTools?.diagramUtilities !== false
   };
   if (!Object.values(enabledTools).some(Boolean)) {
     return { success: false, error: 'Enable at least one MCP tool before starting the server.' };
@@ -3788,6 +4446,26 @@ ipcMain.handle('mcp:start-server', async (_event, config = {}) => {
 
   if (!fs.existsSync(OMX_MCP_MODULE)) {
     return { success: false, error: 'MCP server entry not found.' };
+  }
+
+  if (isMcpBackgroundRunning()) {
+    const bgConfig = readMcpBackgroundConfig();
+    const bgHost = String(bgConfig?.host || host).trim() || host;
+    const bgPort = Number(bgConfig?.port || port) || port;
+    serverConfigs.mcp = {
+      host: bgHost,
+      port: bgPort,
+      enabledTools: bgConfig?.enabledTools || enabledTools
+    };
+    return {
+      success: true,
+      pid: null,
+      host: bgHost,
+      port: bgPort,
+      enabledTools: bgConfig?.enabledTools || enabledTools,
+      alreadyRunning: true,
+      alwaysOnBackground: true
+    };
   }
 
   try {
@@ -3828,6 +4506,12 @@ ipcMain.handle('mcp:start-server', async (_event, config = {}) => {
 
 ipcMain.handle('mcp:stop-server', async () => {
   if (!mcpServerProcess || mcpServerProcess.killed) {
+    if (isMcpBackgroundRunning()) {
+      await stopMcpBackground();
+      serverStarts.mcp = null;
+      serverConfigs.mcp = null;
+      return { success: true, alwaysOnBackground: true };
+    }
     return { success: false, error: 'MCP server is not running.' };
   }
   try {
@@ -3895,6 +4579,11 @@ ipcMain.handle('omchat:import-db', async (event) => {
   return importOmChatDatabases(event);
 });
 
+ipcMain.handle('omchat:delete-mongo-backup', async (event) => {
+  ensureTrustedServerControlSender(event);
+  return deleteOmChatMongoBackup(event);
+});
+
 ipcMain.handle('omchat:get-mongo-stats', async (event) => {
   ensureTrustedServerControlSender(event);
   return getOmChatMongoStats();
@@ -3907,6 +4596,34 @@ ipcMain.handle('server:get-status', async (_event, name) => {
   }
   if (serverName === 'omchat') {
     return getCachedServerStatus('omchat', () => getOmChatStatusPayload());
+  }
+  if (serverName === 'mcp') {
+    return getCachedServerStatus('mcp', async () => {
+      const status = getServerStatusPayload('mcp');
+      const readinessHost = status.config?.launchHost || status.config?.localHost || status.config?.host;
+      const ready = readinessHost && status.config?.port
+        ? await checkTcpPort(readinessHost, status.config.port)
+        : false;
+      if (!ready && isMcpBackgroundRunning()) {
+        const bgConfig = readMcpBackgroundConfig();
+        const bgHost = bgConfig?.host || '127.0.0.1';
+        const bgPort = Number(bgConfig?.port || 3000) || 3000;
+        const bgReady = await checkTcpPort(bgHost, bgPort);
+        return {
+          success: true,
+          status: {
+            name: 'mcp',
+            running: bgReady,
+            ready: bgReady,
+            pid: null,
+            startedAt: serverStarts.mcp || null,
+            config: bgConfig ? { ...bgConfig, host: bgHost, port: bgPort } : (serverConfigs.mcp || null),
+            alwaysOnBackground: bgReady
+          }
+        };
+      }
+      return { success: true, status: { ...status, running: status.running && ready, ready } };
+    });
   }
   if (serverName === 'llama') {
     const status = await getCachedServerStatus('llama', () => getLlamaStatusPayload());
@@ -4214,7 +4931,7 @@ ipcMain.handle('llama:check-model-size', async (_event, modelsPath, modelName) =
 
     const { availableMemory } = await getCachedGpuInfoPayload();
 
-    const canLoad = sizeMB <= (availableMemory * 0.95);
+    const canLoad = availableMemory > 0 ? sizeMB <= (availableMemory * 0.95) : true;
     return { size: sizeMB, canLoad, availableMemory };
   } catch (e) {
     return { size: 0, canLoad: true, availableMemory: 0, error: e?.message || 'Unable to read model size.' };
@@ -5528,6 +6245,9 @@ function createMainWindow() {
       devTools: TEMP_MAIN_AUTO_OPEN_DEVTOOLS
     }
   });
+  if (WINDOW_ICON && typeof mainWindow.setIcon === 'function') {
+    try { mainWindow.setIcon(WINDOW_ICON); } catch (_) {}
+  }
   attachLanHostWindow(mainWindow);
   configureSitePermissions(mainWindow.webContents.session);
   if (!shortsHideWebContentsHookBound) {
@@ -6405,6 +7125,12 @@ ipcMain.handle('settings-save', async (e, s) => {
       useLocalIpOnly: Boolean(incoming?.omchat?.useLocalIpOnly ?? cachedSettings?.omchat?.useLocalIpOnly ?? DEFAULT_SETTINGS.omchat.useLocalIpOnly),
       alwaysOn: Boolean(incoming?.omchat?.alwaysOn ?? cachedSettings?.omchat?.alwaysOn ?? DEFAULT_SETTINGS.omchat.alwaysOn)
     },
+    mcp: {
+      ...DEFAULT_SETTINGS.mcp,
+      ...(cachedSettings?.mcp || {}),
+      ...(incoming?.mcp || {}),
+      alwaysOn: Boolean(incoming?.mcp?.alwaysOn ?? cachedSettings?.mcp?.alwaysOn ?? DEFAULT_SETTINGS.mcp.alwaysOn)
+    },
     websitePermissions: normalizeWebsitePermissions(incoming?.websitePermissions ?? cachedSettings?.websitePermissions)
   });
   normalizedSettings.aiConfig = normalizePersistedAiConfig(normalizedSettings.aiConfig);
@@ -6458,6 +7184,26 @@ ipcMain.handle('security:prime-site-safety-scan', async (_event, payload = {}) =
       error: error?.message || 'Check failed'
     });
   }
+});
+
+ipcMain.handle('security:get-site-settings', async (_event, payload = {}) => {
+  return getSiteSettingsSnapshot(String(payload?.url || '').trim());
+});
+
+ipcMain.handle('security:set-site-permission', async (_event, payload = {}) => {
+  return updateSitePermissionSetting(
+    String(payload?.url || '').trim(),
+    String(payload?.permission || '').trim(),
+    String(payload?.decision || '').trim()
+  );
+});
+
+ipcMain.handle('security:reset-site-permissions', async (_event, payload = {}) => {
+  return resetSitePermissionSettings(String(payload?.url || '').trim());
+});
+
+ipcMain.handle('security:clear-site-data', async (_event, payload = {}) => {
+  return clearSiteStorageData(String(payload?.url || '').trim());
 });
 
 ipcMain.handle('system-open-path', async (e, targetPath) => {
@@ -7193,6 +7939,3 @@ app.on('before-quit', (event) => {
 });
 
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
-
-
-

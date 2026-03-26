@@ -13,8 +13,7 @@ const {
   getChannelMessages,
   getMember,
   getServerAndChannel,
-  hasPermission,
-  isAdmin,
+  isAdminOrOp,
   isMemberMuted
 } = require('../db');
 const {
@@ -180,8 +179,11 @@ router.post('/channels/:channelId/messages', async (req, res, next) => {
       return res.status(400).json({ error: 'cannot_send_to_voice_channel' });
     }
 
-    if (channel.type === 'announcement' && !hasPermission(server, req.session.userId, 'manage_channels') && !isAdmin(server, req.session.userId)) {
-      return res.status(403).json({ error: 'only_admin_can_post_announcement' });
+    if ((channel.type === 'announcement' || channel.type === 'announce') && !isAdminOrOp(server, req.session.userId)) {
+      return res.status(403).json({
+        error: 'forbidden',
+        message: 'Only admins and ops can post in announcement channels'
+      });
     }
 
     const payload = validateMessagePayload(req.body || {});
