@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { spawn, spawnSync, execFile } = require('child_process');
-require('dotenv').config({ path: path.resolve(__dirname, '..', '.env') });
+require('../loadEnv');
 
 const { startServer, stopServer, setPublicBaseUrl } = require('../server/index');
 

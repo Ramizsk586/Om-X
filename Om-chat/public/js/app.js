@@ -17,7 +17,7 @@ import {
 
 const $ = (selector) => document.querySelector(selector);
 const mobileLayoutQuery = window.matchMedia('(max-width: 760px)');
-const PUBLIC_OMCHAT_BASE_URL = 'https://omchat.42web.io';
+const DEFAULT_OMCHAT_PUBLIC_BASE_URL = String(window.location?.origin || '').trim().replace(/[\\/]+$/, '');
 
 const el = {
   appShell: $('#app-shell'),
@@ -1506,7 +1506,7 @@ function getPreferredPublicBaseUrl() {
     const runtimeBase = String(rt?.publicBaseUrl || '').trim().replace(/[\\/]+$/, '');
     if (runtimeBase) return runtimeBase;
   } catch (_) {}
-  return PUBLIC_OMCHAT_BASE_URL;
+  return DEFAULT_OMCHAT_PUBLIC_BASE_URL;
 }
 
 function syncViewportMetrics() {

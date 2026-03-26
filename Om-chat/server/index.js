@@ -9,7 +9,7 @@ const { spawnSync } = require('child_process');
 const { createServer: createHttpServer } = require('http');
 const { createServer: createHttpsServer } = require('https');
 const { Server } = require('socket.io');
-require('dotenv').config({ path: path.resolve(__dirname, '..', '.env'), quiet: true });
+require('../loadEnv');
 
 const appConfig = require('./config');
 const createSession = require('./middleware/session');
@@ -528,7 +528,9 @@ function createRedirectServer({ host, httpsPort }) {
 }
 
 function createClientRuntimeConfig(req, accessInfo, accessProtected) {
-  const currentBaseUrl = getRequestBaseUrl(req, accessInfo) || accessInfo.joinBaseUrl || accessInfo.publicUrl || accessInfo.localUrl;
+  const currentBaseUrl = normalizeBaseUrl(accessInfo?.publicUrl || accessInfo?.joinBaseUrl || '')
+    || getRequestBaseUrl(req, accessInfo)
+    || accessInfo.localUrl;
   return {
     csrfToken: req.session?.csrfToken || '',
     publicBaseUrl: currentBaseUrl,
@@ -759,7 +761,9 @@ function createRuntime({ host, port, sessionSecret, tlsOptions, trustProxySettin
   });
 
   app.get('/api/runtime', (req, res) => {
-    const currentBaseUrl = getRequestBaseUrl(req, accessInfo);
+    const currentBaseUrl = normalizeBaseUrl(accessInfo?.publicUrl || accessInfo?.joinBaseUrl || '')
+      || getRequestBaseUrl(req, accessInfo)
+      || accessInfo.localUrl;
     res.setHeader('Cache-Control', 'no-store');
     res.json({
       runtime: createClientRuntimeConfig(req, accessInfo, app.locals.omChatAccessProtected),
