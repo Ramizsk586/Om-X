@@ -84,6 +84,12 @@ export const socketActions = {
   },
   callMuteToggle(payload) {
     socket?.emit('call_mute_toggle', payload);
+  },
+  callVideoToggle(payload) {
+    socket?.emit('call_video_toggle', payload);
+  },
+  callScreenShareToggle(payload) {
+    socket?.emit('call_screen_share_toggle', payload);
   }
 };
 

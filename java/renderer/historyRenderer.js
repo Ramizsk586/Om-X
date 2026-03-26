@@ -2,8 +2,54 @@ document.addEventListener('DOMContentLoaded', async () => {
   const historyList = document.getElementById('history-list');
   const searchInput = document.getElementById('history-search');
   const btnClear = document.getElementById('btn-clear-history');
+  const SEARCH_HISTORY_KEY = 'omx-search-history';
 
   let allHistory = [];
+
+  function loadRecentSearches() {
+    try {
+      const raw = localStorage?.getItem?.(SEARCH_HISTORY_KEY);
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed.filter((item) => typeof item === 'string') : [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  function persistRecentSearches(items) {
+    try {
+      localStorage?.setItem?.(SEARCH_HISTORY_KEY, JSON.stringify(items));
+    } catch (_) {}
+  }
+
+  function clearRecentSearches() {
+    persistRecentSearches([]);
+  }
+
+  function extractSearchCandidates(item) {
+    const candidates = new Set();
+    const add = (value) => {
+      const next = String(value || '').trim();
+      if (next) candidates.add(next);
+    };
+
+    add(item?.title);
+    add(item?.url);
+
+    try {
+      const parsed = new URL(String(item?.url || ''), window.location.href);
+      ['q', 'query', 'search', 'text', 'keyword', 'k', 'p'].forEach((key) => add(parsed.searchParams.get(key)));
+    } catch (_) {}
+
+    return candidates;
+  }
+
+  function removeMatchingRecentSearches(item) {
+    const candidates = extractSearchCandidates(item);
+    if (!candidates.size) return;
+    const next = loadRecentSearches().filter((entry) => !candidates.has(String(entry || '').trim()));
+    persistRecentSearches(next);
+  }
 
   function escapeHtml(value) {
     return String(value ?? '')
@@ -107,6 +153,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       delBtn.addEventListener('click', async (e) => {
         e.stopPropagation();
         await window.browserAPI.history.delete(item.timestamp);
+        removeMatchingRecentSearches(item);
         el.remove();
         allHistory = allHistory.filter((h) => h.timestamp !== item.timestamp);
         if (allHistory.length === 0) renderHistory([]);
@@ -133,6 +180,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   btnClear.addEventListener('click', async () => {
     if (confirm('Are you sure you want to clear your entire browsing history?')) {
       await window.browserAPI.history.clear();
+      clearRecentSearches();
       allHistory = [];
       renderHistory([]);
     }

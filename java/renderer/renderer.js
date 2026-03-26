@@ -32,6 +32,9 @@ const DOWNLOADS_URL       = new URL('../../html/pages/downloads.html',         i
 const SCRABER_URL         = new URL('../../html/pages/scraper.html',           import.meta.url).href;
 const SITE_SETTINGS_URL   = new URL('../../html/pages/site-settings.html',     import.meta.url).href;
 const BOOKMARK_FALLBACK_ICON = new URL('../../assets/icons/app.ico',           import.meta.url).href;
+const OMCHAT_PUBLIC_DISPLAY_URL = 'https://omchat.42web.io/';
+const OFFICIAL_OMX_WEBSITE = 'https://omx.kesug.com/';
+const FIRST_RUN_WEBSITE_KEY = 'omx:first-run-official-website-opened:v1';
 
 const OM_CHAT_DEFAULT_PORT = 3031;
 const DUCK_AI_URL          = 'https://duck.ai/chat';
@@ -1501,6 +1504,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         setOmChatLaunchStatus('Starting OmChat server...', '');
         const useLocalIpOnly = Boolean(cachedSettings?.omchat?.useLocalIpOnly);
         const alwaysOn = Boolean(cachedSettings?.omchat?.alwaysOn);
+        const getOmChatDisplayUrl = (actualUrl = '') => useLocalIpOnly ? String(actualUrl || '').trim() : OMCHAT_PUBLIC_DISPLAY_URL;
 
         if (!cachedSettings?.omchat?.localDbPath) {
             const message = 'OmChat local folder is not set. Please choose a folder in Settings > OmChat.';
@@ -1523,7 +1527,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     } catch (_) {}
                     openAppTab(window.__omxOmChatNetworkUrl, { isOmChat: true });
                     setOmChatLaunchStatus('Connected to background server.', 'success');
-                    appendOmChatLaunchLog(`Connected to ${window.__omxOmChatNetworkUrl}`, 'success');
+                    appendOmChatLaunchLog(`Connected to ${getOmChatDisplayUrl(window.__omxOmChatNetworkUrl)}`, 'success');
                     return;
                 }
             } catch (_) {}
@@ -1550,7 +1554,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 } catch (_) {}
                 openAppTab(window.__omxOmChatNetworkUrl, { isOmChat: true });
                 setOmChatLaunchStatus('Background server online.', 'success');
-                appendOmChatLaunchLog(`Opened ${window.__omxOmChatNetworkUrl}`, 'success');
+                appendOmChatLaunchLog(`Opened ${getOmChatDisplayUrl(window.__omxOmChatNetworkUrl)}`, 'success');
                 return;
             }
             if (useLocalIpOnly) {
@@ -1574,7 +1578,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 } catch (_) {}
                 openAppTab(window.__omxOmChatNetworkUrl, { isOmChat: true });
                 setOmChatLaunchStatus('Server online on local IP. Opening login page...', 'success');
-                appendOmChatLaunchLog(`Opened ${window.__omxOmChatNetworkUrl}`, 'success');
+                appendOmChatLaunchLog(`Opened ${getOmChatDisplayUrl(window.__omxOmChatNetworkUrl)}`, 'success');
                 return;
             }
             const publicUrl = String(result?.publicUrl || result?.accessInfo?.publicUrl || '').trim().replace(/[/\\]+$/, '');
@@ -1592,7 +1596,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             } catch (_) {}
             openAppTab(window.__omxOmChatNetworkUrl, { isOmChat: true });
             setOmChatLaunchStatus('Server online. Opening login page...', 'success');
-            appendOmChatLaunchLog(`Opened ${window.__omxOmChatNetworkUrl}`, 'success');
+            appendOmChatLaunchLog(`Opened ${getOmChatDisplayUrl(window.__omxOmChatNetworkUrl)}`, 'success');
         } catch (error) {
             console.error('[Om Chat] Launcher failed:', error);
             setOmChatLaunchStatus(error?.message || 'Om Chat failed to start.', 'error');
@@ -2262,8 +2266,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         'tab-list-container', 'webview-container',
         (url) => {
             const controls = document.querySelector('.window-controls');
-            const isHome   = url === HOME_URL || url?.includes('pages/home.html');
-            controls?.classList.toggle('hidden', !isHome);
+            controls?.classList.remove('hidden');
             primeSiteSafetyScan(url);
             syncYouTubeAddonPanel();
             syncDuckAiPanel();
@@ -2274,6 +2277,16 @@ document.addEventListener('DOMContentLoaded', async () => {
         (tabId) => darkModeTabs.delete(tabId)   // cleanup on close
     );
     tabManager.createTab();
+
+    try {
+        const hasOpenedOfficialSite = localStorage.getItem(FIRST_RUN_WEBSITE_KEY) === '1';
+        if (!hasOpenedOfficialSite) {
+            localStorage.setItem(FIRST_RUN_WEBSITE_KEY, '1');
+            tabManager.createTab(OFFICIAL_OMX_WEBSITE);
+        }
+    } catch (error) {
+        console.warn('[Renderer] Failed to persist first-run official website state.', error);
+    }
 
     if (cachedSettings) {
         tabManager.updateSettings?.(cachedSettings);
@@ -2353,12 +2366,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (quickPanelSessionGuard) quickPanelSessionGuard.onclick = () => { if (canShowSessionGuardPanel()) { hideFeaturesHomePopup(); toggleSessionGuardPanel(); } };
     if (quickPanelYoutubeAddon) quickPanelYoutubeAddon.onclick = () => { if (canShowYouTubeAddon()) { hideFeaturesHomePopup(); toggleYouTubeAddonPanel(); } };
     if (quickPanelDuckAi)       quickPanelDuckAi.onclick       = () => { if (canShowDuckAiPanel())  { hideFeaturesHomePopup(); toggleDuckAiPanel();       } };
-    if (quickPanelScraper)      quickPanelScraper.onclick      = () => { hideFeaturesHomePopup(); tabManager.createTab(SCRABER_URL); };
+    if (quickPanelScraper)      quickPanelScraper.onclick      = () => { hideFeaturesHomePopup(); openAppTab(SCRABER_URL); };
     if (quickPanelTodoStation)  quickPanelTodoStation.onclick  = () => { hideFeaturesHomePopup(); openAppTab(TODO_STATION_URL); };
     if (quickPanelGames)        quickPanelGames.onclick        = () => { hideFeaturesHomePopup(); openAppTab(GAMES_URL); };
     if (quickPanelLlamaServer)  quickPanelLlamaServer.onclick  = () => { hideFeaturesHomePopup(); openAppTab(`${SERVER_OPERATOR_URL}?panel=llama`); };
     if (quickPanelMcpServer)    quickPanelMcpServer.onclick    = () => { hideFeaturesHomePopup(); openAppTab(`${SERVER_OPERATOR_URL}?panel=mcp`); };
-    if (quickPanelDiscord)      quickPanelDiscord.onclick      = () => launchOmChat();
+    if (quickPanelDiscord)      quickPanelDiscord.onclick      = () => {
+        window.browserAPI?.window?.maximize?.();
+        launchOmChat();
+    };
 
     btnTopNavBack?.addEventListener('click',    () => handleNavigationTopAction('back'));
     btnTopNavForward?.addEventListener('click', () => handleNavigationTopAction('forward'));
@@ -2477,7 +2493,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (window.browserAPI.onShortcut) {
         window.browserAPI.onShortcut((command) => {
             if      (command === 'new-tab')        { hideFeaturesHomePopup(); searchSystem.handleNewTabRequest(); }
-            else if (command === 'open-scraber')   { hideFeaturesHomePopup(); tabManager.createTab(SCRABER_URL); }
+            else if (command === 'open-scraber')   { hideFeaturesHomePopup(); openAppTab(SCRABER_URL); }
             else if (command === 'close-tab')      { if (tabManager.activeTabId) tabManager.closeTab(tabManager.activeTabId); }
             else if (command === 'toggle-sidebar') { sidePanel.toggle(); }
             else if (command === 'hide-sidebar')   { sidePanel.toggleHidden(); }

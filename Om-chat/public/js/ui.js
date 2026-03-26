@@ -43,6 +43,21 @@ export function getCustomStatusText(value) {
   return next;
 }
 
+export function getCallIconSvg(name, className = 'call-icon') {
+  const cls = escapeHtml(className);
+  const icons = {
+    video: `<svg class="${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>`,
+    mic: `<svg class="${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 1 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v4"/><path d="M8 23h8"/></svg>`,
+    micOff: `<svg class="${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 1l22 22"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12"/><path d="M12 19v4"/><path d="M8 23h8"/><path d="M5 10v2a7 7 0 0 0 11.74 5.14"/><path d="M15 5.34V4a3 3 0 0 0-5.77-1.2"/></svg>`,
+    videoOff: `<svg class="${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 1l22 22"/><path d="M16 16.5a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7.5a2 2 0 0 1 2-2h8"/><path d="M16 7l7-5v15"/><path d="M16 11.5V7"/></svg>`,
+    screen: `<svg class="${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg>`,
+    users: `<svg class="${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`,
+    fullscreen: `<svg class="${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H3v5"/><path d="M21 8V3h-5"/><path d="M3 16v5h5"/><path d="M16 21h5v-5"/></svg>`,
+    leave: `<svg class="${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 17l5-5-5-5"/><path d="M15 12H3"/><path d="M21 19V5a2 2 0 0 0-2-2h-6"/></svg>`
+  };
+  return icons[name] || icons.video;
+}
+
 export function getMemberStatusText(member) {
   return getCustomStatusText(member?.customStatus) || getStatusLabel(member?.status);
 }
@@ -288,14 +303,16 @@ export function createMessageElement(message, grouped = false, currentUserId = n
     const invitedUsernames = Array.isArray(message.meta?.invitedUsernames) ? message.meta.invitedUsernames : [];
     const invited = invitedUserIds.includes(currentUserId);
     const callEnded = Boolean(message.meta?.callEnded);
+    const label = 'Video Call';
+    const icon = getCallIconSvg('video', 'call-invite-icon');
 
     const card = document.createElement('div');
     card.className = 'call-invite-card';
     card.innerHTML = `
-      <div class="call-invite-title">&#128222; Voice call started</div>
+      <div class="call-invite-title">${icon}<span>${label} started</span></div>
       <div class="call-invite-copy">Invited: ${escapeHtml(invitedUsernames.join(', ') || 'No one')}</div>
       <div class="call-invite-actions">
-        <button type="button" class="call-invite-btn" data-action="join-call" data-call-id="${escapeHtml(message.meta?.callId || '')}" ${invited && !callEnded ? '' : 'disabled'} title="${invited ? (callEnded ? 'Call ended' : 'Join call') : 'You were not invited to this call'}">Join Call</button>
+        <button type="button" class="call-invite-btn" data-action="join-call" data-call-id="${escapeHtml(message.meta?.callId || '')}" ${invited && !callEnded ? '' : 'disabled'} title="${invited ? (callEnded ? 'Call ended' : `Join ${label}`) : 'You were not invited to this call'}">Join ${label}</button>
         <span class="call-invite-status">${escapeHtml(callEnded ? 'Call ended' : invited ? 'You were invited' : 'You were not invited to this call')}</span>
       </div>
     `;

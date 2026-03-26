@@ -33,8 +33,10 @@ const {
   validateCallJoinPayload,
   validateCallLeavePayload,
   validateCallMuteTogglePayload,
+  validateCallScreenShareTogglePayload,
   validateCallSignalPayload,
   validateCallStartPayload,
+  validateCallVideoTogglePayload,
   validateDeleteMessagePayload,
   validateEditMessagePayload,
   validateMessagePayload,
@@ -49,6 +51,7 @@ const { sanitizeAccessInfo, sanitizeServer } = require('../utils/serializers');
 const { askGroqShortAnswer } = require('../ai/groq');
 const {
   decorateMembersWithLivePresence,
+  getSocketsForUser,
   registerUserSocket,
   unregisterUserSocket
 } = require('../services/presenceService');
@@ -78,6 +81,10 @@ const SOCKET_CALL_JOIN_RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const SOCKET_CALL_JOIN_RATE_LIMIT_MAX = 5;
 const SOCKET_CALL_SIGNAL_RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const SOCKET_CALL_SIGNAL_RATE_LIMIT_MAX = 50;
+const SOCKET_CALL_VIDEO_TOGGLE_RATE_LIMIT_WINDOW_MS = 10 * 1000;
+const SOCKET_CALL_VIDEO_TOGGLE_RATE_LIMIT_MAX = 20;
+const SOCKET_CALL_SCREEN_SHARE_TOGGLE_RATE_LIMIT_WINDOW_MS = 10 * 1000;
+const SOCKET_CALL_SCREEN_SHARE_TOGGLE_RATE_LIMIT_MAX = 10;
 const AI_PROFILE = Object.freeze({
   userId: 'omchat-ai',
   username: 'Om AI',
@@ -120,14 +127,6 @@ function emitToMessageRoom(io, event, payload, message) {
 
 function isAnnouncementChannel(channel) {
   return channel?.type === 'announcement' || channel?.type === 'announce';
-}
-
-function findGeneralChannel(server) {
-  const channels = Array.isArray(server?.channels) ? server.channels : [];
-  return channels.find((channel) => (
-    channel.type !== 'voice-placeholder'
-    && String(channel.name || '').toLowerCase() === 'general'
-  )) || channels.find((channel) => channel.type !== 'voice-placeholder') || null;
 }
 
 function getCall(callId) {
@@ -215,7 +214,7 @@ function getServerAccess(io, serverId, extraQuery = '') {
   const access = io?.omChatAccess;
   if (!access) return null;
 
-  const base = access.joinBaseUrl || access.publicUrl || access.localUrl || '';
+  const base = access.publicUrl || access.joinBaseUrl || access.localUrl || '';
   if (!base) return null;
 
   const suffix = extraQuery ? `&${extraQuery}` : '';
@@ -337,6 +336,14 @@ module.exports = function initSockets(io) {
   const callSignalLimiter = createSocketRateLimiter({
     windowMs: SOCKET_CALL_SIGNAL_RATE_LIMIT_WINDOW_MS,
     max: SOCKET_CALL_SIGNAL_RATE_LIMIT_MAX
+  });
+  const callVideoToggleLimiter = createSocketRateLimiter({
+    windowMs: SOCKET_CALL_VIDEO_TOGGLE_RATE_LIMIT_WINDOW_MS,
+    max: SOCKET_CALL_VIDEO_TOGGLE_RATE_LIMIT_MAX
+  });
+  const callScreenShareToggleLimiter = createSocketRateLimiter({
+    windowMs: SOCKET_CALL_SCREEN_SHARE_TOGGLE_RATE_LIMIT_WINDOW_MS,
+    max: SOCKET_CALL_SCREEN_SHARE_TOGGLE_RATE_LIMIT_MAX
   });
   const messageLimiter = createSocketRateLimiter({
     windowMs: SOCKET_MESSAGE_RATE_LIMIT_WINDOW_MS,
@@ -884,37 +891,36 @@ module.exports = function initSockets(io) {
             channelId,
             serverId,
             channelName: channel.name || 'announce',
-            hostUsername
+            hostUsername,
+            hostId: userId
           });
         }
 
-        const generalChannel = findGeneralChannel(server);
-        if (generalChannel) {
-          const invitedUsernames = invitedUsers.map((member) => member.username || 'User');
-          const inviteMessage = await createMessage({
-            serverId,
-            channelId: generalChannel.id,
-            userId,
-            username: hostUsername,
-            avatarColor: session.avatarColor || getUser(userId)?.avatarColor,
-            avatarUrl: session.avatarUrl || getUser(userId)?.avatarUrl,
-            type: 'call_invite',
-            content: `Voice call started by ${hostUsername}. Invited: ${invitedUsernames.join(', ') || 'No one yet'}`,
-            meta: {
-              callId,
-              invitedUserIds: filteredInvites,
-              invitedUsernames,
-              channelId,
-              channelName: channel.name || 'announce'
-            }
-          });
-          io.to(channelRoom(generalChannel.id, serverId)).emit('new_message', { message: inviteMessage });
-        }
+        const invitedUsernames = invitedUsers.map((member) => member.username || 'User');
+        const inviteMessage = await createMessage({
+          serverId,
+          channelId,
+          userId,
+          username: hostUsername,
+          avatarColor: session.avatarColor || getUser(userId)?.avatarColor,
+          avatarUrl: session.avatarUrl || getUser(userId)?.avatarUrl,
+          type: 'call_invite',
+          content: `📹 ${hostUsername} started a video call. Invited: ${invitedUsernames.join(', ') || 'No one yet'}`,
+          meta: {
+            callId,
+            invitedUserIds: filteredInvites,
+            invitedUsernames,
+            channelId,
+            channelName: channel.name || 'announce'
+          }
+        });
+        io.to(channelRoom(channelId, serverId)).emit('new_message', { message: inviteMessage });
 
         socket.emit('call_started', {
           callId,
           channelId,
-          channelName: channel.name || 'announce'
+          channelName: channel.name || 'announce',
+          hostId: userId
         });
       });
     });
@@ -952,6 +958,7 @@ module.exports = function initSockets(io) {
           callId,
           channelId: call.channelId,
           channelName: call.channelName || 'announce',
+          hostId: call.hostId,
           participants
         });
 
@@ -1021,6 +1028,60 @@ module.exports = function initSockets(io) {
       });
     });
 
+    socket.on('call_video_toggle', (rawPayload = {}) => {
+      void runSocketHandler(socket, async () => {
+        if (!enforceRateLimit(socket, callVideoToggleLimiter, 'call_video_toggle', 'rate_limited', 'Too many video toggles')) return;
+
+        const { callId, videoEnabled } = validateCallVideoTogglePayload(rawPayload);
+        const call = getCall(callId);
+        if (!call) {
+          return emitError(socket, 'call_not_found', 'Call not found');
+        }
+        if (!call.joinedUserIds.has(userId)) {
+          return emitError(socket, 'forbidden', 'Join the call first');
+        }
+
+        for (const participantId of call.joinedUserIds) {
+          if (participantId === userId) continue;
+          const sockets = getSocketsForUser(participantId, io);
+          sockets.forEach((participantSocket) => {
+            participantSocket.emit('call_video_update', {
+              callId,
+              userId,
+              videoEnabled
+            });
+          });
+        }
+      });
+    });
+
+    socket.on('call_screen_share_toggle', (rawPayload = {}) => {
+      void runSocketHandler(socket, async () => {
+        if (!enforceRateLimit(socket, callScreenShareToggleLimiter, 'call_screen_share_toggle', 'rate_limited', 'Too many screen share toggles')) return;
+
+        const { callId, sharing } = validateCallScreenShareTogglePayload(rawPayload);
+        const call = getCall(callId);
+        if (!call) {
+          return emitError(socket, 'call_not_found', 'Call not found');
+        }
+        if (!call.joinedUserIds.has(userId)) {
+          return emitError(socket, 'forbidden', 'Join the call first');
+        }
+
+        for (const participantId of call.joinedUserIds) {
+          if (participantId === userId) continue;
+          const sockets = getSocketsForUser(participantId, io);
+          sockets.forEach((participantSocket) => {
+            participantSocket.emit('call_screen_share_update', {
+              callId,
+              userId,
+              sharing
+            });
+          });
+        }
+      });
+    });
+
     socket.on('disconnect', async () => {
       for (const [callId, call] of activeCalls.entries()) {
         if (!call.joinedUserIds.has(userId)) continue;
@@ -1050,4 +1111,3 @@ module.exports = function initSockets(io) {
     });
   });
 };
-

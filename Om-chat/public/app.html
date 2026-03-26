@@ -83,7 +83,7 @@
               <button id="status-btn" class="icon-btn status-btn user-panel-control" type="button" title="Status" aria-label="Status">
                 <span class="status-btn-indicator"></span>
               </button>
-              <button id="settings-btn" class="icon-btn user-panel-control" type="button" title="Server info" aria-label="Server info">
+              <button id="settings-btn" class="icon-btn user-panel-control" type="button" title="User settings" aria-label="User settings">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                   <circle cx="12" cy="12" r="3"></circle>
                   <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
@@ -112,8 +112,8 @@
             <p id="active-channel-topic">No topic</p>
           </div>
           <div class="chat-toolbar">
-            <button id="announce-call-btn" class="icon-btn hidden" type="button" aria-label="Start voice call" title="Start voice call">
-              <span aria-hidden="true">&#128222;</span>
+            <button id="btn-start-video-call" class="icon-btn hidden" type="button" aria-label="Start video call" title="Start video call">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
             </button>
             <button id="search-toggle" class="icon-btn" type="button" aria-label="Search messages">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -223,13 +223,80 @@
             </div>
           </div>
 
-          <div id="emoji-picker" class="floating-panel emoji-picker hidden"></div>
-          <div id="gif-picker" class="floating-panel gif-picker hidden"></div>
-          <div id="slash-command-menu" class="floating-panel slash-command-menu hidden"></div>
-          <div id="gender-code-menu" class="floating-panel gender-code-menu hidden"></div>
-          <div id="mention-menu" class="floating-panel mention-menu hidden"></div>
-          <div id="voice-tooltip" class="composer-tooltip hidden"></div>
+        <div id="emoji-picker" class="floating-panel emoji-picker hidden"></div>
+        <div id="gif-picker" class="floating-panel gif-picker hidden"></div>
+        <div id="slash-command-menu" class="floating-panel slash-command-menu hidden"></div>
+        <div id="gender-code-menu" class="floating-panel gender-code-menu hidden"></div>
+        <div id="mention-menu" class="floating-panel mention-menu hidden"></div>
+        <div id="voice-tooltip" class="composer-tooltip hidden"></div>
         </div>
+
+        <section id="account-settings-view" class="account-settings-view hidden" aria-label="User settings">
+          <div class="account-settings-shell">
+            <div class="account-settings-main">
+              <div class="account-settings-topbar">
+                <div>
+                  <h2 class="account-settings-title">My Account</h2>
+                  <p class="account-settings-subtitle">Manage your profile, contact information, and personal details.</p>
+                </div>
+              </div>
+
+              <div class="account-settings-card">
+                <div class="account-settings-hero">
+                  <div id="account-settings-avatar-preview" class="account-settings-avatar">O</div>
+                  <div class="account-settings-hero-copy">
+                    <strong id="account-settings-display-name">Loading...</strong>
+                    <span id="account-settings-display-meta">Account details</span>
+                  </div>
+                  <div class="account-settings-hero-actions">
+                    <button id="account-settings-avatar-upload" type="button" class="btn-secondary">Change Photo</button>
+                  </div>
+                </div>
+              </div>
+
+              <form id="account-settings-form" class="account-settings-form">
+                <div class="account-settings-grid">
+                  <label class="account-settings-field">
+                    <span class="section-label">Username</span>
+                    <input id="account-settings-username" maxlength="24" placeholder="Your username" />
+                  </label>
+                  <label class="account-settings-field">
+                    <span class="section-label">Email</span>
+                    <input id="account-settings-email" type="email" maxlength="120" placeholder="name@gmail.com" />
+                  </label>
+                  <label class="account-settings-field">
+                    <span class="section-label">Mobile Number</span>
+                    <input id="account-settings-phone" maxlength="24" placeholder="+91 98765 43210" />
+                  </label>
+                  <label class="account-settings-field">
+                    <span class="section-label">Role</span>
+                    <input id="account-settings-role" readonly />
+                  </label>
+                  <label class="account-settings-field account-settings-field--full">
+                    <span class="section-label">About Me</span>
+                    <textarea id="account-settings-about" rows="5" maxlength="240" placeholder="Tell people a little about yourself"></textarea>
+                  </label>
+                </div>
+
+                <div class="account-settings-meta">
+                  <div class="account-settings-meta-item">
+                    <span class="section-label">User ID</span>
+                    <span id="account-settings-user-id">-</span>
+                  </div>
+                  <div class="account-settings-meta-item">
+                    <span class="section-label">Created</span>
+                    <span id="account-settings-created">-</span>
+                  </div>
+                </div>
+
+                <div id="account-settings-feedback" class="account-settings-feedback hidden"></div>
+                <div class="account-settings-actions">
+                  <button id="account-settings-save" type="submit" class="btn-primary">Save Changes</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </section>
       </main>
 
       <aside class="members-sidebar" id="members-sidebar">
@@ -241,6 +308,21 @@
     <button id="mobile-drawer-backdrop" class="mobile-drawer-backdrop hidden" type="button" aria-label="Close mobile panels"></button>
 
     <div id="member-popout" class="member-popout hidden"></div>
+
+    <div id="dm-overflow-modal" class="modal hidden">
+      <div class="modal-inner dm-overflow-modal-inner">
+        <div class="modal-head">
+          <strong>Direct Messages</strong>
+          <button id="dm-overflow-close" type="button" class="icon-btn" aria-label="Close direct messages popup">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M18 6 6 18"></path>
+              <path d="m6 6 12 12"></path>
+            </svg>
+          </button>
+        </div>
+        <div id="dm-overflow-list" class="dm-overflow-list"></div>
+      </div>
+    </div>
 
     <div id="delete-confirm-popover" class="popover-panel hidden">
       <div class="popover-title">Delete message?</div>
@@ -342,6 +424,7 @@
     <input id="server-thumbnail-input" type="file" accept="image/*" hidden />
     <input id="server-chatbg-input" type="file" accept="image/*" hidden />
     <input id="dm-wallpaper-input" type="file" accept="image/*" hidden />
+    <input id="account-settings-avatar-input" type="file" accept="image/*" hidden />
 
     <div id="create-channel-modal" class="modal hidden">
       <div class="modal-inner create-channel-modal-inner">
@@ -469,7 +552,7 @@
     <div id="call-member-modal" class="modal hidden">
       <div class="modal-inner call-member-modal-inner">
         <div class="modal-head">
-          <strong>&#128222; Start a Voice Call</strong>
+          <strong id="call-modal-title"><svg class="call-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg><span>Start a Video Call</span></strong>
           <button id="call-member-close" type="button" class="icon-btn" aria-label="Close start call dialog">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
               <path d="M18 6 6 18"></path>
@@ -487,16 +570,19 @@
     </div>
 
     <div id="call-overlay" class="call-overlay hidden" aria-live="polite">
-      <div class="call-overlay-shell">
-        <div class="call-overlay-head">
-          <strong id="call-overlay-title">&#128266; Voice Call</strong>
-          <span id="call-overlay-subtitle">Connecting...</span>
-        </div>
-        <div id="call-participant-grid" class="call-participant-grid"></div>
-        <div class="call-controls">
-          <button id="call-mute-btn" type="button" class="call-control-btn">&#127908; Mute</button>
-          <button id="call-leave-btn" type="button" class="call-control-btn is-danger">&#128245; Leave Call</button>
-        </div>
+      <div class="call-topbar">
+        <span id="call-topbar-icon"><svg class="call-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg></span>
+        <span id="call-topbar-title">Video Call - #announce</span>
+        <span id="call-timer">00:00</span>
+      </div>
+      <div id="call-grid"></div>
+      <div class="call-controls">
+        <button id="btn-toggle-mic" type="button" class="ctrl-btn" title="Mute or unmute"><svg class="call-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 1 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v4"/><path d="M8 23h8"/></svg></button>
+        <button id="btn-toggle-video" type="button" class="ctrl-btn" title="Turn camera on or off"><svg class="call-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg></button>
+        <button id="btn-screen-share" type="button" class="ctrl-btn" title="Share screen"><svg class="call-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg></button>
+        <button id="btn-toggle-call-layout" type="button" class="ctrl-btn ctrl-btn--layout" title="Toggle focused or group video"><svg class="call-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><span>Group View</span></button>
+        <button id="btn-toggle-fullscreen" type="button" class="ctrl-btn" title="Toggle fullscreen"><svg class="call-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H3v5"/><path d="M21 8V3h-5"/><path d="M3 16v5h5"/><path d="M16 21h5v-5"/></svg></button>
+        <button id="btn-leave-call" type="button" class="ctrl-btn ctrl-btn--danger" title="Leave call"><svg class="call-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 17l5-5-5-5"/><path d="M15 12H3"/><path d="M21 19V5a2 2 0 0 0-2-2h-6"/></svg></button>
       </div>
     </div>
 
@@ -643,6 +729,3 @@
     <script src="/js/app.js" type="module"></script>
   </body>
 </html>
-
-
-

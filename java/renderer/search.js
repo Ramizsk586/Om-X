@@ -162,6 +162,21 @@ export function initSearchSystem({ tabManager, settingsAPI, HOME_URL }) {
         persistSearchHistory(searchHistory);
     };
 
+    const syncSearchHistory = () => {
+        searchHistory = loadSearchHistory();
+        return searchHistory;
+    };
+
+    const removeSearchHistoryEntry = (value) => {
+        const trimmed = String(value || '').trim();
+        if (!trimmed) return false;
+        const nextHistory = searchHistory.filter(item => item !== trimmed);
+        if (nextHistory.length === searchHistory.length) return false;
+        searchHistory = nextHistory;
+        persistSearchHistory(searchHistory);
+        return true;
+    };
+
     const getHistoryMatches = (value = '') => {
         if (!value) return searchHistory.slice(0, HISTORY_SUGGESTION_LIMIT);
         const needle = value.toLowerCase();
@@ -171,11 +186,13 @@ export function initSearchSystem({ tabManager, settingsAPI, HOME_URL }) {
     };
 
     const showHistorySuggestions = (value) => {
+        syncSearchHistory();
         const matches = getHistoryMatches(value);
         if (!matches.length) return false;
         renderSuggestions(matches, {
             sourceLabel: navigator.onLine ? 'Recent searches' : 'Offline history',
-            forceDefaultEngine: true
+            forceDefaultEngine: true,
+            removable: true
         });
         return true;
     };
@@ -349,7 +366,8 @@ export function initSearchSystem({ tabManager, settingsAPI, HOME_URL }) {
             if (searchHistory.length) {
                 renderSuggestions(searchHistory.slice(0, HISTORY_SUGGESTION_LIMIT), {
                     sourceLabel: 'Recent searches',
-                    forceDefaultEngine: true
+                    forceDefaultEngine: true,
+                    removable: true
                 });
             } else {
                 hideSuggestions();
@@ -409,7 +427,7 @@ export function initSearchSystem({ tabManager, settingsAPI, HOME_URL }) {
         }
     }, 160);
 
-    const renderSuggestions = (list, { sourceLabel, forceDefaultEngine = false } = {}) => {
+    const renderSuggestions = (list, { sourceLabel, forceDefaultEngine = false, removable = false } = {}) => {
         if (!suggestionsEl) return;
         if (!Array.isArray(list) || list.length === 0) {
             hideSuggestions();
@@ -440,6 +458,17 @@ export function initSearchSystem({ tabManager, settingsAPI, HOME_URL }) {
             label.textContent = String(text || '');
             div.appendChild(icon);
             div.appendChild(label);
+            if (removable) {
+                const removeBtn = document.createElement('button');
+                removeBtn.type = 'button';
+                removeBtn.className = 'suggestion-remove-btn';
+                removeBtn.setAttribute('data-remove-history', 'true');
+                removeBtn.setAttribute('aria-label', `Remove ${String(text || '')} from recent searches`);
+                removeBtn.title = 'Remove';
+                removeBtn.textContent = '×';
+                removeBtn.style.cssText = 'margin-left:auto;background:none;border:none;color:inherit;opacity:.72;cursor:pointer;font-size:18px;line-height:1;padding:0 2px;';
+                div.appendChild(removeBtn);
+            }
             suggestionsEl.appendChild(div);
         });
         
@@ -482,6 +511,17 @@ export function initSearchSystem({ tabManager, settingsAPI, HOME_URL }) {
         e.stopPropagation();
         const item = e.target.closest('.suggestion-item');
         if (!item) return;
+
+        const removeButton = e.target.closest('[data-remove-history="true"]');
+        if (removeButton) {
+            const text = item.getAttribute('data-suggestion-text') ||
+                         (item.querySelector('span') ? item.querySelector('span').textContent : '');
+            if (!text) return;
+            removeSearchHistoryEntry(text);
+            const currentValue = overlayInput?.value?.trim?.() || '';
+            if (!showHistorySuggestions(currentValue)) hideSuggestions();
+            return;
+        }
         
         // Handle keyword suggestions
         if (item.classList.contains('keyword-suggestion')) {
@@ -506,6 +546,7 @@ export function initSearchSystem({ tabManager, settingsAPI, HOME_URL }) {
     });
 
     overlayInput.addEventListener('focus', () => {
+        syncSearchHistory();
         const val = overlayInput.value.trim();
         if (!val && !showHistorySuggestions('')) {
             hideSuggestions();

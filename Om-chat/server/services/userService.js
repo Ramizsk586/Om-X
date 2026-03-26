@@ -14,8 +14,8 @@ const AVATAR_PALETTE = ['#5865F2', '#57F287', '#FEE75C', '#EB459E', '#ED4245', '
 
 /**
  * Convert an auth user into a client-safe response payload.
- * @param {null|{id: string, username: string, email: string, role: string, avatarColor: string, avatarUrl: string, createdAt: string, updatedAt: string, isVerified?: boolean, isBanned?: boolean}} user Auth user record.
- * @returns {null|{id: string, username: string, email: string, role: string, avatarColor: string, avatarUrl: string, createdAt: string, updatedAt: string, isVerified: boolean, isBanned: boolean}} Safe user payload.
+ * @param {null|{id: string, username: string, email: string, role: string, avatarColor: string, avatarUrl: string, phone?: string, aboutMe?: string, createdAt: string, updatedAt: string, isVerified?: boolean, isBanned?: boolean}} user Auth user record.
+ * @returns {null|{id: string, username: string, email: string, role: string, avatarColor: string, avatarUrl: string, phone: string, aboutMe: string, createdAt: string, updatedAt: string, isVerified: boolean, isBanned: boolean}} Safe user payload.
  */
 function sanitizeAuthUser(user) {
   if (!user) return null;
@@ -26,6 +26,8 @@ function sanitizeAuthUser(user) {
     role: user.role || 'user',
     avatarColor: user.avatarColor || '#5865F2',
     avatarUrl: user.avatarUrl || '',
+    phone: user.phone || '',
+    aboutMe: user.aboutMe || '',
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
     isVerified: Boolean(user.isVerified),
@@ -102,7 +104,7 @@ function setRuntimeSessionField(session, key, value) {
 /**
  * Attach runtime user identity fields to the current request session.
  * @param {Record<string, unknown>} session Cookie-session payload.
- * @param {{id: string, username: string, role?: string, avatarColor?: string, avatarUrl?: string, email?: string}} user Authenticated user.
+ * @param {{id: string, username: string, role?: string, avatarColor?: string, avatarUrl?: string, email?: string, phone?: string, aboutMe?: string}} user Authenticated user.
  * @returns {void}
  */
 function attachRuntimeSessionUser(session, user) {
@@ -113,6 +115,8 @@ function attachRuntimeSessionUser(session, user) {
   setRuntimeSessionField(session, 'avatarColor', user.avatarColor || '#5865F2');
   setRuntimeSessionField(session, 'avatarUrl', user.avatarUrl || '');
   setRuntimeSessionField(session, 'email', user.email || '');
+  setRuntimeSessionField(session, 'phone', user.phone || '');
+  setRuntimeSessionField(session, 'aboutMe', user.aboutMe || '');
 }
 
 /**
@@ -331,7 +335,7 @@ async function finalizeLogin(req, user, deviceToken) {
 /**
  * Update the global auth profile and keep the chat profile in sync.
  * @param {string} userId Auth user identifier.
- * @param {{username?: string, email?: string, avatarColor?: string, avatarUrl?: string}} changes Mutable profile changes.
+ * @param {{username?: string, email?: string, avatarColor?: string, avatarUrl?: string, phone?: string, aboutMe?: string}} changes Mutable profile changes.
  * @returns {Promise<ReturnType<typeof sanitizeAuthUser>>} Updated user payload.
  */
 async function updateAuthProfile(userId, changes) {
@@ -410,7 +414,6 @@ module.exports = {
   updateAuthProfile,
   updateUserRole
 };
-
 
 
 

@@ -32,6 +32,14 @@ function loadOmxEnvFiles() {
 }
 
 loadOmxEnvFiles();
+
+function isAdultContentBlockEnabledFromEnv() {
+  const raw = String(process.env.Adult_Content || process.env.ADULT_CONTENT || '').trim().toLowerCase();
+  if (raw === 'on') return false;
+  if (raw === 'off') return true;
+  return true;
+}
+
 const SecurityManager = require('./security/SecurityManager');
 const AntivirusEngine = require('./security/antivirus/AntivirusEngine');
 const VirusTotalClient = require('./security/virustotal/VirusTotalClient');
@@ -2865,7 +2873,7 @@ const DEFAULT_SETTINGS = {
     enableAntivirus: true,
     enableFirewall: true,
     enableVirusTotal: false,
-    enableAdultContentBlock: true,
+    enableAdultContentBlock: isAdultContentBlockEnabledFromEnv(),
     showLoadingAnimation: false
   },
   security: {
@@ -5179,7 +5187,8 @@ function normalizeLockedSecuritySettings(settings = {}) {
     features: {
       ...features,
       enableFirewall: true,
-      enableAntivirus: true
+      enableAntivirus: true,
+      enableAdultContentBlock: isAdultContentBlockEnabledFromEnv()
     },
     security: {
       ...security,
@@ -6532,6 +6541,10 @@ function createPreviewWindow(url) {
 }
 
 ipcMain.on('window-minimize', (e) => BrowserWindow.fromWebContents(e.sender)?.minimize());
+ipcMain.on('window-maximize-only', (e) => {
+    const w = BrowserWindow.fromWebContents(e.sender);
+    if (!w?.isMaximized?.()) w?.maximize?.();
+});
 ipcMain.on('window-maximize', (e) => { const w = BrowserWindow.fromWebContents(e.sender); w?.isMaximized() ? w.unmaximize() : w?.maximize(); });
 ipcMain.on('window-close', (e) => BrowserWindow.fromWebContents(e.sender)?.close());
 ipcMain.on('window-open-main', () => openMainBrowserWindow());

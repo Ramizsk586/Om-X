@@ -33,11 +33,27 @@ function serializePartner(user) {
   };
 }
 
-function getLatestDmMessage(channelId) {
-  return (db.data.messages || [])
-    .filter((message) => message.serverId == null && message.channelId === channelId)
-    .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
-    .at(-1) || null;
+function buildLatestDmMessageMap() {
+  const latestByChannel = Object.create(null);
+
+  for (const message of db.data.messages || []) {
+    if (message?.serverId != null || !message?.channelId) continue;
+
+    const channelId = String(message.channelId);
+    const previous = latestByChannel[channelId];
+    if (!previous) {
+      latestByChannel[channelId] = message;
+      continue;
+    }
+
+    const previousTime = new Date(previous.createdAt || 0).getTime();
+    const nextTime = new Date(message.createdAt || 0).getTime();
+    if (nextTime >= previousTime) {
+      latestByChannel[channelId] = message;
+    }
+  }
+
+  return latestByChannel;
 }
 
 router.post('/open', async (req, res, next) => {
@@ -132,6 +148,7 @@ router.get('/list', (req, res) => {
   if (!requireSessionUser(req, res)) return;
 
   const selfId = req.session.userId;
+  const latestMessageByChannel = buildLatestDmMessageMap();
   const dms = (db.data.dms || [])
     .filter((dm) => (
       Array.isArray(dm.participants)
@@ -141,7 +158,7 @@ router.get('/list', (req, res) => {
     .map((dm) => {
       const partnerId = dm.participants.find((id) => id !== selfId) || null;
       const partner = partnerId ? getUser(partnerId) : null;
-      const lastMessage = getLatestDmMessage(dm.id);
+      const lastMessage = latestMessageByChannel[dm.id] || null;
 
       return {
         ...dm,

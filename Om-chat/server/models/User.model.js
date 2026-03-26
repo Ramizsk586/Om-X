@@ -8,6 +8,8 @@ const userSchema = new Schema({
   role: { type: String, enum: ['user', 'moderator', 'admin'], default: 'user' },
   avatarColor: { type: String, default: '#5865F2' },
   avatarUrl: { type: String, default: '' },
+  phone: { type: String, default: '' },
+  aboutMe: { type: String, default: '' },
   isVerified: { type: Boolean, default: false },
   isBanned: { type: Boolean, default: false },
   status: { type: String, default: 'offline' },

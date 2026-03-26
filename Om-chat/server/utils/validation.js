@@ -552,6 +552,20 @@ function validateCallMuteTogglePayload(payload = {}) {
   };
 }
 
+function validateCallVideoTogglePayload(payload = {}) {
+  return {
+    callId: ensureId(payload.callId, 'callId', { pattern: /^[A-Za-z0-9-]+$/, maxLength: 80 }),
+    videoEnabled: ensureBoolean(payload.videoEnabled)
+  };
+}
+
+function validateCallScreenShareTogglePayload(payload = {}) {
+  return {
+    callId: ensureId(payload.callId, 'callId', { pattern: /^[A-Za-z0-9-]+$/, maxLength: 80 }),
+    sharing: ensureBoolean(payload.sharing)
+  };
+}
+
 function validateOgQuery(query = {}) {
   return {
     url: ensurePublicHttpUrl(query.url, 'url')
@@ -574,8 +588,10 @@ module.exports = {
   validateCallJoinPayload,
   validateCallLeavePayload,
   validateCallMuteTogglePayload,
+  validateCallScreenShareTogglePayload,
   validateCallSignalPayload,
   validateCallStartPayload,
+  validateCallVideoTogglePayload,
   validateDeleteMessagePayload,
   validateDmOpenPayload,
   validateEditMessagePayload,

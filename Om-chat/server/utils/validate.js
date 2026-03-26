@@ -2,6 +2,8 @@ const { z } = require('zod');
 
 const usernameSchema = z.string().trim().min(3).max(24).regex(/^[A-Za-z0-9_\-. ]+$/, 'Username contains invalid characters');
 const emailSchema = z.string().trim().toLowerCase().email().max(120);
+const phoneSchema = z.string().trim().max(24).regex(/^[+\d\s()-]*$/, 'Phone contains invalid characters');
+const aboutMeSchema = z.string().trim().max(240);
 const passwordSchema = z.string().min(8).max(128)
   .refine((value) => /[a-z]/.test(value), 'Password must include a lowercase letter')
   .refine((value) => /[A-Z]/.test(value), 'Password must include an uppercase letter')
@@ -88,14 +90,16 @@ function parseRolePayload(payload) {
 /**
  * Validate a user profile update payload.
  * @param {unknown} payload Raw request body.
- * @returns {{username?: string, email?: string, avatarColor?: string, avatarUrl?: string}} Parsed profile updates.
+ * @returns {{username?: string, email?: string, avatarColor?: string, avatarUrl?: string, phone?: string, aboutMe?: string}} Parsed profile updates.
  */
 function parseProfilePayload(payload) {
   return parsePayload(z.object({
     username: usernameSchema.optional(),
     email: emailSchema.optional(),
     avatarColor: z.string().trim().min(4).max(24).optional(),
-    avatarUrl: z.string().trim().max(2048).optional()
+    avatarUrl: z.string().trim().max(2048).optional(),
+    phone: phoneSchema.optional(),
+    aboutMe: aboutMeSchema.optional()
   }).refine((value) => Object.keys(value).length > 0, 'At least one field must be provided'), payload);
 }
 

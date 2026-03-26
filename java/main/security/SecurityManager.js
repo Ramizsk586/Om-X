@@ -5,6 +5,13 @@ const path = require('path');
 const fs = require('fs');
 const { pathToFileURL } = require('url');
 
+function isAdultContentBlockEnabledFromEnv() {
+  const raw = String(process.env.Adult_Content || process.env.ADULT_CONTENT || '').trim().toLowerCase();
+  if (raw === 'on') return false;
+  if (raw === 'off') return true;
+  return true;
+}
+
 // ════════════════════════════════════════════════════════════════
 //  NETWORK-LEVEL AD BLOCKER — Blocks at DNS/connection level
 //  All ad/tracker/analytics domains are blocked before any
@@ -553,7 +560,8 @@ class SecurityManager {
 
   getAdultContentBlockerConfig() {
     return {
-      enabled: this.settings?.features?.enableAdultContentBlock === true
+      enabled: isAdultContentBlockEnabledFromEnv()
+        && this.settings?.features?.enableAdultContentBlock === true
     };
   }
 

@@ -33,7 +33,7 @@ function normalizeCustomStatus(value) {
 /**
  * Normalize a Mongo user document into the Om Chat auth shape.
  * @param {Record<string, unknown>|undefined|null} row Mongo user row.
- * @returns {null|{id: string, username: string, email: string, passwordHash: string, role: string, avatarColor: string, avatarUrl: string, isVerified: boolean, isBanned: boolean, status: string, customStatus: string, createdAt: string, updatedAt: string}} Normalized user record.
+ * @returns {null|{id: string, username: string, email: string, passwordHash: string, role: string, avatarColor: string, avatarUrl: string, phone: string, aboutMe: string, isVerified: boolean, isBanned: boolean, status: string, customStatus: string, createdAt: string, updatedAt: string}} Normalized user record.
  */
 function mapUser(row) {
   if (!row) return null;
@@ -45,6 +45,8 @@ function mapUser(row) {
     role: String(row.role || 'user'),
     avatarColor: String(row.avatarColor || '#5865F2'),
     avatarUrl: String(row.avatarUrl || ''),
+    phone: String(row.phone || ''),
+    aboutMe: String(row.aboutMe || ''),
     isVerified: Boolean(row.isVerified),
     isBanned: Boolean(row.isBanned),
     status: String(row.status || 'offline'),
@@ -56,7 +58,7 @@ function mapUser(row) {
 
 /**
  * Create a new persisted auth user.
- * @param {{id: string, username: string, email: string, passwordHash: string, role: string, avatarColor: string, avatarUrl: string, isVerified: boolean, isBanned?: boolean, status?: string, customStatus?: string, createdAt: string, updatedAt: string}} input User record to store.
+ * @param {{id: string, username: string, email: string, passwordHash: string, role: string, avatarColor: string, avatarUrl: string, phone?: string, aboutMe?: string, isVerified: boolean, isBanned?: boolean, status?: string, customStatus?: string, createdAt: string, updatedAt: string}} input User record to store.
  * @returns {Promise<ReturnType<typeof mapUser>>} Stored user row.
  */
 async function createUser(input) {
@@ -65,6 +67,8 @@ async function createUser(input) {
       isBanned: false,
       status: 'offline',
       customStatus: '',
+      phone: '',
+      aboutMe: '',
       ...input
     });
     return mapUser(created.toObject());

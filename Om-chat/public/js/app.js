@@ -4,6 +4,7 @@ import {
   createAvatarNode,
   createMessageElement,
   escapeHtml,
+  getCallIconSvg,
   getCustomStatusText,
   getDeviceBadgeSvg,
   getDeviceLabel,
@@ -16,6 +17,7 @@ import {
 
 const $ = (selector) => document.querySelector(selector);
 const mobileLayoutQuery = window.matchMedia('(max-width: 760px)');
+const PUBLIC_OMCHAT_BASE_URL = 'https://omchat.42web.io';
 
 const el = {
   appShell: $('#app-shell'),
@@ -30,6 +32,7 @@ const el = {
   serverHead: $('#server-head'),
   serverSidebarBanner: $('#server-sidebar-banner'),
   chatPane: document.querySelector('.chat-pane'),
+  membersSidebar: $('#members-sidebar'),
   chatBackground: $('#chat-background'),
   dmBadge: $('#dm-section-badge'),
   dmList: $('#dm-list'),
@@ -41,11 +44,28 @@ const el = {
   adminAlertDot: $('#admin-alert-dot'),
   statusPopover: $('#status-popover'),
   avatarInput: $('#avatar-input'),
+  accountSettingsView: $('#account-settings-view'),
+  accountSettingsForm: $('#account-settings-form'),
+  accountSettingsAvatarPreview: $('#account-settings-avatar-preview'),
+  accountSettingsDisplayName: $('#account-settings-display-name'),
+  accountSettingsDisplayMeta: $('#account-settings-display-meta'),
+  accountSettingsAvatarUpload: $('#account-settings-avatar-upload'),
+  accountSettingsUsername: $('#account-settings-username'),
+  accountSettingsEmail: $('#account-settings-email'),
+  accountSettingsPhone: $('#account-settings-phone'),
+  accountSettingsRole: $('#account-settings-role'),
+  accountSettingsAbout: $('#account-settings-about'),
+  accountSettingsUserId: $('#account-settings-user-id'),
+  accountSettingsCreated: $('#account-settings-created'),
+  accountSettingsFeedback: $('#account-settings-feedback'),
+  accountSettingsSave: $('#account-settings-save'),
+  accountSettingsAvatarInput: $('#account-settings-avatar-input'),
+  chatHeader: document.querySelector('.chat-header'),
   mobileNavToggle: $('#mobile-nav-toggle'),
   activeChannelName: $('#active-channel-name'),
   activeChannelTopic: $('#active-channel-topic'),
   searchToggle: $('#search-toggle'),
-  announceCallBtn: $('#announce-call-btn'),
+  startVideoCallBtn: $('#btn-start-video-call'),
   dmWallpaperBtn: $('#dm-wallpaper-btn'),
   pinToggle: $('#pin-toggle'),
   memberToggle: $('#member-toggle'),
@@ -78,6 +98,9 @@ const el = {
   membersList: $('#members-list'),
   mobileDrawerBackdrop: $('#mobile-drawer-backdrop'),
   memberPopout: $('#member-popout'),
+  dmOverflowModal: $('#dm-overflow-modal'),
+  dmOverflowClose: $('#dm-overflow-close'),
+  dmOverflowList: $('#dm-overflow-list'),
   deletePopover: $('#delete-confirm-popover'),
   deleteCancelBtn: $('#delete-confirm-cancel'),
   deleteSubmitBtn: $('#delete-confirm-submit'),
@@ -122,13 +145,6 @@ const el = {
   createServerSubmit: $('#create-server-submit'),
   createServerError: $('#create-server-error'),
   createServerName: $('#create-server-name'),
-  chatCleanupModal: $('#chat-cleanup-modal'),
-  chatCleanupClose: $('#chat-cleanup-close'),
-  cleanupFromInput: $('#cleanup-from-input'),
-  cleanupToInput: $('#cleanup-to-input'),
-  chatCleanupError: $('#chat-cleanup-error'),
-  cleanupChannelBtn: $('#cleanup-channel-btn'),
-  cleanupServerBtn: $('#cleanup-server-btn'),
   actionModal: $('#action-modal'),
   actionModalTitle: $('#action-modal-title'),
   actionModalDescription: $('#action-modal-description'),
@@ -144,12 +160,18 @@ const el = {
   callMemberCancel: $('#call-member-cancel'),
   callMemberStart: $('#call-member-start'),
   callMemberList: $('#call-member-list'),
+  callModalTitle: $('#call-modal-title'),
   callOverlay: $('#call-overlay'),
-  callOverlayTitle: $('#call-overlay-title'),
-  callOverlaySubtitle: $('#call-overlay-subtitle'),
-  callParticipantGrid: $('#call-participant-grid'),
-  callMuteBtn: $('#call-mute-btn'),
-  callLeaveBtn: $('#call-leave-btn'),
+  callTopbarIcon: $('#call-topbar-icon'),
+  callTopbarTitle: $('#call-topbar-title'),
+  callTimer: $('#call-timer'),
+  callGrid: $('#call-grid'),
+  callMuteBtn: $('#btn-toggle-mic'),
+  callVideoBtn: $('#btn-toggle-video'),
+  callScreenShareBtn: $('#btn-screen-share'),
+  callLayoutBtn: $('#btn-toggle-call-layout'),
+  callFullscreenBtn: $('#btn-toggle-fullscreen'),
+  callLeaveBtn: $('#btn-leave-call'),
   userMicBtn: $('#user-mic-btn'),
   userDeafenBtn: $('#user-deafen-btn'),
   serverIconInput: $('#server-icon-input'),
@@ -175,6 +197,8 @@ const state = {
   messages: [],
   dmChannels: [],
   dmPartner: null,
+  dmListRequestToken: 0,
+  dmListRefreshTimer: 0,
   unread: {},
   collapsedCategories: {},
   sidebarHidden: false,
@@ -221,22 +245,32 @@ const state = {
     serverId: null,
     channelId: null,
     channelName: '',
+    hostId: null,
+    mode: 'video',
+    layoutMode: 'focus',
     localMuted: false,
+    localVideoEnabled: true,
+    screenSharing: false,
     localStream: null,
+    screenStream: null,
     audioContext: null,
     peers: new Map(),
     participants: new Map(),
     analysers: new Map(),
     animationFrameId: 0,
+    timerStartedAt: 0,
+    timerIntervalId: 0,
     pendingInvites: [],
     selectedInviteUserIds: new Set()
   },
-  serverMenuPortal: null
+  serverMenuPortal: null,
+  accountSettingsRestore: null
 };
 
 const BASE_SLASH_COMMANDS = Object.freeze([
   { name: '/mute', usage: '/mute @username', description: 'Mute a member from chat', role: 'operator' },
   { name: '/unmute', usage: '/unmute @username', description: 'Allow a muted member to chat again', role: 'operator' },
+  { name: '/clear', usage: '/clear', description: 'Clear all messages in this channel', role: 'admin' },
   { name: '/gender', usage: '/gender @username `F`', description: 'Set a member gender badge', role: 'admin' },
   { name: '/op', usage: '/op @username', description: 'Grant operator role', role: 'admin' },
   { name: '/deop', usage: '/deop @username', description: 'Remove operator role', role: 'admin' }
@@ -1464,6 +1498,17 @@ function getCsrfToken() {
   } catch (_) { return ''; }
 }
 
+function getPreferredPublicBaseUrl() {
+  try {
+    const rt = (typeof window.getOmChatRuntime === 'function')
+      ? window.getOmChatRuntime()
+      : (window.__OMCHAT_RUNTIME__ || {});
+    const runtimeBase = String(rt?.publicBaseUrl || '').trim().replace(/[\\/]+$/, '');
+    if (runtimeBase) return runtimeBase;
+  } catch (_) {}
+  return PUBLIC_OMCHAT_BASE_URL;
+}
+
 function syncViewportMetrics() {
   const root = document.documentElement;
   const visual = window.visualViewport;
@@ -1739,6 +1784,164 @@ function syncUserAppearance(user) {
   renderSidebar();
   renderMessages();
   updateActiveHeader();
+  if (!el.accountSettingsView?.classList.contains('hidden')) {
+    renderAccountSettingsView();
+  }
+}
+
+function formatAccountCreatedAt(value) {
+  const date = value ? new Date(value) : null;
+  if (!date || Number.isNaN(date.getTime())) return '-';
+  return date.toLocaleDateString([], { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
+function setAccountSettingsFeedback(message = '', tone = 'info') {
+  if (!el.accountSettingsFeedback) return;
+  const text = String(message || '').trim();
+  if (!text) {
+    el.accountSettingsFeedback.textContent = '';
+    el.accountSettingsFeedback.className = 'account-settings-feedback hidden';
+    return;
+  }
+  el.accountSettingsFeedback.textContent = text;
+  el.accountSettingsFeedback.className = `account-settings-feedback is-${tone}`;
+}
+
+function renderAccountSettingsAvatar(profile = {}) {
+  if (!el.accountSettingsAvatarPreview) return;
+  const username = String(profile.username || state.user?.username || 'U').trim();
+  const avatarUrl = String(profile.avatarUrl || '').trim();
+  const color = String(profile.avatarColor || state.user?.avatarColor || 'var(--accent)').trim();
+  const initial = username.slice(0, 1).toUpperCase() || 'U';
+
+  el.accountSettingsAvatarPreview.style.background = color;
+  if (avatarUrl) {
+    el.accountSettingsAvatarPreview.innerHTML = `<img src="${escapeHtml(avatarUrl)}" alt="" />`;
+    return;
+  }
+  el.accountSettingsAvatarPreview.textContent = initial;
+}
+
+function renderAccountSettingsView() {
+  const user = state.user || {};
+  renderAccountSettingsAvatar(user);
+  if (el.accountSettingsDisplayName) el.accountSettingsDisplayName.textContent = user.username || 'Unknown User';
+  if (el.accountSettingsDisplayMeta) {
+    const email = String(user.email || '').trim();
+    const phone = String(user.phone || '').trim();
+    el.accountSettingsDisplayMeta.textContent = [email, phone].filter(Boolean).join(' • ') || 'Add your profile details';
+  }
+  if (el.accountSettingsUsername) el.accountSettingsUsername.value = user.username || '';
+  if (el.accountSettingsEmail) el.accountSettingsEmail.value = user.email || '';
+  if (el.accountSettingsPhone) el.accountSettingsPhone.value = user.phone || '';
+  if (el.accountSettingsRole) el.accountSettingsRole.value = user.role || 'user';
+  if (el.accountSettingsAbout) el.accountSettingsAbout.value = user.aboutMe || '';
+  if (el.accountSettingsUserId) el.accountSettingsUserId.textContent = user.id || '-';
+  if (el.accountSettingsCreated) el.accountSettingsCreated.textContent = formatAccountCreatedAt(user.createdAt);
+}
+
+function applyAccountSettingsLayout(open) {
+  el.appShell?.classList.toggle('settings-open', Boolean(open));
+  const tracked = [
+    ['chatHeader', el.chatHeader],
+    ['searchPanel', el.searchPanel],
+    ['pinnedPanel', el.pinnedPanel],
+    ['pinnedBanner', el.pinnedBanner],
+    ['messageList', el.messageList],
+    ['typingIndicator', el.typingIndicator],
+    ['announcementNotice', el.announcementNotice],
+    ['composer', el.composer]
+  ];
+
+  if (open) {
+    state.accountSettingsRestore = Object.fromEntries(
+      tracked
+        .filter(([, node]) => node)
+        .map(([key, node]) => [key, node.classList.contains('hidden')])
+    );
+    tracked.forEach(([, node]) => node?.classList.add('hidden'));
+    return;
+  }
+
+  const restore = state.accountSettingsRestore || {};
+  tracked.forEach(([key, node]) => {
+    if (!node) return;
+    node.classList.toggle('hidden', Boolean(restore[key]));
+  });
+  state.accountSettingsRestore = null;
+}
+
+function openAccountSettingsView() {
+  closeStatusPopover();
+  closeServerMenu();
+  closeFloatingPanels();
+  closeMobilePanels();
+  renderAccountSettingsView();
+  setAccountSettingsFeedback('');
+  applyAccountSettingsLayout(true);
+  el.accountSettingsView?.classList.remove('hidden');
+}
+
+function closeAccountSettingsView() {
+  setAccountSettingsFeedback('');
+  el.accountSettingsView?.classList.add('hidden');
+  applyAccountSettingsLayout(false);
+}
+
+async function submitAccountSettings(event) {
+  event?.preventDefault?.();
+  const username = String(el.accountSettingsUsername?.value || '').trim();
+  const email = String(el.accountSettingsEmail?.value || '').trim();
+  const phone = String(el.accountSettingsPhone?.value || '').trim();
+  const aboutMe = String(el.accountSettingsAbout?.value || '').trim();
+
+  if (!username) {
+    setAccountSettingsFeedback('Username is required.', 'error');
+    el.accountSettingsUsername?.focus();
+    return;
+  }
+
+  const payload = { username, phone, aboutMe };
+  if (email) payload.email = email;
+
+  if (el.accountSettingsSave) el.accountSettingsSave.disabled = true;
+  setAccountSettingsFeedback('Saving changes...', 'info');
+
+  try {
+    const response = await fetch('/api/auth/me', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await response.json().catch(() => null);
+    if (!response.ok || !data?.user) {
+      throw new Error(data?.message || data?.error || 'Could not save your account settings');
+    }
+    syncUserAppearance(data.user);
+    renderAccountSettingsView();
+    setAccountSettingsFeedback('Profile updated.', 'success');
+  } catch (error) {
+    setAccountSettingsFeedback(error?.message || 'Could not save your account settings', 'error');
+  } finally {
+    if (el.accountSettingsSave) el.accountSettingsSave.disabled = false;
+  }
+}
+
+async function handleAccountSettingsAvatarChange() {
+  const file = el.accountSettingsAvatarInput?.files?.[0];
+  if (!file) return;
+  try {
+    setAccountSettingsFeedback('Uploading photo...', 'info');
+    const user = await uploadProfileAvatar(file);
+    if (user) {
+      renderAccountSettingsView();
+      setAccountSettingsFeedback('Profile photo updated.', 'success');
+    }
+  } catch (error) {
+    setAccountSettingsFeedback(error?.message || 'Profile photo upload failed', 'error');
+  } finally {
+    if (el.accountSettingsAvatarInput) el.accountSettingsAvatarInput.value = '';
+  }
 }
 
 function isSameCalendarDay(left, right) {
@@ -1887,6 +2090,28 @@ function getCurrentPartner() {
   return state.dmChannels.find((item) => item.id === state.currentDmChannelId)?.partner || state.dmPartner;
 }
 
+function normalizeDmChannelRecord(dm) {
+  if (!dm || typeof dm !== 'object') return null;
+
+  const partner = dm.partner && typeof dm.partner === 'object'
+    ? {
+        ...dm.partner,
+        userId: String(dm.partner.userId || dm.partner.id || '').trim(),
+        username: String(dm.partner.username || 'Unknown').trim() || 'Unknown'
+      }
+    : null;
+
+  return {
+    ...dm,
+    id: String(dm.id || '').trim(),
+    participants: Array.isArray(dm.participants) ? dm.participants.map((entry) => String(entry || '').trim()).filter(Boolean) : [],
+    hiddenFor: Array.isArray(dm.hiddenFor) ? dm.hiddenFor.map((entry) => String(entry || '').trim()).filter(Boolean) : [],
+    partner,
+    lastMessageAt: String(dm.lastMessageAt || dm.lastMessage?.createdAt || dm.updatedAt || dm.createdAt || '').trim(),
+    lastMessagePreview: String(dm.lastMessagePreview || dm.lastMessage?.content || '').trim()
+  };
+}
+
 function canModerateCurrentChannel() {
   return state.currentView === 'server' && state.isAdmin;
 }
@@ -1936,7 +2161,7 @@ function updateActiveHeader() {
     el.activeChannelTopic.textContent = partnerStatus || (partner ? `Direct message with ${partner.username}` : 'Direct message');
     el.composerInput.placeholder = partner ? `Message @${partner.username}` : 'Message direct message';
     el.pinToggle.classList.add('hidden');
-    el.announceCallBtn?.classList.add('hidden');
+    el.startVideoCallBtn?.classList.add('hidden');
     el.dmWallpaperBtn?.classList.remove('hidden');
     el.pinnedPanel.classList.add('hidden');
     el.pinnedBanner.classList.add('hidden');
@@ -1952,7 +2177,8 @@ function updateActiveHeader() {
   el.activeChannelTopic.textContent = channel?.topic || 'No topic';
   el.composerInput.placeholder = channel ? `Message #${channel.name}` : 'Message #channel';
   el.pinToggle.classList.remove('hidden');
-  el.announceCallBtn?.classList.toggle('hidden', !(isAnnouncementChannel(channel) && canUseAdminOrOpFeatures()));
+  const showCallButtons = isAnnouncementChannel(channel) && canUseAdminOrOpFeatures();
+  el.startVideoCallBtn?.classList.toggle('hidden', !showCallButtons);
   el.dmWallpaperBtn?.classList.add('hidden');
   applyChatBackground(normalizeAssetUrl(state.server?.chatBackgroundUrl || state.server?.bannerUrl || ''), '');
   // Refresh badge to show group encryption state
@@ -1982,17 +2208,44 @@ function getCallParticipant(userId) {
   return state.call.participants.get(userId) || null;
 }
 
+function resolveCallParticipantName(userId, fallback = '') {
+  const normalizedUserId = String(userId || '').trim();
+  if (!normalizedUserId) return String(fallback || '').trim();
+
+  if (normalizedUserId === String(state.user?.id || '').trim()) {
+    return String(state.user?.username || fallback || '').trim();
+  }
+
+  const member = state.members.find((item) => String(item?.userId || '') === normalizedUserId);
+  if (member?.username) return String(member.username).trim();
+
+  const dmPartner = state.dmChannels
+    .map((item) => item?.partner)
+    .find((partner) => String(partner?.userId || '') === normalizedUserId);
+  if (dmPartner?.username) return String(dmPartner.username).trim();
+
+  const existing = getCallParticipant(normalizedUserId);
+  if (existing?.username) return String(existing.username).trim();
+
+  return String(fallback || '').trim();
+}
+
 function upsertCallParticipant(userId, patch = {}) {
   if (!userId) return null;
   const existing = getCallParticipant(userId) || {};
+  const resolvedUsername = resolveCallParticipantName(userId, patch.username || existing.username || '');
   const next = {
     userId,
-    username: existing.username || 'User',
+    username: resolvedUsername || 'Unknown',
     avatarColor: existing.avatarColor || '#5865F2',
     avatarUrl: existing.avatarUrl || '',
     muted: Boolean(existing.muted),
     speaking: Boolean(existing.speaking),
+    videoEnabled: 'videoEnabled' in existing ? Boolean(existing.videoEnabled) : state.call.mode === 'video',
+    screenSharing: Boolean(existing.screenSharing),
     stream: existing.stream || null,
+    audioStream: existing.audioStream || null,
+    videoStream: existing.videoStream || null,
     audioEl: existing.audioEl || null,
     ...patch
   };
@@ -2054,7 +2307,7 @@ function attachCallAnalyser(userId, stream, { playAudio = false } = {}) {
   });
 }
 
-function attachRemoteStream(stream, userId) {
+function attachRemoteAudio(stream, userId) {
   if (!stream || !userId) return null;
   removeRemoteAudio(userId);
 
@@ -2063,7 +2316,7 @@ function attachRemoteStream(stream, userId) {
   audio.autoplay = true;
   audio.controls = false;
   audio.playsInline = true;
-  audio.srcObject = stream;
+  audio.srcObject = new MediaStream(stream.getAudioTracks());
   audio.hidden = true;
   document.body.appendChild(audio);
   audio.play().catch(() => {});
@@ -2081,7 +2334,6 @@ function startCallSpeakingMonitor() {
   stopCallSpeakingMonitor();
 
   const tick = () => {
-    let changed = false;
     for (const [userId, entry] of state.call.analysers.entries()) {
       entry.analyser.getByteFrequencyData(entry.data);
       const avg = entry.data.reduce((sum, value) => sum + value, 0) / Math.max(1, entry.data.length);
@@ -2090,11 +2342,10 @@ function startCallSpeakingMonitor() {
       const speaking = avg > 18 && !participant.muted;
       if (participant.speaking !== speaking) {
         upsertCallParticipant(userId, { speaking });
-        changed = true;
+        setTileSpeaking(userId, speaking);
       }
     }
 
-    if (changed) renderCallOverlay();
     state.call.animationFrameId = requestAnimationFrame(tick);
   };
 
@@ -2134,44 +2385,171 @@ function applyCallInviteState(message) {
   };
 }
 
-function renderCallOverlay() {
-  if (!el.callOverlay || !el.callParticipantGrid) return;
+function createTile(userId, username, avatarColor, avatarUrl = '', isLocal = false) {
+  if (!el.callGrid || document.getElementById(`tile-${userId}`)) return;
+  const displayName = resolveCallParticipantName(userId, username || '') || 'Unknown';
+  const initial = String(displayName || '?').slice(0, 1).toUpperCase() || '?';
+  const tile = document.createElement('div');
+  tile.className = 'call-tile';
+  tile.id = `tile-${userId}`;
+  tile.dataset.userId = userId;
+
+  const avatarInner = avatarUrl
+    ? `<img src="${escapeHtml(avatarUrl)}" alt="" />`
+    : escapeHtml(initial);
+
+  tile.innerHTML = `
+    <video class="tile-video" id="video-${userId}" autoplay playsinline ${isLocal ? 'muted' : ''}></video>
+    <div class="tile-avatar" id="avatar-${userId}" style="background:${escapeHtml(avatarColor || '#5865F2')}">${avatarInner}</div>
+    <div class="tile-name">${escapeHtml(displayName)}${isLocal ? ' (You)' : ''}</div>
+    <div class="tile-badges">
+      <span id="badge-muted-${userId}" class="tile-badge tile-badge--muted" style="display:none">${getCallIconSvg('micOff', 'tile-badge-icon tile-badge-icon--muted')}</span>
+      <span id="badge-screen-${userId}" class="tile-badge" style="display:none">${getCallIconSvg('screen', 'tile-badge-icon')}</span>
+    </div>
+  `;
+
+  const video = tile.querySelector('video');
+  if (video && isLocal) {
+    video.muted = true;
+    video.defaultMuted = true;
+  }
+
+  el.callGrid.appendChild(tile);
+}
+
+function removeTile(userId) {
+  const tile = document.getElementById(`tile-${userId}`);
+  if (tile) tile.remove();
+}
+
+function setTileVideo(userId, stream) {
+  const video = document.getElementById(`video-${userId}`);
+  const avatar = document.getElementById(`avatar-${userId}`);
+  if (!video) return;
+
+  const hasVideo = Boolean(stream?.getVideoTracks?.().length);
+  if (hasVideo) {
+    video.srcObject = stream;
+    video.style.display = 'block';
+    if (avatar) avatar.style.display = 'none';
+    video.play().catch(() => {});
+  } else {
+    video.pause?.();
+    video.srcObject = null;
+    video.style.display = 'none';
+    if (avatar) avatar.style.display = 'flex';
+  }
+}
+
+function setTileMuted(userId, muted) {
+  const participant = getCallParticipant(userId);
+  if (participant) participant.muted = Boolean(muted);
+  const badge = document.getElementById(`badge-muted-${userId}`);
+  if (badge) badge.style.display = muted ? 'inline-flex' : 'none';
+}
+
+function setTileScreenSharing(userId, sharing) {
+  const badge = document.getElementById(`badge-screen-${userId}`);
+  if (badge) badge.style.display = sharing ? 'inline' : 'none';
+}
+
+function setTileSpeaking(userId, speaking) {
+  const tile = document.getElementById(`tile-${userId}`);
+  if (tile) tile.classList.toggle('speaking', speaking);
+}
+
+function syncCallControls() {
+  if (!el.callMuteBtn || !el.callVideoBtn || !el.callScreenShareBtn) return;
+  el.callMuteBtn.classList.toggle('ctrl-btn--muted', state.call.localMuted);
+  el.callMuteBtn.innerHTML = state.call.localMuted
+    ? getCallIconSvg('micOff')
+    : getCallIconSvg('mic');
+  el.callVideoBtn.style.display = '';
+  el.callScreenShareBtn.style.display = '';
+  el.callVideoBtn.classList.toggle('ctrl-btn--muted', !state.call.localVideoEnabled);
+  el.callVideoBtn.innerHTML = state.call.localVideoEnabled
+    ? getCallIconSvg('video')
+    : getCallIconSvg('videoOff');
+  el.callScreenShareBtn.innerHTML = getCallIconSvg('screen');
+  el.callScreenShareBtn.classList.toggle('ctrl-btn--active', state.call.screenSharing);
+  if (el.callLayoutBtn) {
+    const showLayoutToggle = !isMobileLayout();
+    el.callLayoutBtn.style.display = showLayoutToggle ? '' : 'none';
+    el.callLayoutBtn.classList.toggle('ctrl-btn--active', state.call.layoutMode === 'group');
+    el.callLayoutBtn.innerHTML = `${getCallIconSvg('users')}<span>${state.call.layoutMode === 'focus' ? 'Group View' : 'Caller Only'}</span>`;
+  }
+}
+
+function getPreferredFocusedParticipantId() {
   const participants = Array.from(state.call.participants.values());
-  el.callOverlayTitle.textContent = `Voice Call - #${state.call.channelName || 'announce'}`;
-  el.callOverlaySubtitle.textContent = participants.length > 1
-    ? `${participants.length} people in call`
-    : 'Waiting for participants...';
-  el.callMuteBtn.textContent = state.call.localMuted ? 'Unmute' : 'Mute';
+  const hostId = String(state.call.hostId || '').trim();
+  const currentUserId = String(state.user?.id || '').trim();
+  const remoteParticipants = participants.filter((participant) => participant.userId !== currentUserId);
+  const firstRemote = remoteParticipants[0] || null;
 
-  el.callParticipantGrid.innerHTML = '';
-  participants.forEach((participant) => {
-    const tile = document.createElement('article');
-    tile.className = `call-participant-tile ${participant.speaking ? 'is-speaking' : ''}`;
-
-    const avatar = document.createElement('div');
-    avatar.className = 'call-participant-avatar';
-    avatar.style.background = participant.avatarColor || '#5865F2';
-
-    if (participant.avatarUrl) {
-      const image = document.createElement('img');
-      image.src = participant.avatarUrl;
-      image.alt = '';
-      avatar.appendChild(image);
-    } else {
-      avatar.textContent = String(participant.username || '?').slice(0, 1).toUpperCase() || '?';
+  if (remoteParticipants.length > 0) {
+    if (hostId && hostId !== currentUserId) {
+      const hostParticipant = remoteParticipants.find((participant) => participant.userId === hostId);
+      if (hostParticipant?.userId) return hostParticipant.userId;
     }
+    return firstRemote?.userId || '';
+  }
 
-    tile.appendChild(avatar);
+  const iAmHost = Boolean(hostId) && hostId === currentUserId;
+  if (!iAmHost) {
+    return '';
+  }
 
-    if (participant.muted) {
-      const muted = document.createElement('div');
-      muted.className = 'call-muted-badge';
-      muted.textContent = 'Muted';
-      tile.appendChild(muted);
-    }
+  return participants.find((participant) => participant.userId === currentUserId)?.userId || currentUserId;
+}
 
-    el.callParticipantGrid.appendChild(tile);
+function getVisibleCallParticipants() {
+  const participants = Array.from(state.call.participants.values());
+  if (isMobileLayout() || state.call.layoutMode === 'focus') {
+    const focusedId = getPreferredFocusedParticipantId();
+    if (!focusedId) return [];
+    return participants.filter((participant) => participant.userId === focusedId);
+  }
+  return participants;
+}
+
+function syncCallTiles(visibleParticipants = getVisibleCallParticipants()) {
+  if (!el.callGrid) return;
+  const seen = new Set();
+  for (const participant of visibleParticipants) {
+    seen.add(participant.userId);
+    createTile(
+      participant.userId,
+      resolveCallParticipantName(participant.userId, participant.username || ''),
+      participant.avatarColor || '#5865F2',
+      participant.avatarUrl || '',
+      participant.userId === state.user?.id
+    );
+    const videoStream = participant.userId === state.user?.id
+      ? (state.call.screenStream || (state.call.localVideoEnabled ? participant.videoStream || participant.stream : null))
+      : (participant.videoEnabled ? participant.videoStream || participant.stream : null);
+    setTileVideo(participant.userId, videoStream);
+    setTileMuted(participant.userId, participant.muted);
+    setTileScreenSharing(participant.userId, participant.screenSharing);
+    setTileSpeaking(participant.userId, participant.speaking);
+  }
+
+  Array.from(el.callGrid.children).forEach((child) => {
+    if (!seen.has(child.dataset.userId)) child.remove();
   });
+}
+
+function renderCallOverlay() {
+  if (!el.callOverlay || !el.callGrid) return;
+  const label = 'Video Call';
+  const visibleParticipants = getVisibleCallParticipants();
+  const compactLayout = visibleParticipants.length <= 2 || state.call.layoutMode === 'focus' || isMobileLayout();
+  el.callGrid.classList.toggle('call-grid--compact', compactLayout);
+  el.callGrid.dataset.visibleCount = String(visibleParticipants.length);
+  if (el.callTopbarIcon) el.callTopbarIcon.innerHTML = getCallIconSvg('video');
+  if (el.callTopbarTitle) el.callTopbarTitle.textContent = `${label} - #${state.call.channelName || 'announce'}`;
+  syncCallControls();
+  syncCallTiles(visibleParticipants);
 }
 
 function closeCallMemberModal() {
@@ -2219,6 +2597,9 @@ function openCallMemberModal() {
   state.call.selectedInviteUserIds = new Set();
   renderCallMemberPicker();
   el.callMemberStart.disabled = true;
+  if (el.callModalTitle) {
+    el.callModalTitle.innerHTML = `${getCallIconSvg('video')}<span>Start a Video Call</span>`;
+  }
   el.callMemberModal?.classList.remove('hidden');
 }
 
@@ -2243,6 +2624,41 @@ function setOpusParameters(sdp) {
     `a=rtpmap:${payloadType} opus/48000/2\r\na=fmtp:${payloadType} ${opusParams}\r\n`
   );
   return result;
+}
+
+function preferVP9OverVP8(sdp) {
+  const source = String(sdp || '');
+  if (!source.includes('m=video')) return source;
+  return source.replace(
+    /m=video (\d+) UDP\/TLS\/RTP\/SAVPF ([\d ]+)/,
+    (match, port, payloads) => {
+      const lines = source.split('\r\n');
+      const vp9 = [];
+      const vp8 = [];
+      const h264 = [];
+      lines.forEach((line) => {
+        let codecMatch = line.match(/^a=rtpmap:(\d+) VP9/i);
+        if (codecMatch) {
+          vp9.push(codecMatch[1]);
+          return;
+        }
+        codecMatch = line.match(/^a=rtpmap:(\d+) VP8/i);
+        if (codecMatch) {
+          vp8.push(codecMatch[1]);
+          return;
+        }
+        codecMatch = line.match(/^a=rtpmap:(\d+) H264/i);
+        if (codecMatch) h264.push(codecMatch[1]);
+      });
+      const ordered = [
+        ...vp9,
+        ...vp8,
+        ...h264,
+        ...payloads.split(' ').filter((payload) => ![...vp9, ...vp8, ...h264].includes(payload))
+      ];
+      return `m=video ${port} UDP/TLS/RTP/SAVPF ${ordered.join(' ')}`;
+    }
+  );
 }
 
 function destroyParticipantAudio(participant) {
@@ -2274,6 +2690,7 @@ function closePeer(userId) {
   const participant = getCallParticipant(userId);
   destroyParticipantAudio(participant);
   state.call.participants.delete(userId);
+  removeTile(userId);
 }
 
 function closeAllPeers() {
@@ -2282,8 +2699,28 @@ function closeAllPeers() {
   }
 }
 
+function stopCallTimer() {
+  if (state.call.timerIntervalId) clearInterval(state.call.timerIntervalId);
+  state.call.timerIntervalId = 0;
+  state.call.timerStartedAt = 0;
+  if (el.callTimer) el.callTimer.textContent = '00:00';
+}
+
+function startCallTimer() {
+  if (state.call.timerIntervalId) return;
+  state.call.timerStartedAt = Date.now();
+  if (el.callTimer) el.callTimer.textContent = '00:00';
+  state.call.timerIntervalId = window.setInterval(() => {
+    const elapsed = Math.floor((Date.now() - state.call.timerStartedAt) / 1000);
+    const minutes = String(Math.floor(elapsed / 60)).padStart(2, '0');
+    const seconds = String(elapsed % 60).padStart(2, '0');
+    if (el.callTimer) el.callTimer.textContent = `${minutes}:${seconds}`;
+  }, 1000);
+}
+
 function teardownCallUi() {
   stopCallSpeakingMonitor();
+  stopCallTimer();
   for (const analyser of state.call.analysers.values()) {
     if (analyser?.source) {
       try { analyser.source.disconnect(); } catch (_) {}
@@ -2293,6 +2730,9 @@ function teardownCallUi() {
   for (const participant of state.call.participants.values()) destroyParticipantAudio(participant);
   state.call.participants.clear();
   state.call.analysers.clear();
+  if (state.call.screenStream) {
+    state.call.screenStream.getTracks().forEach((track) => track.stop());
+  }
   if (state.call.localStream) {
     state.call.localStream.getTracks().forEach((track) => track.stop());
   }
@@ -2300,41 +2740,97 @@ function teardownCallUi() {
     state.call.audioContext.close().catch(() => {});
   }
   state.call.localStream = null;
+  state.call.screenStream = null;
   state.call.audioContext = null;
+  state.call.hostId = null;
+  state.call.mode = 'video';
+  state.call.layoutMode = 'focus';
   state.call.localMuted = false;
+  state.call.localVideoEnabled = true;
+  state.call.screenSharing = false;
   state.call.currentCallId = null;
   state.call.serverId = null;
   state.call.channelId = null;
   state.call.channelName = '';
+  if (el.callGrid) el.callGrid.innerHTML = '';
+  if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
   el.callOverlay?.classList.add('hidden');
+}
+
+async function getLocalStream() {
+  const constraints = {
+    audio: {
+      echoCancellation: { ideal: true },
+      noiseSuppression: { ideal: true },
+      autoGainControl: { ideal: true },
+      sampleRate: { ideal: 48000 },
+      channelCount: { ideal: 1 },
+      latency: { ideal: 0.01 },
+      suppressLocalAudioPlayback: true
+    },
+    video: {
+      width: { ideal: 1280, max: 1920 },
+      height: { ideal: 720, max: 1080 },
+      frameRate: { ideal: 30, max: 60 },
+      facingMode: 'user'
+    }
+  };
+
+  try {
+    return await navigator.mediaDevices.getUserMedia(constraints);
+  } catch (error) {
+    if (error?.name === 'NotAllowedError' || error?.name === 'PermissionDeniedError') {
+      showVoiceTooltip('Camera/Microphone access denied. Cannot join call.');
+    } else if (error?.name === 'NotFoundError') {
+      showVoiceTooltip('Camera or microphone not found. Cannot join call.');
+    } else {
+      showVoiceTooltip(`Media error: ${error?.message || 'Unknown error'}`);
+    }
+    return null;
+  }
+}
+
+async function getScreenShareStream() {
+  try {
+    return await navigator.mediaDevices.getDisplayMedia({
+      video: {
+        cursor: 'always',
+        displaySurface: 'monitor',
+        logicalSurface: true,
+        frameRate: { ideal: 30 }
+      },
+      audio: false
+    });
+  } catch (error) {
+    if (error?.name !== 'NotAllowedError') {
+      showVoiceTooltip(`Screen share error: ${error?.message || 'Unknown error'}`);
+    }
+    return null;
+  }
 }
 
 async function ensureLocalCallStream(callId) {
   if (state.call.localStream) return state.call.localStream;
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        echoCancellation: { ideal: true },
-        noiseSuppression: { ideal: true },
-        autoGainControl: { ideal: true },
-        sampleRate: { ideal: 48000 },
-        channelCount: { ideal: 1 },
-        latency: { ideal: 0.01 },
-        suppressLocalAudioPlayback: true
-      },
-      video: false
-    });
+    const stream = await getLocalStream();
+    if (!stream) throw new Error('media_unavailable');
     state.call.localStream = stream;
+    state.call.localVideoEnabled = stream.getVideoTracks().length > 0 && stream.getVideoTracks().some((track) => track.enabled);
     const localUser = state.user || {};
     upsertCallParticipant(localUser.id, {
       username: localUser.username || 'You',
       avatarColor: localUser.avatarColor || '#5865F2',
       avatarUrl: localUser.avatarUrl || '',
       muted: false,
-      stream
+      videoEnabled: state.call.localVideoEnabled,
+      screenSharing: false,
+      stream,
+      audioStream: new MediaStream(stream.getAudioTracks()),
+      videoStream: stream.getVideoTracks().length ? new MediaStream(stream.getVideoTracks()) : null
     });
-    attachCallAnalyser(localUser.id, stream);
+    attachCallAnalyser(localUser.id, new MediaStream(stream.getAudioTracks()));
     startCallSpeakingMonitor();
+    renderCallOverlay();
     if (location.hostname === 'localhost') {
       stream.getAudioTracks().forEach((track) => {
         console.log('[Om Chat Call] Audio track settings:', track.getSettings());
@@ -2370,10 +2866,26 @@ function createCallPeer(targetUserId) {
   peer.ontrack = (event) => {
     const [stream] = event.streams || [];
     if (!stream) return;
-    const audioEl = attachRemoteStream(stream, targetUserId);
-    upsertCallParticipant(targetUserId, { stream, audioEl });
-    attachCallAnalyser(targetUserId, stream);
-    renderCallOverlay();
+    if (event.track.kind === 'audio') {
+      const audioStream = new MediaStream(stream.getAudioTracks());
+      const audioEl = attachRemoteAudio(stream, targetUserId);
+      upsertCallParticipant(targetUserId, { stream, audioStream, audioEl });
+      attachCallAnalyser(targetUserId, audioStream);
+      renderCallOverlay();
+      return;
+    }
+
+    if (event.track.kind === 'video') {
+      const videoStream = new MediaStream(stream.getVideoTracks());
+      upsertCallParticipant(targetUserId, {
+        stream,
+        videoStream,
+        videoEnabled: true
+      });
+      setTileVideo(targetUserId, videoStream);
+      renderCallOverlay();
+      return;
+    }
   };
 
   peer.onconnectionstatechange = () => {
@@ -2392,10 +2904,10 @@ async function startCallOffer(targetUserId) {
   if (!peer || !state.call.currentCallId) return;
   const offer = await peer.createOffer({
     offerToReceiveAudio: true,
-    offerToReceiveVideo: false,
+    offerToReceiveVideo: state.call.mode === 'video',
     voiceActivityDetection: true
   });
-  const mungedSdp = setOpusParameters(offer.sdp);
+  const mungedSdp = preferVP9OverVP8(setOpusParameters(offer.sdp));
   await peer.setLocalDescription({ type: 'offer', sdp: mungedSdp });
   socketActions.callSignal({
     callId: state.call.currentCallId,
@@ -2406,6 +2918,9 @@ async function startCallOffer(targetUserId) {
 
 async function handleIncomingCallSignal({ fromUserId, signal }) {
   if (!fromUserId || !signal) return;
+  if (signal.type === 'offer' && !state.call.localStream && state.call.currentCallId) {
+    await ensureLocalCallStream(state.call.currentCallId);
+  }
   const peer = signal.type === 'offer'
     ? createCallPeer(fromUserId)
     : getPeer(fromUserId) || createCallPeer(fromUserId);
@@ -2414,11 +2929,12 @@ async function handleIncomingCallSignal({ fromUserId, signal }) {
   if (signal.type === 'offer') {
     await peer.setRemoteDescription(new RTCSessionDescription(signal));
     const answer = await peer.createAnswer();
-    await peer.setLocalDescription(answer);
+    const mungedSdp = preferVP9OverVP8(setOpusParameters(answer.sdp));
+    await peer.setLocalDescription({ type: 'answer', sdp: mungedSdp });
     socketActions.callSignal({
       callId: state.call.currentCallId,
       targetUserId: fromUserId,
-      signal: { type: 'answer', sdp: answer.sdp }
+      signal: { type: 'answer', sdp: mungedSdp }
     });
     return;
   }
@@ -2444,7 +2960,11 @@ async function joinCallSession(callId, details = {}) {
   state.call.serverId = details.serverId || state.server?.id || null;
   state.call.channelId = details.channelId || state.currentChannelId || null;
   state.call.channelName = details.channelName || state.channels.find((channel) => channel.id === details.channelId)?.name || 'announce';
+  state.call.hostId = details.hostId || state.call.hostId || null;
+  state.call.mode = 'video';
+  state.call.layoutMode = 'focus';
   el.callOverlay?.classList.remove('hidden');
+  startCallTimer();
   renderCallOverlay();
   await ensureLocalCallStream(callId);
   renderCallOverlay();
@@ -2457,7 +2977,12 @@ function openHostedCall(callId, details = {}) {
   state.call.serverId = details.serverId || state.server?.id || null;
   state.call.channelId = details.channelId || state.currentChannelId || null;
   state.call.channelName = details.channelName || state.channels.find((channel) => channel.id === details.channelId)?.name || 'announce';
+  state.call.hostId = details.hostId || state.user?.id || null;
+  state.call.mode = 'video';
+  state.call.layoutMode = 'focus';
   el.callOverlay?.classList.remove('hidden');
+  startCallTimer();
+  renderCallOverlay();
   ensureLocalCallStream(callId)
     .then(() => renderCallOverlay())
     .catch(() => {});
@@ -2479,7 +3004,95 @@ function toggleCurrentCallMute() {
     callId: state.call.currentCallId,
     muted: state.call.localMuted
   });
+  setTileMuted(state.user?.id, state.call.localMuted);
+  syncCallControls();
+}
+
+function updateLocalVideoTile(stream) {
+  if (state.call.mode !== 'video') return;
+  setTileVideo(state.user?.id, stream);
+}
+
+async function startScreenShare() {
+  const stream = await getScreenShareStream();
+  if (!stream) return;
+
+  const screenTrack = stream.getVideoTracks()[0];
+  if (!screenTrack) {
+    stream.getTracks().forEach((track) => track.stop());
+    return;
+  }
+
+  state.call.screenStream = stream;
+  state.call.screenSharing = true;
+  for (const peer of state.call.peers.values()) {
+    const sender = peer.getSenders().find((item) => item.track && item.track.kind === 'video');
+    if (sender) {
+      await sender.replaceTrack(screenTrack);
+    }
+  }
+
+  upsertCallParticipant(state.user?.id, { screenSharing: true, videoEnabled: true });
+  updateLocalVideoTile(stream);
+  setTileScreenSharing(state.user?.id, true);
+  syncCallControls();
+  socketActions.callScreenShareToggle({ callId: state.call.currentCallId, sharing: true });
+  screenTrack.onended = () => { void stopScreenShare(); };
+}
+
+async function stopScreenShare() {
+  if (!state.call.screenSharing) return;
+  state.call.screenSharing = false;
+  if (state.call.screenStream) {
+    state.call.screenStream.getTracks().forEach((track) => track.stop());
+  }
+  state.call.screenStream = null;
+
+  const cameraTrack = state.call.localStream?.getVideoTracks?.()[0] || null;
+  for (const peer of state.call.peers.values()) {
+    const sender = peer.getSenders().find((item) => item.track && item.track.kind === 'video');
+    if (sender) {
+      await sender.replaceTrack(cameraTrack);
+    }
+  }
+
+  upsertCallParticipant(state.user?.id, { screenSharing: false });
+  updateLocalVideoTile(state.call.localVideoEnabled ? (getCallParticipant(state.user?.id)?.videoStream || state.call.localStream) : null);
+  setTileScreenSharing(state.user?.id, false);
+  syncCallControls();
+  socketActions.callScreenShareToggle({ callId: state.call.currentCallId, sharing: false });
+}
+
+function toggleCurrentCallVideo() {
+  if (state.call.mode !== 'video' || !state.call.currentCallId) return;
+  state.call.localVideoEnabled = !state.call.localVideoEnabled;
+  const videoTracks = state.call.localStream?.getVideoTracks?.() || [];
+  videoTracks.forEach((track) => {
+    track.enabled = state.call.localVideoEnabled;
+  });
+  upsertCallParticipant(state.user?.id, { videoEnabled: state.call.localVideoEnabled });
+  updateLocalVideoTile(state.call.localVideoEnabled ? (state.call.screenStream || getCallParticipant(state.user?.id)?.videoStream || state.call.localStream) : null);
+  socketActions.callVideoToggle({
+    callId: state.call.currentCallId,
+    videoEnabled: state.call.localVideoEnabled
+  });
+  syncCallControls();
+}
+
+function toggleCallLayoutMode() {
+  if (state.call.mode !== 'video' || isMobileLayout()) return;
+  state.call.layoutMode = state.call.layoutMode === 'focus' ? 'group' : 'focus';
   renderCallOverlay();
+}
+
+function toggleCallFullscreen() {
+  const overlay = el.callOverlay;
+  if (!overlay) return;
+  if (!document.fullscreenElement) {
+    overlay.requestFullscreen?.().catch(() => {});
+    return;
+  }
+  document.exitFullscreen?.().catch(() => {});
 }
 
 function renderStatusPopover() {
@@ -2517,7 +3130,7 @@ function closeMemberPopout() {
 
 function getServerJoinUrl() {
   if (!state.server?.id) return '-';
-  return state.server.access?.joinUrl || `${window.location.origin}/?server=${encodeURIComponent(state.server.id)}`;
+  return state.server.access?.joinUrl || `${getPreferredPublicBaseUrl()}/?server=${encodeURIComponent(state.server.id)}`;
 }
 
 function openServerInfoModal(options = {}) {
@@ -2684,85 +3297,6 @@ async function submitCreateChannel() {
   renderSidebar();
   selectChannel(data.channel.id);
   closeCreateChannelModal();
-}
-
-function setChatCleanupError(message = '') {
-  if (!el.chatCleanupError) return;
-  const text = String(message || '').trim();
-  el.chatCleanupError.textContent = text;
-  el.chatCleanupError.classList.toggle('hidden', !text);
-}
-
-function closeChatCleanupModal() {
-  el.chatCleanupModal.classList.add('hidden');
-  setChatCleanupError('');
-}
-
-function openChatCleanupModal() {
-  if (!state.isAdmin || !state.server?.id) return;
-  el.cleanupFromInput.value = '';
-  el.cleanupToInput.value = '';
-  setChatCleanupError('');
-  el.chatCleanupModal.classList.remove('hidden');
-}
-
-function toIsoFromLocalInput(value) {
-  const raw = String(value || '').trim();
-  if (!raw) return null;
-  const date = new Date(raw);
-  if (Number.isNaN(date.getTime())) return null;
-  return date.toISOString();
-}
-
-async function runChatCleanup(mode = 'channel') {
-  if (!state.server?.id || !state.isAdmin) return;
-
-  const clearMode = mode === 'server' ? 'server' : 'channel';
-  if (clearMode === 'channel' && (state.currentView !== 'server' || !state.currentChannelId)) {
-    setChatCleanupError('Open a server channel first, then clear chat.');
-    return;
-  }
-
-  const fromRaw = el.cleanupFromInput.value;
-  const toRaw = el.cleanupToInput.value;
-  const hasFrom = Boolean(String(fromRaw || '').trim());
-  const hasTo = Boolean(String(toRaw || '').trim());
-
-  if (hasFrom !== hasTo) {
-    setChatCleanupError('Please set both From Time and To Time.');
-    return;
-  }
-
-  const payload = {
-    mode: clearMode,
-    channelId: clearMode === 'channel' ? state.currentChannelId : null
-  };
-
-  if (hasFrom && hasTo) {
-    const from = toIsoFromLocalInput(fromRaw);
-    const to = toIsoFromLocalInput(toRaw);
-    if (!from || !to) {
-      setChatCleanupError('Invalid date/time selected.');
-      return;
-    }
-    payload.from = from;
-    payload.to = to;
-  }
-
-  const response = await fetch(`/api/servers/${encodeURIComponent(state.server.id)}/messages/clear`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  });
-
-  const data = await response.json().catch(() => null);
-  if (!response.ok || !data?.success) {
-    const error = String(data?.error || 'cleanup_failed').replace(/_/g, ' ');
-    setChatCleanupError(error);
-    return;
-  }
-
-  closeChatCleanupModal();
 }
 
 function closeActionModal() {
@@ -3034,86 +3568,157 @@ function updateDmBadge() {
   el.dmBadge.classList.toggle('hidden', totalUnread === 0);
 }
 
+function getOrderedDmChannels() {
+  return [...state.dmChannels].sort((left, right) => {
+    const leftTime = new Date(left.lastMessageAt || left.updatedAt || left.createdAt || 0).getTime();
+    const rightTime = new Date(right.lastMessageAt || right.updatedAt || right.createdAt || 0).getTime();
+    return rightTime - leftTime;
+  });
+}
+
+function getSidebarDmChannels(ordered) {
+  const visible = ordered.slice(0, 2);
+  const activeId = state.currentView === 'dm' ? state.currentChannelId : '';
+  if (!activeId || visible.some((dm) => dm.id === activeId)) {
+    return visible;
+  }
+
+  const activeDm = ordered.find((dm) => dm.id === activeId);
+  if (!activeDm) return visible;
+  if (!visible.length) return [activeDm];
+  return [visible[0], activeDm].filter((dm, index, list) => list.findIndex((entry) => entry.id === dm.id) === index).slice(0, 2);
+}
+
+function createDmRow(dm) {
+  const partner = dm?.partner;
+  if (!dm?.id || !partner) return null;
+
+  const row = document.createElement('div');
+  row.className = 'channel-item dm-item'
+    + (state.currentView === 'dm' && state.currentChannelId === dm.id ? ' active' : '')
+    + (state.unread[dm.id] ? ' is-unread' : '');
+  row.dataset.channelId = dm.id;
+  row.setAttribute('role', 'button');
+  row.setAttribute('tabindex', '0');
+
+  const avatarWrap = document.createElement('span');
+  avatarWrap.className = 'member-avatar-wrap dm-avatar-wrap';
+
+  const avatar = createAvatarNode(partner, 'dm-avatar');
+
+  const dot = document.createElement('span');
+  dot.className = 'member-status-dot ' + normalizeUserStatus(partner.status);
+  avatarWrap.append(avatar, dot);
+
+  const copy = document.createElement('span');
+  copy.className = 'dm-copy';
+
+  const meta = document.createElement('span');
+  meta.className = 'dm-item-meta';
+
+  const titleRow = document.createElement('span');
+  titleRow.className = 'dm-item-title';
+
+  const name = document.createElement('span');
+  name.className = 'dm-item-name';
+  name.textContent = partner.username || 'Unknown';
+
+  const preview = document.createElement('span');
+  preview.className = 'dm-item-preview';
+  const previewText = String(dm.lastMessagePreview || '').trim();
+  const previewSource = previewText.startsWith(E2EE_PREFIX)
+    ? 'Encrypted message'
+    : (previewText || getCustomStatusText(partner.customStatus) || 'No messages yet.');
+  preview.textContent = truncate(previewSource, 40);
+
+  if (state.unread[dm.id]) {
+    const badge = document.createElement('span');
+    badge.className = 'unread-badge dm-item-unread';
+    badge.textContent = String(state.unread[dm.id]);
+    titleRow.append(name, badge);
+  } else {
+    titleRow.appendChild(name);
+  }
+
+  meta.append(titleRow, preview);
+  copy.appendChild(meta);
+  const deleteButton = document.createElement('button');
+  deleteButton.type = 'button';
+  deleteButton.className = 'icon-btn dm-item-delete';
+  deleteButton.dataset.dmId = dm.id;
+  deleteButton.setAttribute('aria-label', 'Delete direct chat with ' + partner.username);
+  deleteButton.title = 'Delete direct chat';
+  deleteButton.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>';
+
+  row.append(avatarWrap, copy, deleteButton);
+  row.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      openDMFromList(partner, dm.id);
+    }
+  });
+
+  return row;
+}
+
+function getHiddenDmChannels() {
+  const ordered = getOrderedDmChannels();
+  const visibleIds = new Set(getSidebarDmChannels(ordered).map((dm) => dm.id));
+  return ordered.filter((dm) => !visibleIds.has(dm.id));
+}
+
+function syncDmOverflowLauncher() {
+  if (!el.serverRailExplore) return;
+  const hidden = getHiddenDmChannels();
+  const count = hidden.length;
+  el.serverRailExplore.disabled = count === 0;
+  el.serverRailExplore.classList.toggle('is-disabled', count === 0);
+  el.serverRailExplore.setAttribute('aria-label', count > 0 ? `More direct messages (${count})` : 'No more direct messages');
+  el.serverRailExplore.title = count > 0 ? `More direct messages (${count})` : 'No more direct messages';
+}
+
+function renderDmOverflowModal() {
+  if (!el.dmOverflowList) return;
+  el.dmOverflowList.innerHTML = '';
+
+  const hidden = getHiddenDmChannels();
+
+  if (!hidden.length) {
+    el.dmOverflowList.innerHTML = '<div class="gif-empty">No more direct messages.</div>';
+    return;
+  }
+
+  hidden.forEach((dm) => {
+    const row = createDmRow(dm);
+    if (row) el.dmOverflowList.appendChild(row);
+  });
+}
+
+function openDmOverflowModal() {
+  if (!el.dmOverflowModal) return;
+  renderDmOverflowModal();
+  el.dmOverflowModal.classList.remove('hidden');
+}
+
+function closeDmOverflowModal() {
+  el.dmOverflowModal?.classList.add('hidden');
+}
+
 function renderDMListUI() {
   el.dmList.innerHTML = '';
 
-  const ordered = [...state.dmChannels].sort((left, right) => {
-    const leftTime = new Date(left.lastMessage?.createdAt || left.updatedAt || 0).getTime();
-    const rightTime = new Date(right.lastMessage?.createdAt || right.updatedAt || 0).getTime();
-    return rightTime - leftTime;
-  });
+  const ordered = getOrderedDmChannels();
+  const visible = getSidebarDmChannels(ordered);
 
-  for (const dm of ordered) {
-    const partner = dm.partner;
-    if (!partner) continue;
-
-    const row = document.createElement('div');
-    row.className = 'channel-item dm-item'
-      + (state.currentView === 'dm' && state.currentChannelId === dm.id ? ' active' : '')
-      + (state.unread[dm.id] ? ' is-unread' : '');
-    row.dataset.channelId = dm.id;
-    row.setAttribute('role', 'button');
-    row.setAttribute('tabindex', '0');
-
-    const avatarWrap = document.createElement('span');
-    avatarWrap.className = 'member-avatar-wrap dm-avatar-wrap';
-
-    const avatar = createAvatarNode(partner, 'dm-avatar');
-
-    const dot = document.createElement('span');
-    dot.className = 'member-status-dot ' + normalizeUserStatus(partner.status);
-    avatarWrap.append(avatar, dot);
-
-    const copy = document.createElement('span');
-    copy.className = 'dm-copy';
-
-    const meta = document.createElement('span');
-    meta.className = 'dm-item-meta';
-
-    const titleRow = document.createElement('span');
-    titleRow.className = 'dm-item-title';
-
-    const name = document.createElement('span');
-    name.className = 'dm-item-name';
-    name.textContent = partner.username;
-
-    const preview = document.createElement('span');
-    preview.className = 'dm-item-preview';
-    const previewSource = String(dm.lastMessage?.content || '').startsWith(E2EE_PREFIX)
-      ? 'Encrypted message'
-      : (dm.lastMessage?.content || getCustomStatusText(partner.customStatus) || 'No messages yet.');
-    preview.textContent = truncate(previewSource, 40);
-
-    if (state.unread[dm.id]) {
-      const badge = document.createElement('span');
-      badge.className = 'unread-badge dm-item-unread';
-      badge.textContent = String(state.unread[dm.id]);
-      titleRow.append(name, badge);
-    } else {
-      titleRow.appendChild(name);
-    }
-
-    meta.append(titleRow, preview);
-    copy.appendChild(meta);
-    const deleteButton = document.createElement('button');
-    deleteButton.type = 'button';
-    deleteButton.className = 'icon-btn dm-item-delete';
-    deleteButton.dataset.dmId = dm.id;
-    deleteButton.setAttribute('aria-label', 'Delete direct chat with ' + partner.username);
-    deleteButton.title = 'Delete direct chat';
-    deleteButton.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>';
-
-    row.append(avatarWrap, copy, deleteButton);
-    row.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter' || event.key === ' ') {
-        event.preventDefault();
-        openDM(partner);
-      }
-    });
-
-    el.dmList.appendChild(row);
+  for (const dm of visible) {
+    const row = createDmRow(dm);
+    if (row) el.dmList.appendChild(row);
   }
 
+  if (el.dmOverflowModal && !el.dmOverflowModal.classList.contains('hidden')) {
+    renderDmOverflowModal();
+  }
+  syncDmOverflowLauncher();
   updateDmBadge();
 }
 
@@ -3161,19 +3766,36 @@ async function deleteDmConversation(dmId) {
 
 async function refreshDmList() {
   if (!state.user) return;
+  const requestToken = ++state.dmListRequestToken;
   try {
     const response = await fetch('/api/dm/list');
     if (!response.ok) return;
     const data = await response.json();
-    state.dmChannels = data.dms || [];
+    if (requestToken !== state.dmListRequestToken) return;
+    state.dmChannels = (Array.isArray(data.dms) ? data.dms : [])
+      .map(normalizeDmChannelRecord)
+      .filter((dm) => dm?.id && dm.partner?.userId);
     renderDMListUI();
     if (state.currentView === 'dm') {
-      state.dmPartner = getCurrentPartner();
+      state.dmPartner = getCurrentPartner() || state.dmPartner;
       updateActiveHeader();
     }
+    updateTitle();
   } catch (error) {
+    if (requestToken !== state.dmListRequestToken) return;
     console.warn('[Om Chat] Failed to refresh DM list:', error);
   }
+}
+
+function scheduleDmListRefresh(delay = 80) {
+  if (state.dmListRefreshTimer) {
+    window.clearTimeout(state.dmListRefreshTimer);
+  }
+
+  state.dmListRefreshTimer = window.setTimeout(() => {
+    state.dmListRefreshTimer = 0;
+    void refreshDmList();
+  }, Math.max(0, Number(delay) || 0));
 }
 
 function renderSidebar() {
@@ -4027,7 +4649,7 @@ function closeAllTransientUi() {
   closeDeleteConfirm();
   closeServerInfoModal();
   closeServerAppearanceModal();
-  closeChatCleanupModal();
+  closeDmOverflowModal();
   closeActionModal();
   closeCreateChannelModal();
   closeCreateServerModal();
@@ -4470,6 +5092,44 @@ async function handleSlashCommand(raw) {
   const parts = value.split(/\s+/);
   const command = parts[0].toLowerCase();
 
+  if (command === '/clear') {
+    if (!state.server?.id || state.currentView !== 'server' || !state.currentChannelId) {
+      showVoiceTooltip('Open a server channel first.');
+      return true;
+    }
+    if (!state.isAdmin) {
+      showVoiceTooltip('Only admins can use this command.');
+      return true;
+    }
+
+    const activeChannel = state.channels.find((channel) => channel.id === state.currentChannelId);
+    openActionModal({
+      title: 'Clear channel chat',
+      description: `Delete all messages in #${activeChannel?.name || 'channel'}? This cannot be undone.`,
+      primaryLabel: 'Clear Chat',
+      hideInput: true,
+      danger: true,
+      onConfirm: async () => {
+        const response = await fetch(`/api/servers/${encodeURIComponent(state.server.id)}/messages/clear`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            mode: 'channel',
+            channelId: state.currentChannelId
+          })
+        });
+        const data = await response.json().catch(() => null);
+        if (!response.ok || !data?.success) {
+          showVoiceTooltip(String(data?.error || 'cleanup_failed').replace(/_/g, ' '));
+          return false;
+        }
+        showVoiceTooltip(`Cleared #${activeChannel?.name || 'channel'}`);
+        return true;
+      }
+    });
+    return true;
+  }
+
   if (command === '/op' || command === '/deop') {
     if (!state.server?.id) {
       showVoiceTooltip('Open a server first.');
@@ -4632,9 +5292,21 @@ async function proceedOpenDM(member, skipKey = false, existingChannelId = null) 
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ targetUserId: member.userId })
     });
-    const data = await response.json();
-    if (!response.ok || !data.channelId) return;
+    const data = await response.json().catch(() => null);
+    if (!response.ok || !data?.channelId) {
+      showVoiceTooltip(data?.error || 'Failed to open direct message');
+      return;
+    }
     channelId = data.channelId;
+  }
+
+  if (state.currentView === 'dm' && state.currentChannelId === channelId) {
+    state.dmPartner = getCurrentPartner() || member;
+    clearUnread(channelId);
+    updateActiveHeader();
+    renderSidebar();
+    updateTitle();
+    return;
   }
 
   state.currentView = 'dm';
@@ -4645,6 +5317,7 @@ async function proceedOpenDM(member, skipKey = false, existingChannelId = null) 
   state.remoteTypingUsers = [];
   clearReplyTarget();
   await refreshDmList();
+  state.dmPartner = getCurrentPartner() || member;
   const dmWallpaper = normalizeAssetUrl(getDmWallpaper(channelId));
   applyChatBackground(normalizeAssetUrl(state.server?.chatBackgroundUrl || state.server?.bannerUrl || ''), dmWallpaper);
   state.editing.messageId = null;
@@ -4655,7 +5328,7 @@ async function proceedOpenDM(member, skipKey = false, existingChannelId = null) 
   renderSidebar();
   renderMessages();
   renderTypingIndicator();
-  await refreshDmList();
+  updateTitle();
   socketActions.joinChannel({ channelId: channelId, isDm: true });
 }
 
@@ -5046,7 +5719,9 @@ function bind() {
   el.voiceBtn.addEventListener('mousedown', startVoiceRecording);
   el.voiceBtn.addEventListener('mouseup', stopVoiceRecording);
   el.voiceBtn.addEventListener('mouseleave', stopVoiceRecording);
-  el.announceCallBtn?.addEventListener('click', openCallMemberModal);
+  el.startVideoCallBtn?.addEventListener('click', () => {
+    openCallMemberModal();
+  });
   el.callMemberClose?.addEventListener('click', closeCallMemberModal);
   el.callMemberCancel?.addEventListener('click', closeCallMemberModal);
   el.callMemberModal?.addEventListener('click', (event) => {
@@ -5062,6 +5737,14 @@ function bind() {
     closeCallMemberModal();
   });
   el.callMuteBtn?.addEventListener('click', toggleCurrentCallMute);
+  el.callVideoBtn?.addEventListener('click', toggleCurrentCallVideo);
+  el.callScreenShareBtn?.addEventListener('click', async () => {
+    if (state.call.mode !== 'video') return;
+    if (state.call.screenSharing) await stopScreenShare();
+    else await startScreenShare();
+  });
+  el.callLayoutBtn?.addEventListener('click', toggleCallLayoutMode);
+  el.callFullscreenBtn?.addEventListener('click', toggleCallFullscreen);
   el.callLeaveBtn?.addEventListener('click', () => leaveCurrentCall());
 
   el.messageList.addEventListener('click', async (event) => {
@@ -5216,6 +5899,28 @@ function bind() {
     if (dm?.partner) await openDMFromList(dm.partner, dm.id);
   });
 
+  el.dmOverflowClose?.addEventListener('click', closeDmOverflowModal);
+  el.dmOverflowModal?.addEventListener('click', async (event) => {
+    if (event.target === el.dmOverflowModal) {
+      closeDmOverflowModal();
+      return;
+    }
+
+    const deleteButton = event.target.closest('.dm-item-delete');
+    if (deleteButton) {
+      event.preventDefault();
+      event.stopPropagation();
+      await deleteDmConversation(deleteButton.dataset.dmId);
+      return;
+    }
+
+    const row = event.target.closest('.dm-item');
+    const dm = state.dmChannels.find((item) => item.id === row?.dataset.channelId);
+    if (!dm?.partner) return;
+    closeDmOverflowModal();
+    await openDMFromList(dm.partner, dm.id);
+  });
+
   el.membersList.addEventListener('click', (event) => {
     event.stopPropagation();
     const memberRow = event.target.closest('.member-item');
@@ -5252,17 +5957,27 @@ function bind() {
   });
 
   el.settingsBtn.addEventListener('click', () => {
-    if (state.isAdmin) openChatCleanupModal();
-    else openServerInfoModal();
+    if (el.accountSettingsView?.classList.contains('hidden')) openAccountSettingsView();
+    else closeAccountSettingsView();
     setAnnouncementAlert(false);
   });
+  el.accountSettingsForm?.addEventListener('submit', (event) => { void submitAccountSettings(event); });
+  el.accountSettingsAvatarUpload?.addEventListener('click', () => {
+    if (!el.accountSettingsAvatarInput) return;
+    el.accountSettingsAvatarInput.value = '';
+    el.accountSettingsAvatarInput.click();
+  });
+  el.accountSettingsAvatarInput?.addEventListener('change', () => { void handleAccountSettingsAvatarChange(); });
   el.userMicBtn?.addEventListener('click', () => showVoiceTooltip('Mute controls arrive with voice polish.'));
   el.userDeafenBtn?.addEventListener('click', () => showVoiceTooltip('Deafen controls arrive with voice polish.'));
   el.mobileNavToggle?.addEventListener('click', () => toggleMobileDrawer('nav'));
   el.mobileDrawerBackdrop?.addEventListener('click', closeMobilePanels);
   el.serverRailHome?.addEventListener('click', () => toggleChannelSidebar());
   el.serverRailAdd?.addEventListener('click', openCreateServerModal);
-  el.serverRailExplore?.addEventListener('click', () => openServerInfoModal({ title: 'Explore Servers', linkLabel: 'Home', link: window.location.origin + '/' }));
+  el.serverRailExplore?.addEventListener('click', () => {
+    if (!getHiddenDmChannels().length) return;
+    openDmOverflowModal();
+  });
   el.serverRailList?.addEventListener('click', (event) => {
     const serverButton = event.target.closest('[data-server-id]');
     if (!serverButton) return;
@@ -5390,11 +6105,6 @@ function bind() {
       el.serverChatBgInput.value = '';
     }
   });
-
-  el.chatCleanupClose.addEventListener('click', closeChatCleanupModal);
-  el.chatCleanupModal.addEventListener('click', (event) => { if (event.target === el.chatCleanupModal) closeChatCleanupModal(); });
-  el.cleanupChannelBtn.addEventListener('click', () => runChatCleanup('channel'));
-  el.cleanupServerBtn.addEventListener('click', () => runChatCleanup('server'));
 
   el.actionModalPrimary.addEventListener('click', () => state.actionModal.onConfirm?.());
   el.actionModalSecondary.addEventListener('click', closeActionModal);
@@ -5542,6 +6252,7 @@ function wireSocket() {
     },
     new_message: async ({ message }) => {
       const decodedMessage = applyCallInviteState(await decodeMessageForDisplay(message));
+      const isDmChannel = String(decodedMessage.channelId || '').startsWith('dm_');
       // Clear error status if this message decrypted successfully
       if (decodedMessage._encrypted && !decodedMessage._decryptFailed && e2ee.status === 'error') {
         e2ee.status = 'on';
@@ -5549,7 +6260,6 @@ function wireSocket() {
       }
       if (decodedMessage.channelId !== state.currentChannelId) {
         markUnread(decodedMessage.channelId);
-        if (String(decodedMessage.channelId).startsWith('dm_')) await refreshDmList();
       } else {
         el.messageList.querySelector('.text-muted')?.remove();
         state.messages.push(decodedMessage);
@@ -5569,10 +6279,9 @@ function wireSocket() {
           el.jumpLatest.classList.remove('hidden');
         }
       }
-      if (String(decodedMessage.channelId).startsWith('dm_')) await refreshDmList();
+      if (isDmChannel) scheduleDmListRefresh();
       const channelMeta = state.channels.find((item) => item.id === decodedMessage.channelId);
       const isAnnouncement = isAnnouncementChannel(channelMeta);
-      const isDmChannel = String(decodedMessage.channelId || '').startsWith('dm_');
       const notificationAllowed = canUseNotifications();
       if (decodedMessage.userId !== state.user.id) {
         const content = String(decodedMessage.content || '');
@@ -5639,7 +6348,7 @@ function wireSocket() {
     },
     dm_opened: async ({ channelId, from }) => {
       if (!from?.userId || from.userId === state.user?.id) return;
-      await refreshDmList();
+      scheduleDmListRefresh();
       if (state.currentView === 'dm' && state.currentChannelId === channelId) return;
 
       const label = from.username ? `@${from.username}` : 'A user';
@@ -5651,7 +6360,7 @@ function wireSocket() {
     },
     dm_first_message: async ({ channelId, from }) => {
       if (!from?.userId || from.userId === state.user?.id) return;
-      await refreshDmList();
+      scheduleDmListRefresh();
       if (state.currentView === 'dm' && state.currentChannelId === channelId) return;
       const label = from.username ? `@${from.username}` : 'A user';
       if ('Notification' in window && Notification.permission === 'granted') {
@@ -5714,20 +6423,27 @@ function wireSocket() {
       updateActiveHeader();
     },
     typing_update: ({ channelId, typingUsers }) => { if (channelId === state.currentChannelId) { state.remoteTypingUsers = typingUsers || []; renderTypingIndicator(); } },
-    call_invite: async ({ callId, channelId, serverId, channelName }) => {
+    call_invite: async ({ callId, channelId, serverId, channelName, hostId }) => {
       syncCallInviteState(callId, true);
-      await joinCallSession(callId, { channelId, serverId, channelName });
+      await joinCallSession(callId, { channelId, serverId, channelName, hostId });
     },
-    call_started: ({ callId, channelId, channelName }) => {
+    call_started: ({ callId, channelId, channelName, hostId }) => {
       syncCallInviteState(callId, true);
-      openHostedCall(callId, { channelId, serverId: state.server?.id, channelName });
+      openHostedCall(callId, { channelId, serverId: state.server?.id, channelName, hostId });
     },
-    call_joined: async ({ callId, channelId, channelName, participants }) => {
+    call_joined: async ({ callId, channelId, channelName, hostId, participants }) => {
       state.call.currentCallId = callId;
       state.call.channelId = channelId || state.call.channelId;
       state.call.channelName = channelName || state.call.channelName;
+      state.call.hostId = hostId || state.call.hostId || null;
+      state.call.mode = 'video';
+      state.call.layoutMode = 'focus';
       (participants || []).forEach((participant) => {
-        upsertCallParticipant(participant.userId, participant);
+        upsertCallParticipant(participant.userId, {
+          ...participant,
+          videoEnabled: true,
+          screenSharing: false
+        });
       });
       renderCallOverlay();
       for (const participant of participants || []) {
@@ -5736,13 +6452,19 @@ function wireSocket() {
     },
     call_participant_joined: ({ callId, userId, username, avatarColor, avatarUrl }) => {
       syncCallInviteState(callId, true);
-      upsertCallParticipant(userId, { username, avatarColor, avatarUrl, muted: false });
+      upsertCallParticipant(userId, {
+        username,
+        avatarColor,
+        avatarUrl,
+        muted: false,
+        videoEnabled: true,
+        screenSharing: false
+      });
       renderCallOverlay();
     },
     call_participant_left: ({ callId, userId }) => {
       if (callId !== state.call.currentCallId) return;
-      closePeerConnection(userId);
-      renderCallOverlay();
+      closePeer(userId);
     },
     call_signal_received: async ({ callId, fromUserId, signal }) => {
       if (callId !== state.call.currentCallId) return;
@@ -5755,7 +6477,21 @@ function wireSocket() {
     call_mute_update: ({ callId, userId, muted }) => {
       if (callId !== state.call.currentCallId) return;
       upsertCallParticipant(userId, { muted: Boolean(muted) });
-      renderCallOverlay();
+      setTileMuted(userId, Boolean(muted));
+    },
+    call_video_update: ({ callId, userId, videoEnabled }) => {
+      if (callId !== state.call.currentCallId) return;
+      upsertCallParticipant(userId, { videoEnabled: Boolean(videoEnabled) });
+      if (!videoEnabled) setTileVideo(userId, null);
+      else {
+        const participant = getCallParticipant(userId);
+        setTileVideo(userId, participant?.videoStream || participant?.stream || null);
+      }
+    },
+    call_screen_share_update: ({ callId, userId, sharing }) => {
+      if (callId !== state.call.currentCallId) return;
+      upsertCallParticipant(userId, { screenSharing: Boolean(sharing) });
+      setTileScreenSharing(userId, Boolean(sharing));
     },
     call_ended: ({ callId }) => {
       syncCallInviteState(callId, false);

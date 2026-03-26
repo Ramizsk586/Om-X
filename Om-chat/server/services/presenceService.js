@@ -52,6 +52,19 @@ function unregisterUserSocket(userId, socketId) {
   activeSocketsByUserId.delete(normalizedUserId);
 }
 
+function getSocketsForUser(userId, io) {
+  const normalizedUserId = normalizeId(userId);
+  const sockets = activeSocketsByUserId.get(normalizedUserId);
+  if (!normalizedUserId || !sockets || !io?.sockets?.sockets) return [];
+
+  const resolved = [];
+  for (const socketId of sockets.keys()) {
+    const socket = io.sockets.sockets.get(socketId);
+    if (socket) resolved.push(socket);
+  }
+  return resolved;
+}
+
 function hasActiveUserSocket(userId) {
   const normalizedUserId = normalizeId(userId);
   if (!normalizedUserId) return false;
@@ -96,6 +109,7 @@ module.exports = {
   decorateMembersWithLivePresence,
   detectDeviceType,
   hasActiveUserSocket,
+  getSocketsForUser,
   registerUserSocket,
   resolveLiveDeviceType,
   resolveLiveStatus,

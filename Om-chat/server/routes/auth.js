@@ -191,6 +191,8 @@ function serializeCurrentUser(user) {
   return {
     ...base,
     email: user.email || '',
+    phone: user.phone || '',
+    aboutMe: user.aboutMe || '',
     role: user.role || 'user',
     updatedAt: user.updatedAt || base.createdAt || null,
     isVerified: Boolean(user.isVerified),
@@ -244,6 +246,8 @@ function serializeAccountSummary(user) {
     id: user.id,
     username: user.username,
     email: user.email || '',
+    phone: user.phone || '',
+    aboutMe: user.aboutMe || '',
     role: user.role || 'user',
     avatarColor: user.avatarColor || '#5865F2',
     isVerified: Boolean(user.isVerified)
@@ -560,7 +564,6 @@ module.exports = {
   authApiRouter,
   authCompatibilityRouter
 };
-
 
 
 

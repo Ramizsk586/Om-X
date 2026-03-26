@@ -70,6 +70,11 @@ contextBridge.exposeInMainWorld('webviewAPI', {
 (function() {
   'use strict';
 
+  const adultContentMode = String(process.env.Adult_Content || process.env.ADULT_CONTENT || '').trim().toLowerCase();
+  if (adultContentMode === 'on') {
+    return;
+  }
+
   const ADULT_DOMAINS = [
     'pornhub','xvideos','xhamster','xnxx','xnxxx',
     'youporn','redtube','tube8','spankbang','tnaflix',

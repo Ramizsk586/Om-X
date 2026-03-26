@@ -35,6 +35,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   ];
 
   const isAdultDomain = (url = '') => {
+    if (!adultContentBlockingEnabled) return false;
     try {
       const host = new URL(url).hostname.toLowerCase().replace(/^www\./, '');
       for (const d of ADULT_DOMAINS) {
@@ -121,6 +122,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   let webApiKeys = { serpapi: '', tavily: '', newsapi: '' };
   let scraperGroqModel = 'qwen/qwen3-32b';
+  let adultContentBlockingEnabled = true;
 
   let currentScrapedImages = [];
   let currentScrapedVideos = [];
@@ -1978,6 +1980,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       ...persistedConfig,
       scraping: { ...DEFAULT_CONFIG.scraping, ...(persisted.scraping || {}) }
     };
+    adultContentBlockingEnabled = full?.features?.enableAdultContentBlock !== false;
     ensureSearchProvider();
   };
 

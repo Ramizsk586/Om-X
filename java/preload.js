@@ -147,6 +147,7 @@ contextBridge.exposeInMainWorld('browserAPI', {
   },
   window: {
     minimize: () => ipcRenderer.send('window-minimize'),
+    maximize: () => ipcRenderer.send('window-maximize-only'),
     toggleMaximize: () => ipcRenderer.send('window-maximize'),
     close: () => ipcRenderer.send('window-close'),
     toggleDevTools: () => ipcRenderer.send('window-toggle-devtools'),

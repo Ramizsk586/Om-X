@@ -148,33 +148,43 @@ function cloneDeep(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+function createResultChain(items) {
+  const results = Array.isArray(items) ? items : [];
+  return {
+    sort: (sortSpec) => {
+      const sorted = [...results];
+      if (sortSpec && typeof sortSpec === 'object') {
+        const entries = Object.entries(sortSpec);
+        sorted.sort((a, b) => {
+          for (const [key, dir] of entries) {
+            const va = getNestedValue(a, key);
+            const vb = getNestedValue(b, key);
+            if (va < vb) return -1 * Number(dir);
+            if (va > vb) return 1 * Number(dir);
+          }
+          return 0;
+        });
+      }
+      return createResultChain(sorted);
+    },
+    limit: (count) => {
+      const numeric = Number(count);
+      const limited = Number.isFinite(numeric) && numeric >= 0
+        ? results.slice(0, numeric)
+        : [...results];
+      return createResultChain(limited);
+    },
+    lean: () => Promise.resolve(cloneDeep(results)),
+    then: (resolve, reject) => Promise.resolve(cloneDeep(results)).then(resolve, reject)
+  };
+}
+
 function createQueryBuilder(collectionName) {
   const col = data[collectionName] || [];
   return {
     find: (query = {}) => {
       const results = col.filter(doc => matchesQuery(doc, query));
-      return {
-        sort: (sortSpec) => {
-          const sorted = [...results];
-          if (sortSpec && typeof sortSpec === 'object') {
-            const entries = Object.entries(sortSpec);
-            sorted.sort((a, b) => {
-              for (const [key, dir] of entries) {
-                const va = getNestedValue(a, key);
-                const vb = getNestedValue(b, key);
-                if (va < vb) return -1 * Number(dir);
-                if (va > vb) return 1 * Number(dir);
-              }
-              return 0;
-            });
-          }
-          return {
-            lean: () => Promise.resolve(cloneDeep(sorted)),
-            then: (resolve) => resolve(cloneDeep(sorted))
-          };
-        },
-        lean: () => Promise.resolve(cloneDeep(results))
-      };
+      return createResultChain(results);
     },
     findOne: (query = {}) => {
       const found = col.find(doc => matchesQuery(doc, query)) || null;

@@ -62,6 +62,8 @@ function normalizeBaseUrl(url) {
 }
 
 function getRequestBaseUrl(req) {
+  const publicBase = normalizeBaseUrl(req?.app?.locals?.omChatAccess?.publicUrl || '');
+  if (publicBase) return publicBase;
   const forwardedProto = String(req.get('x-forwarded-proto') || '').split(',')[0].trim();
   const protocol = forwardedProto || req.protocol || 'http';
   const forwardedHost = String(req.get('x-forwarded-host') || '').split(',')[0].trim();

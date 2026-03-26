@@ -4918,6 +4918,248 @@ body[class*="overflow-hidden"]:not([data-legit]) {
     }
   }
 
+  getDuckDuckGoSearchCleanupScript() {
+    return `
+      (() => {
+        try {
+          const state = window.__omxDdgCleanupState || (window.__omxDdgCleanupState = {});
+          if (state.styleId && !document.getElementById(state.styleId)) {
+            state.styleId = null;
+          }
+
+          const hiddenAttr = 'data-omx-ddg-hidden';
+          const toText = (value) => String(value || '').replace(/\s+/g, ' ').trim().toLowerCase();
+          const includesAll = (text, parts) => parts.every((part) => text.includes(part));
+          const styleId = state.styleId || 'omx-ddg-cleanup-style';
+          state.styleId = styleId;
+
+          if (!document.getElementById(styleId)) {
+            const style = document.createElement('style');
+            style.id = styleId;
+            style.textContent = \`
+              [data-omx-ddg-hidden="1"] {
+                display: none !important;
+                visibility: hidden !important;
+                pointer-events: none !important;
+                max-height: 0 !important;
+                overflow: hidden !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                border: 0 !important;
+              }
+            \`;
+            (document.head || document.documentElement).appendChild(style);
+          }
+
+          const hideNode = (node) => {
+            if (!node || node.nodeType !== 1) return false;
+            if (node.getAttribute(hiddenAttr) === '1') return false;
+            node.setAttribute(hiddenAttr, '1');
+            node.style.setProperty('display', 'none', 'important');
+            node.style.setProperty('visibility', 'hidden', 'important');
+            node.style.setProperty('pointer-events', 'none', 'important');
+            node.style.setProperty('max-height', '0', 'important');
+            node.style.setProperty('overflow', 'hidden', 'important');
+            node.style.setProperty('margin', '0', 'important');
+            node.style.setProperty('padding', '0', 'important');
+            return true;
+          };
+
+          const isSafeCardTarget = (node) => {
+            if (!(node instanceof Element)) return false;
+            const tag = String(node.tagName || '').toLowerCase();
+            if (tag === 'html' || tag === 'body' || tag === 'main') return false;
+            if (node.id === 'react-layout' || node.id === '__next' || node.id === 'root') return false;
+            const rect = node.getBoundingClientRect?.();
+            if (!rect) return false;
+            if (rect.width <= 0 || rect.height <= 0) return false;
+            if (rect.width > (window.innerWidth * 0.96)) return false;
+            if (rect.height > (window.innerHeight * 0.72)) return false;
+            return true;
+          };
+
+          const findHideTarget = (node, mode = 'card') => {
+            let current = node;
+            let fallbackTarget = null;
+            for (let i = 0; i < 8 && current; i += 1) {
+              if (!(current instanceof Element)) break;
+              const role = String(current.getAttribute('role') || '').toLowerCase();
+              const tag = String(current.tagName || '').toLowerCase();
+              const className = String(current.className || '').toLowerCase();
+              const testId = String(current.getAttribute('data-testid') || '').toLowerCase();
+              const rect = current.getBoundingClientRect?.();
+              const isCardLike =
+                role === 'button' ||
+                tag === 'button' ||
+                tag === 'article' ||
+                tag === 'section' ||
+                tag === 'aside' ||
+                tag === 'li' ||
+                /card|module|tile|feedback|promo|banner|assistant/.test(className) ||
+                /feedback|promo|assistant|menu/.test(testId);
+              const isPanelSized =
+                !!rect &&
+                rect.width >= 220 &&
+                rect.width <= (window.innerWidth * 0.96) &&
+                rect.height >= 44 &&
+                rect.height <= (window.innerHeight * 0.72);
+              const isMenuLike =
+                role === 'button' ||
+                tag === 'button' ||
+                tag === 'header' ||
+                tag === 'nav' ||
+                /menu|header|toolbar/.test(className) ||
+                /menu|header/.test(testId);
+              if (isSafeCardTarget(current) && isPanelSized) {
+                fallbackTarget = current;
+              }
+              if (mode === 'menu') {
+                if (isMenuLike && isSafeCardTarget(current)) return current;
+              } else if ((isCardLike || isPanelSized) && isSafeCardTarget(current)) {
+                return current;
+              }
+              current = current.parentElement;
+            }
+            return fallbackTarget || (isSafeCardTarget(node) ? node : null);
+          };
+
+          const getTextMatchElements = (patterns) => {
+            const matches = new Set();
+            const walker = document.createTreeWalker(
+              document.body || document.documentElement,
+              NodeFilter.SHOW_TEXT,
+              {
+                acceptNode(textNode) {
+                  const value = toText(textNode.nodeValue);
+                  if (!value) return NodeFilter.FILTER_REJECT;
+                  const matched = patterns.some((parts) => includesAll(value, parts));
+                  return matched ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+                }
+              }
+            );
+            let currentNode = walker.nextNode();
+            while (currentNode) {
+              if (currentNode.parentElement) matches.add(currentNode.parentElement);
+              currentNode = walker.nextNode();
+            }
+            return Array.from(matches);
+          };
+
+          const hideCardsContaining = (patterns) => {
+            document.querySelectorAll('button, a, div, span, h1, h2, h3, p').forEach((node) => {
+              const text = toText(node.textContent);
+              if (!text) return;
+              const matched = patterns.some((parts) => includesAll(text, parts));
+              if (!matched) return;
+              const target = findHideTarget(node, 'card');
+              if (target) hideNode(target);
+            });
+            getTextMatchElements(patterns).forEach((node) => {
+              const target = findHideTarget(node, 'card');
+              if (target) hideNode(target);
+            });
+          };
+
+          const removeKnownDdgModules = () => {
+            const modulePatterns = [
+              ['share', 'feedback'],
+              ['protection.', 'privacy.', 'peace of mind.']
+            ];
+            document.querySelectorAll('body *').forEach((node) => {
+              if (!(node instanceof Element)) return;
+              if (node.getAttribute(hiddenAttr) === '1') return;
+              const text = toText(node.textContent);
+              if (!text) return;
+              const rect = node.getBoundingClientRect?.();
+              if (!rect || rect.width < 220 || rect.height < 40) return;
+              if (rect.width > window.innerWidth * 0.96 || rect.height > window.innerHeight * 0.72) return;
+              const matched = modulePatterns.some((parts) => includesAll(text, parts));
+              if (!matched) return;
+              const hasRichContent =
+                node.querySelector('button, a, img, svg, [role="button"]') ||
+                /download|wikipedia|helpful|inaccuracies/.test(text);
+              if (!hasRichContent) return;
+              const target = findHideTarget(node, 'card') || node;
+              if (target) hideNode(target);
+            });
+          };
+
+          const hideBySelectors = () => {
+            const menuSelectors = [
+              '[data-testid="header-aside"]',
+              '[data-testid="nav-menu-button"]',
+              '[aria-label="Open menu"]',
+              '[aria-label="Menu"]',
+              'button[title="Menu"]',
+              'button[title="Open menu"]',
+              'button[aria-haspopup="menu"]'
+            ];
+            document.querySelectorAll(menuSelectors.join(',')).forEach((node) => {
+              const target = findHideTarget(node, 'menu');
+              if (target) hideNode(target);
+            });
+          };
+
+          const apply = () => {
+            state.raf = 0;
+            hideBySelectors();
+            hideCardsContaining([
+              ['share', 'feedback'],
+              ['protection.', 'privacy.', 'peace of mind.']
+            ]);
+            removeKnownDdgModules();
+          };
+
+          apply();
+          clearTimeout(state.retryA);
+          clearTimeout(state.retryB);
+          clearTimeout(state.retryC);
+          state.retryA = setTimeout(apply, 250);
+          state.retryB = setTimeout(apply, 800);
+          state.retryC = setTimeout(apply, 1600);
+
+          if (state.observer) state.observer.disconnect();
+          state.observer = new MutationObserver(() => {
+            if (state.raf) return;
+            state.raf = requestAnimationFrame(apply);
+          });
+          state.observer.observe(document.documentElement || document.body, {
+            childList: true,
+            subtree: true,
+            attributes: true
+          });
+
+          return true;
+        } catch (error) {
+          console.warn('[DDG Cleanup] Script execution failed:', error);
+          return false;
+        }
+      })();
+    `;
+  }
+
+  async applyDuckDuckGoSearchCleanup(webview) {
+    try {
+      if (!webview || !webview.getURL) return;
+      const url = webview.getURL();
+      if (!this.isDuckDuckGoSearchUrl(url)) return;
+      await webview.executeJavaScript(this.getDuckDuckGoSearchCleanupScript(), true);
+    } catch (e) {
+      console.warn('[DDG Cleanup] Script execution failed:', e?.message);
+    }
+  }
+
+  isDuckDuckGoSearchUrl(url = '') {
+    try {
+      const parsed = new URL(url);
+      const host = String(parsed.hostname || '').toLowerCase();
+      if (!(host === 'duckduckgo.com' || host.endsWith('.duckduckgo.com'))) return false;
+      return parsed.pathname === '/' || parsed.pathname === '/html/' || parsed.pathname === '/html';
+    } catch (_) {
+      return false;
+    }
+  }
+
   _looksLikeLocalPath(target = '') {
     const raw = String(target || '').trim();
     if (!raw) return false;
@@ -5177,6 +5419,16 @@ body[class*="overflow-hidden"]:not([data-legit]) {
     const isServerOperatorPage = finalUrl.includes('server-operator.html');
     const isLocalAIPage = this.isLocalOrHostedAiUrl(finalUrl);
 
+    if (isScraberPage) {
+      const existingScraperTab = this.tabs.find((tab) => tab.isScraberPage);
+      if (existingScraperTab) {
+        existingScraperTab.noSuspend = true;
+        existingScraperTab.lastAccessed = Date.now();
+        this.setActiveTab(existingScraperTab.id);
+        return existingScraperTab.id;
+      }
+    }
+
     const { tabItem, titleEl, iconEl, spinnerEl } = this.createTabUI(id, {
         isSystemPage, isTextStudio, isHistoryPage, isGamesPage, isDefensePage,
         isHomePage, isTodoPage, isScraberPage, isServerOperatorPage, isLocalAIPage, isOmChat
@@ -5186,7 +5438,7 @@ body[class*="overflow-hidden"]:not([data-legit]) {
       lastAccessed: Date.now(), suspended: false, isSystemPage,
       isTextStudio, isHistoryPage, isGamesPage, isDefensePage,
       isHomePage, isTodoPage, isScraberPage, isServerOperatorPage, isLocalAIPage,
-      isOmChat, noSuspend: isOmChat,
+      isOmChat, noSuspend: isOmChat || isScraberPage,
       isLoading: true, isMainFrameLoading: true, customIcon: isOmChat, audible: false,
       interactiveSearch: options.interactiveSearch || null
     };
@@ -5383,6 +5635,9 @@ body[class*="overflow-hidden"]:not([data-legit]) {
             if (this.isDuckAiChatUrl(currentUrl)) {
                 await this.applyDuckAiSidebarPreference(webview);
             }
+            if (this.isDuckDuckGoSearchUrl(currentUrl)) {
+                await this.applyDuckDuckGoSearchCleanup(webview);
+            }
             if (this.isVyntrSearchUrl(currentUrl)) {
                 await this.applyVyntrSearchCleanup(webview);
             }
@@ -5539,6 +5794,13 @@ body[class*="overflow-hidden"]:not([data-legit]) {
           this._stopFindingAnimation();
       }
       if (this.loaderActiveTabId === tabState.id) this.loaderActiveTabId = null;
+
+      const finishedUrl = webview.getURL ? webview.getURL() : tabState.url;
+      if (this.isDuckDuckGoSearchUrl(finishedUrl)) {
+        setTimeout(() => {
+          this.applyDuckDuckGoSearchCleanup(webview);
+        }, 120);
+      }
       
       if (tabState.interactiveSearch) {
         const query = tabState.interactiveSearch;
@@ -5682,6 +5944,11 @@ body[class*="overflow-hidden"]:not([data-legit]) {
       if (this.isDuckAiChatUrl(e.url)) {
         setTimeout(() => {
           this.applyDuckAiSidebarPreference(webview);
+        }, 100);
+      }
+      if (this.isDuckDuckGoSearchUrl(e.url)) {
+        setTimeout(() => {
+          this.applyDuckDuckGoSearchCleanup(webview);
         }, 100);
       }
       if (this.isVyntrSearchUrl(e.url)) {
