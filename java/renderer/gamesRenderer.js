@@ -3165,7 +3165,6 @@
                     }
                 } else {
                     showNotification(`${game.name} requires Electron environment`, 'info');
-                    console.log('Electron game launch config:', game);
                 }
             }
         } catch (err) {
@@ -3272,4 +3271,3 @@ window.addEventListener('keyup', (e) => {
 });
 
 });
-

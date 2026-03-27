@@ -106,12 +106,9 @@ function updateMcpRuntimeStatus(statusElementId, status) {
 class MinecraftRenderer {
     constructor() {
         this.initialized = false;
-        console.log('[Minecraft] Constructor called');
     }
 
     async init() {
-        console.log('[Minecraft] Initializing...');
-        console.log('[Minecraft] window.browserAPI available:', !!window.browserAPI);
         this.initialized = true;
         
         // Wait for DOM to be fully ready
@@ -121,24 +118,17 @@ class MinecraftRenderer {
             this.setupEventListeners();
         }
         
-        console.log('[Minecraft] Initialization complete');
     }
 
     setupEventListeners() {
-        console.log('[Minecraft] Setting up event listeners...');
-
         const panelFromQuery = new URLSearchParams(window.location.search).get('panel');
         const requestedPanel = String(panelFromQuery || '').trim();
         const hasRequestedPanel = requestedPanel
             && document.querySelector(`.panel#panel-${CSS.escape(requestedPanel)}`);
         this.switchPanel(hasRequestedPanel ? requestedPanel : 'llama');
-
-        console.log('[Minecraft] Event listeners setup complete');
     }
 
     switchPanel(panelName) {
-        console.log(`[Minecraft] Switching to panel: ${panelName}`);
-
         // Update panels
         document.querySelectorAll('.panel').forEach(panel => {
             panel.classList.toggle('active', panel.id === `panel-${panelName}`);
@@ -148,8 +138,8 @@ class MinecraftRenderer {
 
 class LlamaServerRenderer {
     constructor() {
-        this.llamaProcess = null;
         this.isRunning = false;
+        this.isStarting = false;
         this.llamaPath = null;
         this.llamaCliPath = null;
         this.modelsPath = null;
@@ -160,15 +150,9 @@ class LlamaServerRenderer {
         this.latestModelInfo = null;
         this.latestSystemProfile = null;
         this.latestCompatibility = null;
-        this.initialized = false;
-        this.launchCommand = '';
-        console.log('[LlamaServer] Constructor called');
     }
 
     init() {
-        console.log('[LlamaServer] Initializing...');
-        this.initialized = true;
-
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', () => this.setupEventListeners());
         } else {
@@ -182,7 +166,6 @@ class LlamaServerRenderer {
         this.updateManualCommand();
         this.startGuardStatusPolling();
         this.log('Llama Server Manager initialized', 'info');
-        console.log('[LlamaServer] Initialization complete');
     }
 
     async updateGPUDisplay() {
@@ -221,19 +204,13 @@ class LlamaServerRenderer {
             });
             window.browserAPI.llama.onExit((data) => {
                 this.log(`Server exited with code: ${data.code}`, 'error');
+                this.isStarting = false;
                 this.isRunning = false;
                 this.startTime = null;
                 this.setStatus('offline');
                 if (this.uptimeInterval) {
                     clearInterval(this.uptimeInterval);
                     this.uptimeInterval = null;
-                }
-                const startBtn = document.getElementById('btn-start-llama');
-                const stopBtn = document.getElementById('btn-stop-llama');
-                if (startBtn) startBtn.disabled = false;
-                if (stopBtn) {
-                    stopBtn.disabled = true;
-                    stopBtn.textContent = 'Stop Server';
                 }
                 this.updateEndpoint();
                 this.refreshGuardStatus({ silent: true });
@@ -242,8 +219,6 @@ class LlamaServerRenderer {
     }
 
     setupEventListeners() {
-        console.log('[LlamaServer] Setting up event listeners...');
-
         const browseLlamaBtn = document.getElementById('btn-browse-llama');
         const browseLlamaCliBtn = document.getElementById('btn-browse-llama-cli');
         const browseModelsBtn = document.getElementById('btn-browse-models');
@@ -365,8 +340,6 @@ class LlamaServerRenderer {
         if (copyServerBtn) {
             copyServerBtn.addEventListener('click', () => this.copyLlamaServerCommand());
         }
-
-        console.log('[LlamaServer] Event listeners setup complete');
     }
 
     generateManualCommand() {
@@ -815,7 +788,6 @@ class LlamaServerRenderer {
     }
 
     async browseForLlamaExecutable() {
-        console.log('[LlamaServer] browseForLlamaExecutable called');
 
         if (window.browserAPI && window.browserAPI.files) {
             try {
@@ -831,9 +803,7 @@ class LlamaServerRenderer {
                         const parentDir = filePath.substring(0, filePath.lastIndexOf('\\') || filePath.lastIndexOf('/'));
                         if (parentDir) {
                             const trustResult = await window.browserAPI.files.trustFolder(parentDir);
-                            if (trustResult.success) {
-                                console.log('[LlamaServer] Folder trusted:', trustResult.path);
-                            }
+                            void trustResult;
                         }
                     } catch (trustErr) {
                         console.error('[LlamaServer] Failed to trust folder:', trustErr);
@@ -858,7 +828,6 @@ class LlamaServerRenderer {
     }
 
     async browseForLlamaCliExecutable() {
-        console.log('[LlamaServer] browseForLlamaCliExecutable called');
 
         if (window.browserAPI && window.browserAPI.files) {
             try {
@@ -897,21 +866,16 @@ class LlamaServerRenderer {
     }
 
     async browseForModelsFolder() {
-        console.log('[LlamaServer] browseForModelsFolder called');
 
         if (window.browserAPI && window.browserAPI.files) {
             try {
                 const folderPath = await window.browserAPI.files.selectFolder();
 
                 if (folderPath) {
-                    console.log('[LlamaServer] Selected folder path:', folderPath);
-                    
                     // Register the folder as trusted for file access
                     try {
                         const trustResult = await window.browserAPI.files.trustFolder(folderPath);
-                        console.log('[LlamaServer] Trust result:', trustResult);
                         if (trustResult && trustResult.success) {
-                            console.log('[LlamaServer] Folder trusted:', trustResult.path);
                             this.log(`Folder trusted for access: ${trustResult.path}`, 'success');
                         } else if (trustResult && trustResult.error) {
                             console.error('[LlamaServer] Trust failed:', trustResult.error);
@@ -958,7 +922,6 @@ class LlamaServerRenderer {
             if (type === 'models' && window.browserAPI && window.browserAPI.files) {
                 try {
                     const trustResult = await window.browserAPI.files.trustFolder(userPath);
-                    console.log('[LlamaServer] Manual path trusted:', trustResult);
                 } catch (e) {
                     console.error('[LlamaServer] Failed to trust manual path:', e);
                 }
@@ -1010,7 +973,6 @@ class LlamaServerRenderer {
     }
 
     async scanModelsFolder() {
-        console.log('[LlamaServer] scanModelsFolder called');
         const pathInput = document.getElementById('models-path-input');
         if (!pathInput) {
             this.log('Models folder path not set', 'error');
@@ -1023,15 +985,12 @@ class LlamaServerRenderer {
             return;
         }
 
-        console.log('[LlamaServer] Scanning folder:', folderPath);
         this.log(`Scanning models folder: ${folderPath}`, 'info');
 
         // Re-trust the folder before scanning
         if (window.browserAPI && window.browserAPI.files) {
             try {
-                console.log('[LlamaServer] Re-trusting folder before scan...');
-                const trustResult = await window.browserAPI.files.trustFolder(folderPath);
-                console.log('[LlamaServer] Re-trust result:', trustResult);
+                await window.browserAPI.files.trustFolder(folderPath);
             } catch (trustErr) {
                 console.error('[LlamaServer] Re-trust failed:', trustErr);
             }
@@ -1039,9 +998,7 @@ class LlamaServerRenderer {
 
         if (window.browserAPI && window.browserAPI.files) {
             try {
-                console.log('[LlamaServer] Calling readDir for:', folderPath);
                 const files = await window.browserAPI.files.readDir(folderPath);
-                console.log('[LlamaServer] Files found:', files);
                 
                 // Handle both string filenames and Dirent objects
                 const ggufFiles = files
@@ -1054,8 +1011,6 @@ class LlamaServerRenderer {
                         const name = String(filename).toLowerCase();
                         return name.endsWith('.gguf');
                     });
-
-                console.log('[LlamaServer] GGUF files found:', ggufFiles);
 
                 if (ggufFiles.length === 0) {
                     this.log('No .gguf model files found in the folder', 'warning');
@@ -1259,10 +1214,13 @@ class LlamaServerRenderer {
     }
 
     async startServer() {
-        console.log('[LlamaServer] startServer called');
 
         if (this.isRunning) {
             this.log('Llama server is already running!', 'warning');
+            return;
+        }
+        if (this.isStarting) {
+            this.log('Llama server is already starting. Please wait.', 'warning');
             return;
         }
 
@@ -1276,8 +1234,25 @@ class LlamaServerRenderer {
             return;
         }
 
-        await this.updateCompatibilityCalculator(this.latestModelInfo);
+        this.isStarting = true;
+        this.setStatus('starting');
+        this.log('Starting Llama Server...', 'info');
+        const launchCommand = this.generateServerCommand();
+        if (launchCommand) {
+            this.log(`Launch command: ${launchCommand}`, 'command');
+        }
+
+        try {
+            await this.updateCompatibilityCalculator(this.latestModelInfo);
+        } catch (err) {
+            this.isStarting = false;
+            this.setStatus('offline');
+            this.log(`Failed to validate model compatibility: ${err?.message || err}`, 'error');
+            return;
+        }
         if (this.latestCompatibility?.runMode === 'none') {
+            this.isStarting = false;
+            this.setStatus('offline');
             this.log('Cannot load model: current system compatibility check says it does not fit available GPU + RAM.', 'error');
             return;
         }
@@ -1290,19 +1265,6 @@ class LlamaServerRenderer {
         const bindHost = this.resolveBindHost(serverType);
         const systemPrompt = this.getSystemPrompt();
         const guardSettings = this.getGuardSettings();
-
-        this.log('Starting Llama Server...', 'info');
-        this.launchCommand = this.generateServerCommand();
-        if (this.launchCommand) {
-            this.log(`Launch command: ${this.launchCommand}`, 'command');
-        }
-        this.setStatus('starting');
-
-        const startBtn = document.getElementById('btn-start-llama');
-        if (startBtn) {
-            startBtn.disabled = true;
-            startBtn.textContent = 'Starting...';
-        }
 
         if (window.browserAPI && window.browserAPI.llama) {
             try {
@@ -1321,6 +1283,7 @@ class LlamaServerRenderer {
                 });
 
                 if (result.success) {
+                    this.isStarting = false;
                     this.isRunning = true;
                     this.startTime = Date.now();
                     this.setStatus('online');
@@ -1344,43 +1307,30 @@ class LlamaServerRenderer {
                     if (modelEl) modelEl.textContent = `Model: ${this.selectedModel}`;
                     this.refreshGuardStatus({ silent: true });
                 } else {
+                    this.isStarting = false;
                     this.isRunning = false;
                     this.startTime = null;
                     this.log(`Failed to start server: ${result.error}`, 'error');
                     this.setStatus('offline');
-                    const startBtn = document.getElementById('btn-start-llama');
-                    if (startBtn) {
-                        startBtn.disabled = false;
-                        startBtn.textContent = 'Start Server';
-                    }
                 }
             } catch (err) {
                 console.error('[LlamaServer] Error starting server:', err);
+                this.isStarting = false;
                 this.isRunning = false;
                 this.startTime = null;
                 this.log(`Error starting server: ${err.message || err}`, 'error');
                 this.setStatus('offline');
-                const startBtn = document.getElementById('btn-start-llama');
-                if (startBtn) {
-                    startBtn.disabled = false;
-                    startBtn.textContent = 'Start Server';
-                }
             }
         } else {
+            this.isStarting = false;
             this.isRunning = false;
             this.startTime = null;
             this.log('Llama API not available', 'error');
             this.setStatus('offline');
-            const startBtn = document.getElementById('btn-start-llama');
-            if (startBtn) {
-                startBtn.disabled = false;
-                startBtn.textContent = 'Start Server';
-            }
         }
     }
 
     async stopServer() {
-        console.log('[LlamaServer] stopServer called');
 
         if (!this.isRunning) {
             this.log('Llama server is not running.', 'warning');
@@ -1399,8 +1349,8 @@ class LlamaServerRenderer {
             try {
                 const result = await window.browserAPI.llama.stopServer();
                 if (result.success) {
+                    this.isStarting = false;
                     this.isRunning = false;
-                    this.llamaProcess = null;
                     this.setStatus('offline');
                     this.log('Llama server stopped.', 'success');
 
@@ -1423,8 +1373,8 @@ class LlamaServerRenderer {
                     this.updateEndpoint();
                 } else {
                     if (String(result.error || '').includes('not running')) {
+                        this.isStarting = false;
                         this.isRunning = false;
-                        this.llamaProcess = null;
                         this.setStatus('offline');
                         if (this.uptimeInterval) {
                             clearInterval(this.uptimeInterval);
@@ -1505,9 +1455,13 @@ class LlamaServerRenderer {
         // Update buttons
         if (startBtn) {
             startBtn.disabled = status === 'online' || status === 'starting';
+            startBtn.textContent = status === 'starting' ? 'Starting...' : 'Start Server';
+            startBtn.style.opacity = status === 'online' || status === 'starting' ? '0.5' : '1';
         }
         if (stopBtn) {
             stopBtn.disabled = status !== 'online';
+            stopBtn.textContent = 'Stop Server';
+            stopBtn.style.opacity = status === 'online' ? '1' : '0.5';
         }
     }
 
@@ -1573,7 +1527,6 @@ class LlamaServerRenderer {
                 guardSettings: this.getGuardSettings()
             };
             localStorage.setItem('llama-server-settings', JSON.stringify(settings));
-            console.log('[LlamaServer] Settings saved');
             this.updateEndpoint({
                 port: settings.port,
                 host: this.resolveBindHost(settings.host),
@@ -1585,11 +1538,9 @@ class LlamaServerRenderer {
     }
 
     loadSettings() {
-        console.log('[LlamaServer] loadSettings called');
         try {
             const saved = localStorage.getItem('llama-server-settings');
             if (saved) {
-                console.log('[LlamaServer] Found saved settings');
                 const settings = JSON.parse(saved);
 
                 this.llamaPath = settings.llamaPath;
@@ -1669,12 +1620,15 @@ class LlamaServerRenderer {
         if (!window.browserAPI?.servers) return;
         try {
             const statusRes = await window.browserAPI.servers.getStatus('llama');
-            if (statusRes?.success && statusRes.status?.running) {
+            if (statusRes?.success && (statusRes.status?.running || statusRes.status?.starting)) {
                 const status = statusRes.status;
-                this.isRunning = true;
+                this.isStarting = Boolean(status?.starting && !status?.running);
+                this.isRunning = Boolean(status?.running);
                 this.startTime = status.startedAt || Date.now();
-                this.setStatus('online');
-                this.startUptimeCounter();
+                this.setStatus(this.isRunning ? 'online' : 'starting');
+                if (this.isRunning) {
+                    this.startUptimeCounter();
+                }
                 this.updateEndpoint({
                     port: status?.config?.port || status?.port || '8080',
                     host: status?.config?.host || status?.host || '127.0.0.1',
@@ -1691,16 +1645,15 @@ class LlamaServerRenderer {
                 const startBtn = document.getElementById('btn-start-llama');
                 const stopBtn = document.getElementById('btn-stop-llama');
                 if (startBtn) {
-                    startBtn.disabled = true;
                     startBtn.style.opacity = '0.5';
                 }
                 if (stopBtn) {
-                    stopBtn.disabled = false;
-                    stopBtn.style.opacity = '1';
+                    stopBtn.style.opacity = this.isRunning ? '1' : '0.5';
                 }
                 this.applyGuardSettings(status?.guard?.settings || status?.config?.guardSettings || this.getGuardSettings());
                 this.updateGuardStatus(status?.guard || null);
             } else {
+                this.isStarting = false;
                 this.isRunning = false;
                 this.startTime = null;
                 this.setStatus('offline');
@@ -2216,15 +2169,12 @@ class PocketTTSRenderer {
         this.pocketttsPath = null;
         this.startTime = null;
         this.uptimeInterval = null;
-        console.log('[PocketTTS] Constructor called');
     }
 
     init() {
-        console.log('[PocketTTS] Initializing...');
         this.setupEventListeners();
         this.setupIPCListeners();
         this.loadSettings();
-        console.log('[PocketTTS] Initialization complete');
     }
 
     setupIPCListeners() {
@@ -2269,7 +2219,9 @@ class PocketTTSRenderer {
             });
 
             window.browserAPI.pocketTTS.onExit((data) => {
-                this.log(`Server exited with code: ${data.code}`, 'error');
+                if (Number(data.code) !== 0) {
+                    this.log(`Server exited with code: ${data.code}`, 'error');
+                }
                 this.isPocketttsRunning = false;
                 this.setStatus('offline');
                 if (this.uptimeInterval) {
@@ -2288,7 +2240,6 @@ class PocketTTSRenderer {
     }
 
     setupEventListeners() {
-        console.log('[PocketTTS] Setting up event listeners...');
 
         // Local server controls
         const browsePocketttsBtn = document.getElementById('btn-browse-pockettts');
@@ -2349,11 +2300,9 @@ class PocketTTSRenderer {
             });
         }
 
-        console.log('[PocketTTS] Event listeners setup complete');
     }
 
     async sendCommand(command) {
-        console.log('[PocketTTS] Sending command:', command);
         
         if (window.browserAPI && window.browserAPI.pocketTTS) {
             try {
@@ -2369,8 +2318,6 @@ class PocketTTSRenderer {
     }
 
     async browseForPocketttsExecutable() {
-        console.log('[PocketTTS] browseForPocketttsExecutable called');
-
         if (window.browserAPI && window.browserAPI.files) {
             try {
                 const filters = [
@@ -2390,7 +2337,6 @@ class PocketTTSRenderer {
                         currentPathEl.textContent = filePath;
                     }
                     this.saveSettings();
-                    this.log(`Pocket TTS executable selected: ${filePath}`, 'info');
                 }
             } catch (err) {
                 console.error('[PocketTTS] Dialog error:', err);
@@ -2423,7 +2369,6 @@ class PocketTTSRenderer {
             return;
         }
 
-        this.log('Starting Pocket TTS Server...', 'info');
         this.setStatus('starting');
 
         const startBtn = document.getElementById('btn-start-pockettts');
@@ -2441,7 +2386,6 @@ class PocketTTSRenderer {
                     this.isPocketttsRunning = true;
                     this.startTime = Date.now();
                     this.setStatus('online');
-                    this.log('Pocket TTS server started!', 'success');
                     this.startUptimeCounter();
 
                     const startBtn = document.getElementById('btn-start-pockettts');
@@ -2495,14 +2439,11 @@ class PocketTTSRenderer {
     }
 
     async stopPocketttsServer() {
-        console.log('[PocketTTS] stopPocketttsServer called');
 
         if (!this.isPocketttsRunning) {
             this.log('Pocket TTS server is not running.', 'warning');
             return;
         }
-
-        this.log('Stopping Pocket TTS server...', 'info');
 
         const stopBtn = document.getElementById('btn-stop-pockettts');
         if (stopBtn) {
@@ -2520,7 +2461,6 @@ class PocketTTSRenderer {
                         clearInterval(this.uptimeInterval);
                         this.uptimeInterval = null;
                     }
-                    this.log('Pocket TTS server stopped.', 'success');
                     this.setStatus('offline');
 
                     const startBtn = document.getElementById('btn-start-pockettts');
@@ -2649,35 +2589,26 @@ class PocketTTSRenderer {
                 pocketttsPath: this.pocketttsPath
             };
             localStorage.setItem('pockettts-server-settings', JSON.stringify(settings));
-            console.log('[PocketTTS] Settings saved');
         } catch (e) {
             console.error('Failed to save settings:', e);
         }
     }
 
     loadSettings() {
-        console.log('[PocketTTS] loadSettings called');
         try {
             const saved = localStorage.getItem('pockettts-server-settings');
             if (saved) {
-                console.log('[PocketTTS] Found saved settings');
                 const settings = JSON.parse(saved);
 
                 this.pocketttsPath = settings.pocketttsPath;
-                console.log('[PocketTTS] Loaded pocketttsPath:', this.pocketttsPath);
-
                 const pathInput = document.getElementById('pockettts-server-path');
                 const currentPathEl = document.getElementById('pockettts-current-path');
                 if (pathInput && this.pocketttsPath) {
                     pathInput.value = this.pocketttsPath;
-                    console.log('[PocketTTS] Set path input value');
                 }
                 if (currentPathEl && this.pocketttsPath) {
                     currentPathEl.textContent = this.pocketttsPath;
-                    console.log('[PocketTTS] Set current path display');
                 }
-            } else {
-                console.log('[PocketTTS] No saved settings found');
             }
         } catch (e) {
             console.error('Failed to load settings:', e);
@@ -2685,15 +2616,10 @@ class PocketTTSRenderer {
     }
 }
 
-// Initialize when DOM is ready
-console.log('[Minecraft] Script loaded, waiting for DOM...');
-
 function initMinecraft() {
-    console.log('[Minecraft] DOM ready, creating instance...');
     try {
         window.minecraftRenderer = new MinecraftRenderer();
         window.minecraftRenderer.init();
-        console.log('[Minecraft] Successfully initialized');
     } catch (err) {
         console.error('[Minecraft] Initialization error:', err);
     }
@@ -2701,7 +2627,6 @@ function initMinecraft() {
     try {
         window.llamaServerRenderer = new LlamaServerRenderer();
         window.llamaServerRenderer.init();
-        console.log('[LlamaServer] Successfully initialized');
     } catch (err) {
         console.error('[LlamaServer] Initialization error:', err);
     }
@@ -2709,7 +2634,6 @@ if (document.getElementById('panel-pocket-tts')) {
         try {
             window.pocketTTSRenderer = new PocketTTSRenderer();
             window.pocketTTSRenderer.init();
-            console.log('[PocketTTS] Successfully initialized');
         } catch (err) {
             console.error('[PocketTTS] Initialization error:', err);
         }
@@ -2719,7 +2643,6 @@ if (document.getElementById('panel-pocket-tts')) {
         try {
             window.mcpServerRenderer = new UnifiedMcpServerRenderer();
             window.mcpServerRenderer.init();
-            console.log('[MCP] Successfully initialized');
         } catch (err) {
             console.error('[MCP] Initialization error:', err);
         }

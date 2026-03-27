@@ -326,6 +326,13 @@ contextBridge.exposeInMainWorld('browserAPI', {
     onSyncProgress: (callback) => ipcRenderer.on('omchat-sync-progress', (event, data) => callback(data)),
     onSyncDone: (callback) => ipcRenderer.on('omchat-sync-done', (event, data) => callback(data))
   },
+  openWebUI: {
+    getStatus: () => ipcRenderer.invoke('openwebui:get-status'),
+    start: () => ipcRenderer.invoke('openwebui:start'),
+    stop: () => ipcRenderer.invoke('openwebui:stop'),
+    onOutput: (callback) => ipcRenderer.on('openwebui-output', (event, data) => callback(data)),
+    onExit: (callback) => ipcRenderer.on('openwebui-exit', (event, data) => callback(data))
+  },
   servers: {
     getStatus: (name) => ipcRenderer.invoke('server:get-status', name),
     getLogs: (name) => ipcRenderer.invoke('server:get-logs', name)

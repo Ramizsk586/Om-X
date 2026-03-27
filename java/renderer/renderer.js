@@ -260,6 +260,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     const omchatLaunchClose             = document.getElementById('omchat-launch-close');
     const omchatLaunchStatus            = document.getElementById('omchat-launch-status');
     const omchatLaunchLog               = document.getElementById('omchat-launch-log');
+    const openWebUiButton               = document.getElementById('btn-open-webui');
+    const openWebUiOverlay              = document.getElementById('openwebui-overlay');
+    const openWebUiClose                = document.getElementById('openwebui-close');
+    const openWebUiStatus               = document.getElementById('openwebui-status');
+    const openWebUiCommandsNote         = document.getElementById('openwebui-commands-note');
+    const openWebUiCommands             = document.getElementById('openwebui-commands');
+    const openWebUiLog                  = document.getElementById('openwebui-log');
     const sessionGuardOverlay           = document.getElementById('sessionguard-overlay');
     const sessionGuardIframe            = document.getElementById('sessionguard-iframe');
     const SESSIONGUARD_POPUP_URL        = new URL('../../SessionGuard/popup/popup.html', import.meta.url).href;
@@ -285,6 +292,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     let tabManager            = null;
     let omchatLogPollTimer    = null;
     let omchatLogLastCount    = 0;
+    let openWebUiLogPollTimer = null;
+    let openWebUiLogLastCount = 0;
+    let openWebUiTabId        = null;
+    let openWebUiTabUrl       = '';
     let _settingsLoading      = false;   // guard against parallel loadSettings calls
     let _ytSavePending        = false;   // guard against concurrent persist calls
     let _duckSavePending      = false;
@@ -1393,6 +1404,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         featuresHomePopup?.classList.add('hidden');
     };
 
+    const syncWindowControlsVisibility = () => {
+        const controls = document.querySelector('.window-controls');
+        if (!controls) return;
+        const activeTabId = tabManager?.activeTabId ?? null;
+        const hideForOpenWebUi = activeTabId != null && activeTabId === openWebUiTabId;
+        controls.classList.toggle('hidden', hideForOpenWebUi);
+    };
+
     const buildOmChatUrl = (host = 'localhost', port = OM_CHAT_DEFAULT_PORT, pathname = '/') => {
         const safeHost = String(host || 'localhost').trim() || 'localhost';
         const safePort = Number(port) || OM_CHAT_DEFAULT_PORT;
@@ -1632,12 +1651,191 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     // ── PANEL VISIBILITY HELPERS ──────────────────────────────────────────────
+    const setOpenWebUiVisible = (visible) => {
+        if (!openWebUiOverlay) return;
+        openWebUiOverlay.classList.toggle('hidden', !visible);
+    };
+
+    const resetOpenWebUiLog = () => {
+        if (openWebUiLog) openWebUiLog.innerHTML = '';
+        openWebUiLogLastCount = 0;
+    };
+
+    const setOpenWebUiStatusMessage = (message, type = '') => {
+        if (!openWebUiStatus) return;
+        openWebUiStatus.textContent = message;
+        openWebUiStatus.className = `omchat-launch-status ${type}`.trim();
+    };
+
+    const appendOpenWebUiLog = (message, type = 'info') => {
+        if (!openWebUiLog) return;
+        const line = document.createElement('div');
+        line.className = `line ${type}`;
+        line.textContent = message;
+        openWebUiLog.appendChild(line);
+        openWebUiLog.scrollTop = openWebUiLog.scrollHeight;
+    };
+
+    const setOpenWebUiCommands = (commands = [], note = '') => {
+        if (openWebUiCommandsNote) {
+            openWebUiCommandsNote.textContent = note || '';
+            openWebUiCommandsNote.classList.toggle('hidden-panel', !note);
+        }
+        if (!openWebUiCommands) return;
+        openWebUiCommands.innerHTML = '';
+        const fragment = document.createDocumentFragment();
+        commands.forEach((command, index) => {
+            const card = document.createElement('div');
+            card.className = 'setup-command-card';
+            card.innerHTML = `
+                <div class="setup-command-step">Step ${index + 1}</div>
+                <div class="setup-command-code">${escapeHtml(command)}</div>
+            `;
+            fragment.appendChild(card);
+        });
+        openWebUiCommands.appendChild(fragment);
+        openWebUiCommands.classList.toggle('hidden-panel', commands.length === 0);
+    };
+
+    const setOpenWebUiMode = (mode) => {
+        const showCommands = mode === 'commands';
+        const showLogs = mode === 'logs';
+        openWebUiCommands?.classList.toggle('hidden-panel', !showCommands);
+        openWebUiCommandsNote?.classList.toggle('hidden-panel', !showCommands || !String(openWebUiCommandsNote?.textContent || '').trim());
+        openWebUiLog?.classList.toggle('hidden-panel', !showLogs);
+    };
+
+    const stopOpenWebUiLogPolling = () => {
+        if (openWebUiLogPollTimer) {
+            clearInterval(openWebUiLogPollTimer);
+            openWebUiLogPollTimer = null;
+        }
+    };
+
+    const pollOpenWebUiLogs = async () => {
+        if (!window.browserAPI?.servers?.getLogs) return;
+        try {
+            const res = await window.browserAPI.servers.getLogs('openwebui');
+            if (!res?.success || !Array.isArray(res.logs)) return;
+            const logs = res.logs;
+            if (logs.length <= openWebUiLogLastCount) return;
+            const fresh = logs.slice(openWebUiLogLastCount);
+            openWebUiLogLastCount = logs.length;
+            fresh.forEach((entry) => {
+                const ts = entry?.ts ? new Date(entry.ts).toLocaleTimeString() : '';
+                const label = entry?.type || 'info';
+                const prefix = ts ? `[${ts}] ` : '';
+                appendOpenWebUiLog(`${prefix}${entry?.message || ''}`, label === 'warn' ? 'warn' : label);
+            });
+        } catch (_) {}
+    };
+
+    const startOpenWebUiLogPolling = () => {
+        stopOpenWebUiLogPolling();
+        openWebUiLogLastCount = 0;
+        pollOpenWebUiLogs();
+        openWebUiLogPollTimer = setInterval(pollOpenWebUiLogs, 600);
+    };
+
+    if (window.browserAPI?.openWebUI?.onOutput) {
+        window.browserAPI.openWebUI.onOutput((payload = {}) => {
+            const msg = String(payload?.data || '').trim();
+            if (!msg) return;
+            appendOpenWebUiLog(msg, payload?.type || 'info');
+        });
+    }
+    if (window.browserAPI?.openWebUI?.onExit) {
+        window.browserAPI.openWebUI.onExit((payload = {}) => {
+            const manualStop = Boolean(payload?.manualStop);
+            const code = payload?.code != null ? `code ${payload.code}` : 'unknown code';
+            const signal = payload?.signal ? `signal ${payload.signal}` : '';
+            const message = manualStop ? 'Open WebUI stopped.' : `Open WebUI process exited (${code}${signal ? `, ${signal}` : ''}).`;
+            const isError = !manualStop && Number(payload?.code) !== 0;
+            setOpenWebUiStatusMessage(message, isError ? 'error' : '');
+            appendOpenWebUiLog(message, isError ? 'error' : 'info');
+        });
+    }
+
+    const showOpenWebUiCommands = (state = {}) => {
+        setOpenWebUiVisible(true);
+        resetOpenWebUiLog();
+        setOpenWebUiMode('commands');
+        setOpenWebUiStatusMessage(state?.title || 'Open WebUI setup required.', '');
+        setOpenWebUiCommands(state?.commands || [], state?.message || '');
+    };
+
+    const launchOpenWebUi = async () => {
+        hideFeaturesHomePopup();
+        setOpenWebUiVisible(true);
+        setOpenWebUiCommands([], '');
+        resetOpenWebUiLog();
+
+        const status = await window.browserAPI?.openWebUI?.getStatus?.();
+        if (!status?.success) {
+            setOpenWebUiMode('commands');
+            setOpenWebUiStatusMessage(status?.error || 'Unable to check Open WebUI status.', 'error');
+            setOpenWebUiCommands([], 'Open WebUI status could not be read.');
+            return;
+        }
+
+        if (status.phase === 'install-prereqs' || status.phase === 'setup-env') {
+            showOpenWebUiCommands(status);
+            return;
+        }
+
+        setOpenWebUiMode('logs');
+        setOpenWebUiStatusMessage(status.phase === 'running' ? 'Open WebUI is already running. Opening local UI...' : 'Starting Open WebUI...', '');
+        startOpenWebUiLogPolling();
+
+        try {
+            const result = await window.browserAPI.openWebUI.start();
+            if (!result?.success) {
+                if (result?.needsSetup) {
+                    stopOpenWebUiLogPolling();
+                    showOpenWebUiCommands(result);
+                    return;
+                }
+                const message = result?.error || 'Open WebUI failed to start.';
+                setOpenWebUiStatusMessage(message, 'error');
+                appendOpenWebUiLog(message, 'error');
+                return;
+            }
+
+            const localUrl = String(result.localUrl || status.localUrl || '').trim();
+            if (!localUrl) {
+                setOpenWebUiStatusMessage('Open WebUI started but no local URL was returned.', 'error');
+                appendOpenWebUiLog('Local URL missing from launcher result.', 'error');
+                return;
+            }
+
+            openAppTab(localUrl);
+            setTimeout(() => {
+                const activeId = tabManager?.activeTabId || null;
+                if (activeId != null) {
+                    openWebUiTabId = activeId;
+                    openWebUiTabUrl = localUrl;
+                    syncWindowControlsVisibility();
+                }
+            }, 0);
+            setOpenWebUiStatusMessage(result.alreadyRunning ? 'Open WebUI is already online.' : 'Open WebUI is online. Opening local UI...', 'success');
+            appendOpenWebUiLog(`Opened ${localUrl}`, 'success');
+        } catch (error) {
+            const message = error?.message || 'Open WebUI failed to start.';
+            setOpenWebUiStatusMessage(message, 'error');
+            appendOpenWebUiLog(message, 'error');
+        }
+    };
+
     const setBookmarkPanelVisible       = (v) => bookmarkTopPanel?.classList.toggle('hidden', !v);
     const setNavigationTopPanelVisible  = (v) => navigationTopPanel?.classList.toggle('hidden', !v);
     const setBookmarkEditorVisible      = (v) => bookmarkEditorOverlay?.classList.toggle('hidden', !v);
     const setOmChatLaunchVisibleSafe    = (v) => {
         setOmChatLaunchVisible(v);
         if (!v) stopOmChatLogPolling();
+    };
+    const setOpenWebUiVisibleSafe       = (v) => {
+        setOpenWebUiVisible(v);
+        if (!v) stopOpenWebUiLogPolling();
     };
 
     const setYouTubeAddonVisible = (visible) => {
@@ -2215,6 +2413,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         bindClick(document.getElementById('btn-nav-settings'), () => { hideFeaturesHomePopup(); openAppTab(SETTINGS_URL);  });
         bindClick(document.getElementById('btn-nav-ai-chat'),  async () => { hideFeaturesHomePopup(); openAppTab(await getAiChatTargetUrl()); });
         bindClick(document.getElementById('btn-nav-downloads'),() => { hideFeaturesHomePopup(); openAppTab(DOWNLOADS_URL); });
+        bindClick(openWebUiButton, async () => { await launchOpenWebUi(); });
         bindClick(btnNavNewTab,                           () => searchSystem.handleNewTabRequest());
     };
 
@@ -2300,8 +2499,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     tabManager = new TabManager(
         'tab-list-container', 'webview-container',
         (url) => {
-            const controls = document.querySelector('.window-controls');
-            controls?.classList.remove('hidden');
+            syncWindowControlsVisibility();
             primeSiteSafetyScan(url);
             syncYouTubeAddonPanel();
             syncDuckAiPanel();
@@ -2309,7 +2507,17 @@ document.addEventListener('DOMContentLoaded', async () => {
         },
         handleWebviewContextMenu,
         handleTabContextMenu,
-        (tabId) => darkModeTabs.delete(tabId)   // cleanup on close
+        async (tabId) => {
+            darkModeTabs.delete(tabId);
+            if (tabId === openWebUiTabId) {
+                openWebUiTabId = null;
+                openWebUiTabUrl = '';
+                syncWindowControlsVisibility();
+                try {
+                    await window.browserAPI?.openWebUI?.stop?.();
+                } catch (_) {}
+            }
+        }
     );
     tabManager.createTab();
 
@@ -2418,6 +2626,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     omchatLaunchOverlay?.addEventListener('mousedown', (event) => {
         if (event.target === omchatLaunchOverlay) setOmChatLaunchVisibleSafe(false);
     });
+    openWebUiClose?.addEventListener('click', () => setOpenWebUiVisibleSafe(false));
+    openWebUiOverlay?.addEventListener('mousedown', (event) => {
+        if (event.target === openWebUiOverlay) setOpenWebUiVisibleSafe(false);
+    });
 
     // ── BOOKMARK EDITOR BINDINGS ───────────────────────────────────────────────
     bookmarkEditorCancel?.addEventListener('click', () => { setBookmarkEditorVisible(false); pendingBookmarkTab = null; });
@@ -2454,6 +2666,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             setNavigationTopPanelVisible(false);
             setBookmarkPanelVisible(false);
             setBookmarkEditorVisible(false);
+            setOmChatLaunchVisibleSafe(false);
+            setOpenWebUiVisibleSafe(false);
             if (imageDlOverlay) imageDlOverlay.classList.add('hidden');
             setYouTubeAddonVisible(false);
             setDuckAiPanelVisible(false);

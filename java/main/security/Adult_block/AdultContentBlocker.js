@@ -26,7 +26,6 @@ let JSON_BLOCKED_DOMAINS = new Set();
 function loadBlockJson() {
   try {
     const blockJsonPath = path.join(__dirname, 'Block.json');
-    console.log('[AdultContentBlocker] Trying to load:', blockJsonPath);
     if (fs.existsSync(blockJsonPath)) {
       const data = JSON.parse(fs.readFileSync(blockJsonPath, 'utf-8'));
       if (data.entries && Array.isArray(data.entries)) {
@@ -36,7 +35,6 @@ function loadBlockJson() {
             JSON_BLOCKED_DOMAINS.add(domain);
           }
         });
-        console.log(`[AdultContentBlocker] Loaded ${JSON_BLOCKED_DOMAINS.size} domains from Block.json`);
       }
     } else {
       console.error('[AdultContentBlocker] Block.json not found at:', blockJsonPath);

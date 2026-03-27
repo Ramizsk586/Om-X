@@ -71,7 +71,6 @@ export function addToBlocklist(url, reason = 'Malicious website', detectedBy = '
     });
 
     saveBlocklist(blocklist);
-    console.log(`[Security] Blocked: ${hostname} - ${reason}`);
   } catch (_) {}
 }
 

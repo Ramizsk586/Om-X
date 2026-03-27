@@ -161,5 +161,4 @@
     domain: currentHost
   };
 
-  console.log('[OM-X SessionGuard] Active on', currentHost);
 })();

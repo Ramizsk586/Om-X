@@ -6081,7 +6081,6 @@ body[class*="overflow-hidden"]:not([data-legit]) {
                       const selectedDesign = this.MUSIC_PLAYER_DESIGNS.find(d => d.id === designId);
                       if (selectedDesign) {
                           this.miniPlayer.classList.add(selectedDesign.className);
-                          console.log('[Music Player] Applied design:', selectedDesign.name);
                       } else {
                           console.warn('[Music Player] Design not found for ID:', designId);
                           this.miniPlayer.classList.add('player-classic');
@@ -6130,15 +6129,12 @@ body[class*="overflow-hidden"]:not([data-legit]) {
       // Get settings from localStorage (works independently of musicPlayerManager)
       const { designId, enabled } = this.getMusicPlayerDesignFromStorage();
       
-      console.log('[Music Player] Applying design - ID:', designId, 'Enabled:', enabled);
-      
       // Remove all existing design classes first
       this.MUSIC_PLAYER_DESIGNS.forEach(design => {
           this.miniPlayer.classList.remove(design.className);
       });
       
       if (!enabled) {
-          console.log('[Music Player] Player is disabled, design not applied');
           return;
       }
       
@@ -6147,7 +6143,6 @@ body[class*="overflow-hidden"]:not([data-legit]) {
       
       if (selectedDesign) {
           this.miniPlayer.classList.add(selectedDesign.className);
-          console.log('[Music Player] Successfully applied design:', selectedDesign.name, 'Class:', selectedDesign.className);
       } else {
           // Fallback to classic if design not found
           console.warn('[Music Player] Design not found for ID:', designId, '- using classic');

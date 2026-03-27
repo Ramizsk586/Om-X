@@ -527,7 +527,6 @@ async function generate(input, model, tools = [], keyOverride = '', systemInstru
                     functionResponses.push(fr);
                     functionResponsesForUI.push(fr);
                     
-                    console.log(`[Video Search] Found ${videos.length} videos for "${fc.args.query}"`);
                 } catch (videoError) {
                     console.warn(`[Video Search Error] Failed to search videos:`, videoError);
                     functionResponses.push({ 

@@ -558,6 +558,7 @@ const goApp = !isStandaloneLaunch ? require('../../game/electron/go electron/jav
 
 let llamaServerProcess = null;
 let llamaNgrokProcess = null;
+let llamaServerStartInProgress = false;
 let llamaMemoryGuardInterval = null;
 const LLAMA_GUARD_DEFAULTS = Object.freeze({
   enabled: true,
@@ -581,25 +582,35 @@ let mcpServerProcess = null;
 let omChatServerProcess = null;
 let omChatNgrokProcess = null;
 let omChatBackgroundProcess = null;
+let openWebUiProcess = null;
+let openWebUiStartInProgress = false;
+let openWebUiManualStop = false;
 let lanServerInstance = global.omxLanServer || null;
 const SERVER_LOG_LIMIT = 500;
+const OPEN_WEBUI_ENV_NAME = 'omx-open-webui';
+const OPEN_WEBUI_PYTHON_VERSION = '3.10';
+const OPEN_WEBUI_HOST = '127.0.0.1';
+const OPEN_WEBUI_PORT = 8081;
 const serverLogs = {
   llama: [],
   lan: [],
   mcp: [],
-  omchat: []
+  omchat: [],
+  openwebui: []
 };
 const serverStarts = {
   llama: null,
   lan: null,
   mcp: null,
-  omchat: null
+  omchat: null,
+  openwebui: null
 };
 const serverConfigs = {
   llama: null,
   lan: null,
   mcp: null,
-  omchat: null
+  omchat: null,
+  openwebui: null
 };
 let mcpModule = null;
 let omChatModule = null;
@@ -662,6 +673,188 @@ function loadOmChatNgrokHelper() {
   return require(OMX_OMCHAT_NGROK_HELPER);
 }
 
+function execFileAsync(command, args = [], options = {}) {
+  return new Promise((resolve) => {
+    execFile(command, args, { windowsHide: true, timeout: 12000, maxBuffer: 1024 * 1024, ...options }, (error, stdout, stderr) => {
+      resolve({
+        ok: !error,
+        error,
+        stdout: String(stdout || ''),
+        stderr: String(stderr || '')
+      });
+    });
+  });
+}
+
+function getOpenWebUiLocalUrl() {
+  return `http://${OPEN_WEBUI_HOST}:${OPEN_WEBUI_PORT}`;
+}
+
+function unwrapWrappedQuotes(value = '') {
+  let normalized = String(value || '').trim();
+  while (
+    normalized.length >= 2
+    && ((normalized.startsWith('"') && normalized.endsWith('"')) || (normalized.startsWith("'") && normalized.endsWith("'")))
+  ) {
+    normalized = normalized.slice(1, -1).trim();
+  }
+  return normalized;
+}
+
+async function terminateManagedChildProcess(child) {
+  if (!child) return;
+  const pid = Number(child.pid);
+  if (process.platform === 'win32' && Number.isInteger(pid) && pid > 0) {
+    await execFileAsync('taskkill', ['/pid', String(pid), '/T', '/F'], { timeout: 15000 });
+    return;
+  }
+  try {
+    child.kill();
+  } catch (_) {}
+}
+
+async function resolveCondaExecutable() {
+  const envCandidates = [
+    process.env.CONDA_EXE,
+    process.env.MAMBA_EXE,
+    process.env.MINICONDA_HOME ? path.join(process.env.MINICONDA_HOME, 'Scripts', 'conda.exe') : '',
+    process.env.CONDA_PREFIX ? path.join(process.env.CONDA_PREFIX, 'Scripts', 'conda.exe') : '',
+    process.env.USERPROFILE ? path.join(process.env.USERPROFILE, 'miniconda3', 'Scripts', 'conda.exe') : '',
+    process.env.USERPROFILE ? path.join(process.env.USERPROFILE, 'Miniconda3', 'Scripts', 'conda.exe') : '',
+    process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'miniconda3', 'Scripts', 'conda.exe') : '',
+    process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'Miniconda3', 'Scripts', 'conda.exe') : '',
+    process.env.USERPROFILE ? path.join(process.env.USERPROFILE, 'anaconda3', 'Scripts', 'conda.exe') : '',
+    process.env.USERPROFILE ? path.join(process.env.USERPROFILE, 'Anaconda3', 'Scripts', 'conda.exe') : ''
+  ].map((value) => unwrapWrappedQuotes(value)).filter(Boolean);
+
+  for (const candidate of envCandidates) {
+    try {
+      if (fs.existsSync(candidate)) return candidate;
+    } catch (_) {}
+  }
+
+  const whereRes = await execFileAsync('where', ['conda']);
+  if (!whereRes.ok) return '';
+  const found = whereRes.stdout
+    .split(/\r?\n/)
+    .map((line) => unwrapWrappedQuotes(line))
+    .find((line) => line && /\.exe$/i.test(line));
+  return found || '';
+}
+
+function resolveCondaActivationScript(condaExe = '') {
+  const exePath = unwrapWrappedQuotes(condaExe);
+  if (!exePath) return '';
+  try {
+    const scriptsDir = path.dirname(exePath);
+    const rootDir = path.dirname(scriptsDir);
+    const candidates = [
+      path.join(rootDir, 'condabin', 'conda.bat'),
+      path.join(scriptsDir, 'conda.bat'),
+      path.join(scriptsDir, 'activate.bat')
+    ];
+    for (const candidate of candidates) {
+      if (candidate && fs.existsSync(candidate)) return candidate;
+    }
+  } catch (_) {}
+  return '';
+}
+
+async function detectPython310Installed() {
+  const versionPattern = OPEN_WEBUI_PYTHON_VERSION.replace(/\./g, '\\.');
+  const pyRes = await execFileAsync('py', [`-${OPEN_WEBUI_PYTHON_VERSION}`, '--version']);
+  if (pyRes.ok && new RegExp(`Python\\s+${versionPattern}(\\.|$)`, 'i').test(`${pyRes.stdout}\n${pyRes.stderr}`)) {
+    return true;
+  }
+  const pythonRes = await execFileAsync('python', ['--version']);
+  return pythonRes.ok && new RegExp(`Python\\s+${versionPattern}(\\.|$)`, 'i').test(`${pythonRes.stdout}\n${pythonRes.stderr}`);
+}
+
+async function listCondaEnvs(condaExe) {
+  const res = await execFileAsync(condaExe, ['env', 'list']);
+  if (!res.ok) return [];
+  return res.stdout.split(/\r?\n/).map((line) => String(line || '').trim()).filter(Boolean);
+}
+
+async function getOpenWebUiSetupState() {
+  const condaExe = await resolveCondaExecutable();
+  const python310Installed = await detectPython310Installed();
+  const minicondaInstalled = Boolean(condaExe);
+  const localUrl = getOpenWebUiLocalUrl();
+  const running = isServerProcessActive(openWebUiProcess) && await checkTcpPort(OPEN_WEBUI_HOST, OPEN_WEBUI_PORT);
+
+  let envExists = false;
+  let packageInstalled = false;
+  if (condaExe) {
+    const envs = await listCondaEnvs(condaExe);
+    envExists = envs.some((line) => new RegExp(`(^|\\s|[\\\\/])${OPEN_WEBUI_ENV_NAME}(\\s|$)`, 'i').test(line));
+    if (envExists) {
+      const pipShow = await execFileAsync(condaExe, ['run', '-n', OPEN_WEBUI_ENV_NAME, 'pip', 'show', 'open-webui'], { timeout: 20000 });
+      packageInstalled = pipShow.ok;
+    }
+  }
+
+  let phase = 'ready';
+  let title = 'Open WebUI is ready to launch.';
+  let message = 'Click launch to start Open WebUI in the managed Miniconda environment.';
+  let commands = [];
+
+  if (!python310Installed || !minicondaInstalled) {
+    phase = 'install-prereqs';
+    title = `Install Python ${OPEN_WEBUI_PYTHON_VERSION} and Miniconda first.`;
+    message = 'Run these commands in Command Prompt or PowerShell, then open the icon again.';
+    commands = [
+      `winget install -e --id Python.Python.${OPEN_WEBUI_PYTHON_VERSION}`,
+      'winget install -e --id Anaconda.Miniconda3'
+    ];
+  } else if (!envExists || !packageInstalled) {
+    phase = 'setup-env';
+    title = 'Finish the Open WebUI environment setup.';
+    message = 'Run these commands, then reopen the icon. Restarting the app is recommended after setup.';
+    commands = [
+      'conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main',
+      'conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r',
+      'conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/msys2',
+      `conda create -n ${OPEN_WEBUI_ENV_NAME} python=${OPEN_WEBUI_PYTHON_VERSION} -y`,
+      `conda activate ${OPEN_WEBUI_ENV_NAME}`,
+      'pip install open-webui'
+    ];
+  } else if (running) {
+    phase = 'running';
+    title = 'Open WebUI is already running.';
+    message = 'Opening the existing local instance.';
+  }
+
+  return {
+    success: true,
+    phase,
+    title,
+    message,
+    commands,
+    running,
+    ready: running,
+    localUrl,
+    envName: OPEN_WEBUI_ENV_NAME
+  };
+}
+
+async function stopOpenWebUiInternal() {
+  if (!isServerProcessActive(openWebUiProcess)) {
+    openWebUiProcess = null;
+    openWebUiStartInProgress = false;
+    serverStarts.openwebui = null;
+    serverConfigs.openwebui = null;
+    return;
+  }
+  const child = openWebUiProcess;
+  openWebUiProcess = null;
+  openWebUiStartInProgress = false;
+  openWebUiManualStop = true;
+  serverStarts.openwebui = null;
+  serverConfigs.openwebui = null;
+  await terminateManagedChildProcess(child);
+}
+
 function pushServerLog(name, type, data) {
   if (!serverLogs[name]) return;
   const lines = String(data || '').split(/\r?\n/).filter(Boolean);
@@ -680,6 +873,7 @@ function getServerProcess(name) {
   if (name === 'lan') return lanServerProcess;
   if (name === 'mcp') return mcpServerProcess;
   if (name === 'omchat') return omChatServerProcess;
+  if (name === 'openwebui') return openWebUiProcess;
   return null;
 }
 
@@ -1009,6 +1203,7 @@ async function getLlamaStatusPayload() {
 
   return {
     name: 'llama',
+    starting: llamaServerStartInProgress,
     running: isServerProcessActive(llamaServerProcess) && ready,
     ready,
     pid: llamaServerProcess?.pid || null,
@@ -2618,13 +2813,18 @@ async function shutdownManagedServers() {
         killBackgroundServer();
       }
     }
+
+    if (isServerProcessActive(openWebUiProcess)) {
+      pushServerLog('openwebui', 'info', 'Om-X is closing. Stopping Open WebUI.');
+      await stopOpenWebUiInternal();
+    }
   } finally {
     hasCompletedServerShutdown = true;
     isServerShutdownInProgress = false;
   }
 }
 // Temporary debugging aid for main window only.
-const TEMP_MAIN_AUTO_OPEN_DEVTOOLS = true;
+const TEMP_MAIN_AUTO_OPEN_DEVTOOLS = false;
 const trustedFolders = new Set();  // Track user-selected trusted folders
 
 function getEventBrowserWindow(event) {
@@ -4712,6 +4912,146 @@ ipcMain.handle('omchat:get-mongo-stats', withAuthorizedRendererPages(AUTHORIZED_
   return getOmChatMongoStats();
 }));
 
+ipcMain.handle('openwebui:get-status', withAuthorizedRendererPages(AUTHORIZED_RENDERER_PAGES.mainWindow, 'openwebui:get-status', async (event) => {
+  ensureTrustedServerControlSender(event);
+  return getOpenWebUiSetupState();
+}));
+
+ipcMain.handle('openwebui:start', withAuthorizedRendererPages(AUTHORIZED_RENDERER_PAGES.mainWindow, 'openwebui:start', async (event) => {
+  ensureTrustedServerControlSender(event);
+
+  const state = await getOpenWebUiSetupState();
+  if (state.phase === 'install-prereqs' || state.phase === 'setup-env') {
+    return { success: false, needsSetup: true, ...state };
+  }
+
+  if (state.running && isServerProcessActive(openWebUiProcess)) {
+    return { success: true, alreadyRunning: true, localUrl: state.localUrl };
+  }
+
+  if (isServerProcessActive(openWebUiProcess)) {
+    return { success: false, alreadyStarting: true, error: 'Open WebUI is still starting. Please wait.', localUrl: state.localUrl };
+  }
+
+  if (openWebUiStartInProgress) {
+    return { success: false, alreadyStarting: true, error: 'Open WebUI is already starting.', localUrl: state.localUrl };
+  }
+
+  const condaExe = await resolveCondaExecutable();
+  if (!condaExe) {
+    return { success: false, error: 'Miniconda was not found. Install Miniconda first.', needsSetup: true, ...state };
+  }
+  const condaActivateScript = resolveCondaActivationScript(condaExe);
+  if (!condaActivateScript) {
+    return { success: false, error: 'Miniconda activation script was not found. Please reinstall Miniconda.', needsSetup: true, ...state };
+  }
+
+  const localUrl = getOpenWebUiLocalUrl();
+  const workingDir = path.join(app.getPath('userData'), 'open-webui');
+  try {
+    fs.mkdirSync(workingDir, { recursive: true });
+  } catch (_) {}
+
+  openWebUiStartInProgress = true;
+  pushServerLog('openwebui', 'info', `Starting Open WebUI on ${localUrl}`);
+  pushServerLog('openwebui', 'info', `Activating Miniconda env: ${OPEN_WEBUI_ENV_NAME}`);
+
+  try {
+    const cmdExe = process.env.ComSpec || 'C:\\Windows\\System32\\cmd.exe';
+    const normalizedCondaActivateScript = unwrapWrappedQuotes(condaActivateScript);
+    const command = `call ${normalizedCondaActivateScript} activate ${OPEN_WEBUI_ENV_NAME} && open-webui serve --host ${OPEN_WEBUI_HOST} --port ${OPEN_WEBUI_PORT}`;
+    const childEnv = {
+      ...process.env,
+      PYTHONIOENCODING: 'utf-8',
+      PYTHONUTF8: '1'
+    };
+    openWebUiProcess = spawn(cmdExe, ['/d', '/c', `"${command}"`], {
+      cwd: workingDir,
+      stdio: 'pipe',
+      env: childEnv,
+      windowsHide: true,
+      windowsVerbatimArguments: true
+    });
+
+    serverStarts.openwebui = Date.now();
+    serverConfigs.openwebui = {
+      envName: OPEN_WEBUI_ENV_NAME,
+      host: OPEN_WEBUI_HOST,
+      launchHost: OPEN_WEBUI_HOST,
+      port: OPEN_WEBUI_PORT,
+      localUrl
+    };
+
+    openWebUiProcess.stdout.on('data', (data) => {
+      const text = data.toString();
+      pushServerLog('openwebui', 'info', text);
+      mainWindow?.webContents?.send('openwebui-output', { type: 'info', data: text });
+    });
+    openWebUiProcess.stderr.on('data', (data) => {
+      const text = data.toString();
+      pushServerLog('openwebui', 'warn', text);
+      mainWindow?.webContents?.send('openwebui-output', { type: 'warn', data: text });
+    });
+    openWebUiProcess.on('error', (error) => {
+      const text = error?.message || String(error);
+      pushServerLog('openwebui', 'error', text);
+      mainWindow?.webContents?.send('openwebui-output', { type: 'error', data: text });
+    });
+    openWebUiProcess.on('exit', (code, signal) => {
+      openWebUiStartInProgress = false;
+      openWebUiProcess = null;
+      serverStarts.openwebui = null;
+      serverConfigs.openwebui = null;
+      const wasManualStop = openWebUiManualStop;
+      openWebUiManualStop = false;
+      const reason = `Open WebUI exited (${code ?? 'null'}${signal ? `, ${signal}` : ''}).`;
+      pushServerLog('openwebui', wasManualStop || Number(code) === 0 ? 'info' : 'error', reason);
+      mainWindow?.webContents?.send('openwebui-exit', { code, signal, manualStop: wasManualStop });
+    });
+
+    const spawnedProcess = openWebUiProcess;
+    const ready = await waitForServerReady({
+      host: OPEN_WEBUI_HOST,
+      port: OPEN_WEBUI_PORT,
+      proc: spawnedProcess,
+      timeoutMs: 90000
+    });
+
+    if (!ready) {
+      const processExited = !isServerProcessActive(spawnedProcess);
+      const error = processExited
+        ? 'Open WebUI exited before it became available.'
+        : `Open WebUI did not open ${localUrl} within 90 seconds.`;
+      pushServerLog('openwebui', 'error', error);
+      openWebUiManualStop = true;
+      await terminateManagedChildProcess(spawnedProcess);
+      if (openWebUiProcess === spawnedProcess) {
+        openWebUiProcess = null;
+      }
+      serverStarts.openwebui = null;
+      serverConfigs.openwebui = null;
+      return { success: false, error };
+    }
+
+    pushServerLog('openwebui', 'success', `Open WebUI is available at ${localUrl}`);
+    return { success: true, localUrl };
+  } catch (error) {
+    openWebUiProcess = null;
+    serverStarts.openwebui = null;
+    serverConfigs.openwebui = null;
+    return { success: false, error: error?.message || 'Failed to start Open WebUI.' };
+  } finally {
+    openWebUiStartInProgress = false;
+  }
+}));
+
+ipcMain.handle('openwebui:stop', withAuthorizedRendererPages(AUTHORIZED_RENDERER_PAGES.mainWindow, 'openwebui:stop', async (event) => {
+  ensureTrustedServerControlSender(event);
+  await stopOpenWebUiInternal();
+  pushServerLog('openwebui', 'info', 'Open WebUI stopped.');
+  return { success: true };
+}));
+
 ipcMain.handle('server:get-status', withAuthorizedRendererPages(AUTHORIZED_RENDERER_PAGES.mainOrServerOperator, 'server:get-status', async (_event, name) => {
   const serverName = String(name || '').trim().toLowerCase();
   if (serverName === 'lan') {
@@ -4836,11 +5176,17 @@ ipcMain.handle('llama:start-server', withAuthorizedRendererPages(AUTHORIZED_REND
     };
   }
 
+  if (llamaServerStartInProgress) {
+    return { success: false, alreadyStarting: true, error: 'Llama server is already starting. Please wait.' };
+  }
+
   const args = ['-m', modelPath, '-c', contextLength, '-ngl', gpuLayers, '--port', String(port), '-t', threads, '--host', host];
   if (systemPrompt) {
     args.push('--system-prompt', systemPrompt);
   }
 
+  llamaServerStartInProgress = true;
+  invalidateServerStatusCache('llama');
   try {
     llamaServerProcess = spawn(executable, args, {
       cwd: path.dirname(executable),
@@ -4874,6 +5220,7 @@ ipcMain.handle('llama:start-server', withAuthorizedRendererPages(AUTHORIZED_REND
       mainWindow?.webContents?.send('llama-server-output', { type: 'error', data: err?.message || String(err) });
     });
     llamaServerProcess.on('exit', (code, signal) => {
+      llamaServerStartInProgress = false;
       invalidateServerStatusCache('llama');
       clearLlamaMemoryGuard();
       serverStarts.llama = null;
@@ -5002,7 +5349,10 @@ ipcMain.handle('llama:start-server', withAuthorizedRendererPages(AUTHORIZED_REND
     await stopLlamaNgrokTunnelInternal().catch(() => {});
     serverConfigs.llama = null;
     return { success: false, error: e?.message || 'Failed to start llama server.' };
-  }
+  } finally {
+    llamaServerStartInProgress = false;
+    invalidateServerStatusCache('llama');
+ }
 }));
 
 ipcMain.handle('llama:stop-server', withAuthorizedRendererPages(AUTHORIZED_RENDERER_PAGES.serverOperator, 'llama:stop-server', async (event) => {
