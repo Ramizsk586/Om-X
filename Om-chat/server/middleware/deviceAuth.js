@@ -1,15 +1,8 @@
-const userService = require('../services/userService');
-
-const DEVICE_TOKEN_PATTERN = /^dt_[0-9a-f]{48}$/;
-
-/**
- * Read the persistent device token header.
- * @param {Record<string, string|string[]>} [headers] Request headers.
- * @returns {string} Raw device token string.
- */
-function getHeaderDeviceToken(headers = {}) {
-  const raw = headers['x-device-token'];
-  return Array.isArray(raw) ? String(raw[0] || '') : String(raw || '');
+// Device-token auth has been retired in favor of secure cookie-based session
+// restoration. The helpers remain as no-ops so older imports do not revive the
+// insecure header flow.
+function getHeaderDeviceToken() {
+  return '';
 }
 
 /**
@@ -20,31 +13,10 @@ function getHeaderDeviceToken(headers = {}) {
  * @returns {Promise<null|Record<string, unknown>>} Restored user payload.
  */
 async function resolveDeviceAuthSession(session, deviceToken, reqLike = null) {
-  if (!session) return null;
-
-  const requestLike = reqLike || {
-    session,
-    headers: {},
-    get() {
-      return '';
-    },
-    ip: '',
-    socket: { remoteAddress: '' }
-  };
-
-  const existingUser = await userService.resolveSessionUser(requestLike);
-  if (existingUser) {
-    return existingUser;
-  }
-
-  const validToken = DEVICE_TOKEN_PATTERN.test(String(deviceToken || '').trim())
-    ? String(deviceToken || '').trim()
-    : null;
-  if (!validToken) {
-    return null;
-  }
-
-  return userService.restoreUserFromDeviceToken(requestLike, validToken);
+  void session;
+  void deviceToken;
+  void reqLike;
+  return null;
 }
 
 /**
@@ -56,12 +28,8 @@ async function resolveDeviceAuthSession(session, deviceToken, reqLike = null) {
  */
 async function deviceAuthMiddleware(req, _res, next) {
   try {
-    const headerToken = getHeaderDeviceToken(req.headers || {});
-    req.deviceToken = DEVICE_TOKEN_PATTERN.test(headerToken) ? headerToken : null;
-    req.deviceUser = await resolveDeviceAuthSession(req.session, req.deviceToken, req);
-    if (req.deviceUser) {
-      req.user = req.deviceUser;
-    }
+    req.deviceToken = null;
+    req.deviceUser = null;
     next();
   } catch (error) {
     next(error);

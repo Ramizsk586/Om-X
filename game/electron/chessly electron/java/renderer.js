@@ -18,6 +18,7 @@ const navLan = document.getElementById('nav-lan');
 const navProfile = document.getElementById('nav-profile');
 
 const allNavs = [navHome, navAIArena, navMadArena, navReview, navThreats, navScan, navEngines, navSettings, navLan, navProfile];
+const chesslyElectronAPI = window.electronAPI || null;
 
 async function navigateTo(viewName, data = null) {
     if (navigationTimeout) clearTimeout(navigationTimeout);
@@ -67,17 +68,19 @@ async function navigateTo(viewName, data = null) {
         wv.id = `wv-${viewName}`;
         wv.src = `../html/${fileName}.html`;
         try {
-            const preloadPath = await window.electronAPI.getPreloadPath();
-            wv.preload = `file://${preloadPath}`;
+            const preloadPath = await chesslyElectronAPI?.getPreloadPath?.();
+            if (preloadPath) {
+                wv.preload = `file://${preloadPath}`;
+            }
         } catch (e) { console.error(e); }
         wv.style.width = '100%'; wv.style.height = '100%'; wv.style.display = 'flex';
         viewContainer.appendChild(wv);
         
         wv.addEventListener('dom-ready', async () => {
             // Apply current theme and animation prefs to new webview
-            const prefs = await window.electronAPI.getPreferences();
-            const theme = prefs.boardTheme || 'chessly';
-            const animations = prefs.enableAnimations !== false;
+            const prefs = await chesslyElectronAPI?.getPreferences?.();
+            const theme = prefs?.boardTheme || 'chessly';
+            const animations = prefs?.enableAnimations !== false;
             
             wv.executeJavaScript(`document.documentElement.setAttribute('data-theme', '${theme}')`);
             wv.executeJavaScript(`document.documentElement.setAttribute('data-animations', '${animations ? 'on' : 'off'}')`);
@@ -103,7 +106,7 @@ if(viewContainer) {
     navProfile?.addEventListener('click', () => navigateTo('profile'));
     
     // Forward broadcast events to webviews
-    window.electronAPI?.onForwardToAllViews?.((payload) => {
+    chesslyElectronAPI?.onForwardToAllViews?.((payload) => {
         document.querySelectorAll('webview').forEach(wv => {
             try { 
                 if(payload.channel === 'theme-changed') {
@@ -118,7 +121,7 @@ if(viewContainer) {
     });
     
     // Targeted Forwarding
-    window.electronAPI?.onForwardToView?.((payload) => {
+    chesslyElectronAPI?.onForwardToView?.((payload) => {
         const wv = document.getElementById(`wv-${payload.view}`);
         if (wv) {
             try { wv.send(payload.channel, payload.data); } catch(e){}
@@ -126,5 +129,5 @@ if(viewContainer) {
     });
     
     // Listen to main navigate
-    window.electronAPI?.onNavigate?.((view, data) => navigateTo(view, data));
+    chesslyElectronAPI?.onNavigate?.((view, data) => navigateTo(view, data));
 }

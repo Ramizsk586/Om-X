@@ -6,8 +6,50 @@ try {
   try { nodeCrypto = require('crypto'); } catch (_) { nodeCrypto = null; }
 }
 
-const TRUSTED_CONTEXT_PROTOCOLS = new Set(['file:', 'http:', 'https:']);
-const TRUSTED_LOOPBACK_HOSTNAMES = new Set(['localhost', '127.0.0.1', '::1']);
+const TRUSTED_CONTEXT_PROTOCOLS = new Set(['file:']);
+const TRUSTED_FILE_PATH_SEGMENTS = ['/html/'];
+
+function normalizeFsPathString(value) {
+  let raw = String(value || '').trim();
+  if (!raw) return '';
+
+  raw = raw.replace(/\\/g, '/');
+
+  let prefix = '';
+  const driveMatch = raw.match(/^\/?([A-Za-z]:)(\/|$)/);
+  if (driveMatch) {
+    prefix = `${driveMatch[1].toLowerCase()}/`;
+    raw = raw.slice(driveMatch[0].startsWith('/') ? driveMatch[1].length + 2 : driveMatch[1].length + 1);
+  } else if (raw.startsWith('//')) {
+    prefix = '//';
+    raw = raw.slice(2);
+  } else if (raw.startsWith('/')) {
+    prefix = '/';
+    raw = raw.slice(1);
+  }
+
+  const stack = [];
+  for (const segment of raw.split('/')) {
+    if (!segment || segment === '.') continue;
+    if (segment === '..') {
+      if (stack.length) stack.pop();
+      continue;
+    }
+    stack.push(segment);
+  }
+
+  return `${prefix}${stack.join('/')}`;
+}
+
+function isTrustedFilePreloadUrl(urlObj) {
+  try {
+    if (!urlObj || urlObj.protocol !== 'file:') return false;
+    const pathname = normalizeFsPathString(decodeURIComponent(urlObj.pathname || ''));
+    return TRUSTED_FILE_PATH_SEGMENTS.some((segment) => pathname.includes(segment));
+  } catch (_) {
+    return false;
+  }
+}
 
 function getCurrentPageUrl() {
   try {
@@ -22,8 +64,7 @@ function isTrustedPreloadContext() {
   try {
     const url = new URL(href);
     if (!TRUSTED_CONTEXT_PROTOCOLS.has(url.protocol)) return false;
-    if (url.protocol === 'file:') return true;
-    return TRUSTED_LOOPBACK_HOSTNAMES.has(String(url.hostname || '').toLowerCase());
+    return isTrustedFilePreloadUrl(url);
   } catch (_) {
     return false;
   }

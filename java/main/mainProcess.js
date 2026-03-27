@@ -60,8 +60,7 @@ process.emitWarning = (warning, ...args) => {
   return originalEmitWarning(warning, ...args);
 };
 
-const TRUSTED_RENDERER_PROTOCOLS = new Set(['file:', 'http:', 'https:']);
-const TRUSTED_LOOPBACK_HOSTNAMES = new Set(['localhost', '127.0.0.1', '::1']);
+const TRUSTED_RENDERER_PROTOCOLS = new Set(['file:']);
 
 const GLOBAL_WEBPAGE_SCROLLBAR_CSS = `
   :root, html, body, * {
@@ -166,9 +165,11 @@ function attachGlobalScrollbarToContents(contents) {
 
 function resolveTrustedRendererFileRoots() {
   const roots = [];
-  try { roots.push(path.resolve(app.getAppPath())); } catch (_) {}
-  try { roots.push(path.resolve(process.resourcesPath || '')); } catch (_) {}
-  try { roots.push(path.resolve(process.cwd())); } catch (_) {}
+  try {
+    const appPath = path.resolve(app.getAppPath());
+    roots.push(path.join(appPath, 'html'));
+    roots.push(path.join(appPath, 'game', 'electron'));
+  } catch (_) {}
   return roots.filter(Boolean);
 }
 
@@ -179,16 +180,6 @@ function isTrustedRendererFileUrl(urlObj) {
     if (!urlObj || urlObj.protocol !== 'file:') return false;
     const filePath = path.resolve(fileURLToPath(urlObj));
     return TRUSTED_RENDERER_FILE_ROOTS.some((root) => isSameOrSubFsPath(filePath, root));
-  } catch (_) {
-    return false;
-  }
-}
-
-function isTrustedLoopbackRendererUrl(urlObj) {
-  try {
-    if (!urlObj) return false;
-    if (!['http:', 'https:'].includes(String(urlObj.protocol || '').toLowerCase())) return false;
-    return TRUSTED_LOOPBACK_HOSTNAMES.has(String(urlObj.hostname || '').toLowerCase());
   } catch (_) {
     return false;
   }
@@ -215,11 +206,38 @@ function isTrustedIpcSender(event) {
   try {
     const parsed = new URL(senderUrl);
     if (!TRUSTED_RENDERER_PROTOCOLS.has(parsed.protocol)) return false;
-    if (parsed.protocol === 'file:') return isTrustedRendererFileUrl(parsed);
-    return isTrustedLoopbackRendererUrl(parsed);
+    return isTrustedRendererFileUrl(parsed);
   } catch (_) {
     return false;
   }
+}
+
+function isTrustedInternalWindowUrl(url = '') {
+  const rawUrl = String(url || '').trim();
+  if (!rawUrl) return false;
+  try {
+    return isTrustedRendererFileUrl(new URL(rawUrl));
+  } catch (_) {
+    return false;
+  }
+}
+
+function attachInternalWindowNavigationGuards(targetWindow, label = 'window') {
+  if (!targetWindow?.webContents) return;
+
+  targetWindow.webContents.setWindowOpenHandler?.(({ url }) => {
+    console.warn(`[Security] Blocked popup from ${label}: ${url || 'unknown'}`);
+    return { action: 'deny' };
+  });
+
+  const blockUnexpectedNavigation = (event, url) => {
+    if (isTrustedInternalWindowUrl(url)) return;
+    event.preventDefault();
+    console.warn(`[Security] Blocked navigation from ${label}: ${url || 'unknown'}`);
+  };
+
+  targetWindow.webContents.on('will-navigate', blockUnexpectedNavigation);
+  targetWindow.webContents.on('will-redirect', blockUnexpectedNavigation);
 }
 
 function logBlockedIpc(kind, channel, event) {
@@ -267,6 +285,12 @@ const OMX_ALLOW_UNSAFE_STANDALONE_ENTRY = String(process.env.OMX_ALLOW_UNSAFE_ST
 const PDF_VIEWER_REDIRECT_TTL_MS = 15000;
 const SERVER_STATUS_CACHE_TTL_MS = 1200;
 const GPU_INFO_CACHE_TTL_MS = 10000;
+const SAFE_DOWNLOAD_PROTOCOLS = new Set(['http:', 'https:']);
+const BLOCKED_OPEN_PATH_EXTENSIONS = new Set([
+    '.appx', '.apk', '.bat', '.cmd', '.com', '.cpl', '.dll', '.exe', '.hta',
+    '.jar', '.js', '.jse', '.lnk', '.mjs', '.msi', '.msp', '.ps1', '.psm1',
+    '.reg', '.scr', '.sh', '.url', '.vb', '.vbe', '.vbs', '.wsf'
+]);
 const recentPdfViewerRedirects = new Map();
 const serverStatusCache = new Map();
 let gpuInfoCache = null;
@@ -439,6 +463,44 @@ async function openTextFileInEditor(filePath) {
 
     const openError = await shell.openPath(filePath);
     if (openError) throw new Error(openError);
+}
+
+function normalizeNetworkUrl(rawUrl, allowedProtocols = SAFE_DOWNLOAD_PROTOCOLS) {
+    const value = String(rawUrl || '').trim();
+    if (!value) throw new Error('URL is required');
+    let parsed;
+    try {
+        parsed = new URL(value);
+    } catch (_) {
+        throw new Error('Invalid URL');
+    }
+    if (!allowedProtocols.has(parsed.protocol)) {
+        throw new Error(`Unsupported URL protocol: ${parsed.protocol || 'unknown'}`);
+    }
+    if (parsed.username || parsed.password) {
+        throw new Error('URLs with embedded credentials are not allowed');
+    }
+    return parsed.toString();
+}
+
+function validateSafeOpenPath(targetPath) {
+    const abs = path.resolve(String(targetPath || ''));
+    if (!abs) throw new Error('Path is required');
+    if (!isPathInSafeDirectories(abs)) {
+        throw new Error('Access denied: Path outside allowed directories');
+    }
+    const stat = fs.statSync(abs);
+    if (stat.isDirectory()) {
+        return abs;
+    }
+    if (!stat.isFile()) {
+        throw new Error('Only files and directories can be opened');
+    }
+    const ext = path.extname(abs).toLowerCase();
+    if (BLOCKED_OPEN_PATH_EXTENSIONS.has(ext)) {
+        throw new Error(`Blocked potentially executable file type: ${ext || '(none)'}`);
+    }
+    return abs;
 }
 
 function validateLocalEntryFile(targetPath, options = {}) {
@@ -2562,7 +2624,7 @@ async function shutdownManagedServers() {
   }
 }
 // Temporary debugging aid for main window only.
-const TEMP_MAIN_AUTO_OPEN_DEVTOOLS = false;
+const TEMP_MAIN_AUTO_OPEN_DEVTOOLS = true;
 const trustedFolders = new Set();  // Track user-selected trusted folders
 
 function getEventBrowserWindow(event) {
@@ -2584,6 +2646,58 @@ function ensureTrustedServerControlSender(event) {
     throw new Error('Unauthorized server control request');
   }
   return senderWin;
+}
+
+const AUTHORIZED_RENDERER_PAGES = Object.freeze({
+  mainWindow: Object.freeze(['/html/windows/main.html']),
+  system: Object.freeze(['/html/windows/system.html']),
+  scraper: Object.freeze(['/html/pages/scraper.html']),
+  siteSettings: Object.freeze(['/html/pages/site-settings.html']),
+  serverOperator: Object.freeze(['/html/pages/server-operator.html']),
+  privilegedSettings: Object.freeze([
+    '/html/windows/system.html',
+    '/html/pages/scraper.html'
+  ]),
+  siteInfoRead: Object.freeze([
+    '/html/windows/main.html',
+    '/html/pages/site-settings.html'
+  ]),
+  mainOrServerOperator: Object.freeze([
+    '/html/windows/main.html',
+    '/html/pages/server-operator.html'
+  ])
+});
+
+function getAuthorizedRendererPathname(event) {
+  const senderUrl = getIpcSenderUrl(event);
+  if (!senderUrl) return '';
+  try {
+    const parsed = new URL(senderUrl);
+    if (parsed.protocol !== 'file:') return '';
+    return decodeURIComponent(parsed.pathname || '').replace(/\\/g, '/').toLowerCase();
+  } catch (_) {
+    return '';
+  }
+}
+
+function isAuthorizedRendererPage(event, allowedPageSuffixes = []) {
+  const pathname = getAuthorizedRendererPathname(event);
+  if (!pathname || !Array.isArray(allowedPageSuffixes) || !allowedPageSuffixes.length) return false;
+  return allowedPageSuffixes.some((suffix) => pathname.endsWith(String(suffix || '').toLowerCase()));
+}
+
+function assertAuthorizedRendererPage(event, allowedPageSuffixes, channel) {
+  if (isAuthorizedRendererPage(event, allowedPageSuffixes)) return;
+  const senderUrl = getIpcSenderUrl(event) || 'unknown';
+  console.warn(`[Security][IPC] Blocked page-scoped ${channel} from ${senderUrl}`);
+  throw new Error(`Unauthorized IPC call: ${channel}`);
+}
+
+function withAuthorizedRendererPages(allowedPageSuffixes, channel, handler) {
+  return async (event, ...args) => {
+    assertAuthorizedRendererPage(event, allowedPageSuffixes, channel);
+    return handler(event, ...args);
+  };
 }
 
 function isSameOrSubFsPath(targetPath, basePath) {
@@ -4402,8 +4516,7 @@ ipcMain.handle('downloads-cancel', async (_event, id) => {
 
 ipcMain.handle('downloads-start', async (event, url, options = {}) => {
   try {
-    const targetUrl = String(url || '').trim();
-    if (!targetUrl) throw new Error('URL is required');
+    const targetUrl = normalizeNetworkUrl(url);
 
     const opts = (options && typeof options === 'object') ? options : {};
     if (opts.saveAs || opts.filename) {
@@ -4423,11 +4536,12 @@ ipcMain.handle('downloads-start', async (event, url, options = {}) => {
   }
 });
 
-ipcMain.handle('llama:get-gpu-info', async () => {
+ipcMain.handle('llama:get-gpu-info', withAuthorizedRendererPages(AUTHORIZED_RENDERER_PAGES.serverOperator, 'llama:get-gpu-info', async () => {
   return getCachedGpuInfoPayload();
-});
+}));
 
-ipcMain.handle('mcp:start-server', async (_event, config = {}) => {
+ipcMain.handle('mcp:start-server', withAuthorizedRendererPages(AUTHORIZED_RENDERER_PAGES.serverOperator, 'mcp:start-server', async (event, config = {}) => {
+  ensureTrustedServerControlSender(event);
   if (mcpServerProcess && !mcpServerProcess.killed) {
     return { success: false, error: 'MCP server is already running.' };
   }
@@ -4510,9 +4624,10 @@ ipcMain.handle('mcp:start-server', async (_event, config = {}) => {
     mainWindow?.webContents?.send('mcp-server-output', { type: 'error', data: `${e?.stack || e?.message || String(e)}\n` });
     return { success: false, error: e?.message || 'Failed to start MCP server.' };
   }
-});
+}));
 
-ipcMain.handle('mcp:stop-server', async () => {
+ipcMain.handle('mcp:stop-server', withAuthorizedRendererPages(AUTHORIZED_RENDERER_PAGES.serverOperator, 'mcp:stop-server', async (event) => {
+  ensureTrustedServerControlSender(event);
   if (!mcpServerProcess || mcpServerProcess.killed) {
     if (isMcpBackgroundRunning()) {
       await stopMcpBackground();
@@ -4531,32 +4646,32 @@ ipcMain.handle('mcp:stop-server', async () => {
   serverConfigs.mcp = null;
   mcpServerProcess = null;
   return { success: true };
-});
+}));
 
-ipcMain.handle('omchat:start-server', async (event, config = {}) => {
+ipcMain.handle('omchat:start-server', withAuthorizedRendererPages(AUTHORIZED_RENDERER_PAGES.mainWindow, 'omchat:start-server', async (event, config = {}) => {
   ensureTrustedServerControlSender(event);
   return startOmChatServerInternal(config);
-});
+}));
 
-ipcMain.handle('omchat:stop-server', async (event) => {
+ipcMain.handle('omchat:stop-server', withAuthorizedRendererPages(AUTHORIZED_RENDERER_PAGES.mainWindow, 'omchat:stop-server', async (event) => {
   ensureTrustedServerControlSender(event);
   return stopOmChatServerInternal();
-});
+}));
 
-ipcMain.handle('omchat:check-background', async (event) => {
+ipcMain.handle('omchat:check-background', withAuthorizedRendererPages(AUTHORIZED_RENDERER_PAGES.mainWindow, 'omchat:check-background', async (event) => {
   ensureTrustedServerControlSender(event);
   const running = isBackgroundServerRunning();
   const url = running ? getBackgroundServerUrl() : '';
   return { running, url };
-});
+}));
 
-ipcMain.handle('omchat:kill-background', async (event) => {
+ipcMain.handle('omchat:kill-background', withAuthorizedRendererPages(AUTHORIZED_RENDERER_PAGES.mainWindow, 'omchat:kill-background', async (event) => {
   ensureTrustedServerControlSender(event);
   const killed = killBackgroundServer();
   return { success: killed };
-});
+}));
 
-ipcMain.handle('omchat:select-db-folder', async (event) => {
+ipcMain.handle('omchat:select-db-folder', withAuthorizedRendererPages(AUTHORIZED_RENDERER_PAGES.system, 'omchat:select-db-folder', async (event) => {
   ensureTrustedServerControlSender(event);
   const result = await dialog.showOpenDialog(mainWindow, {
     title: 'Select OmChat Local Database Folder',
@@ -4564,9 +4679,9 @@ ipcMain.handle('omchat:select-db-folder', async (event) => {
   });
   if (result.canceled || !result.filePaths?.length) return { success: false, canceled: true };
   return { success: true, folderPath: result.filePaths[0] };
-});
+}));
 
-ipcMain.handle('omchat:get-db-config', async (event) => {
+ipcMain.handle('omchat:get-db-config', withAuthorizedRendererPages(AUTHORIZED_RENDERER_PAGES.system, 'omchat:get-db-config', async (event) => {
   ensureTrustedServerControlSender(event);
   const settings = cachedSettings || {};
   const omchat = settings.omchat || {};
@@ -4575,29 +4690,29 @@ ipcMain.handle('omchat:get-db-config', async (event) => {
     localDbPath: omchat.localDbPath || '',
     hasMongoUri: Boolean(process.env.MONGODB_URI && process.env.MONGODB_URI.trim())
   };
-});
+}));
 
-ipcMain.handle('omchat:sync-db', async (event) => {
+ipcMain.handle('omchat:sync-db', withAuthorizedRendererPages(AUTHORIZED_RENDERER_PAGES.system, 'omchat:sync-db', async (event) => {
   ensureTrustedServerControlSender(event);
   return syncOmChatDatabases(event);
-});
+}));
 
-ipcMain.handle('omchat:import-db', async (event) => {
+ipcMain.handle('omchat:import-db', withAuthorizedRendererPages(AUTHORIZED_RENDERER_PAGES.system, 'omchat:import-db', async (event) => {
   ensureTrustedServerControlSender(event);
   return importOmChatDatabases(event);
-});
+}));
 
-ipcMain.handle('omchat:delete-mongo-backup', async (event) => {
+ipcMain.handle('omchat:delete-mongo-backup', withAuthorizedRendererPages(AUTHORIZED_RENDERER_PAGES.system, 'omchat:delete-mongo-backup', async (event) => {
   ensureTrustedServerControlSender(event);
   return deleteOmChatMongoBackup(event);
-});
+}));
 
-ipcMain.handle('omchat:get-mongo-stats', async (event) => {
+ipcMain.handle('omchat:get-mongo-stats', withAuthorizedRendererPages(AUTHORIZED_RENDERER_PAGES.system, 'omchat:get-mongo-stats', async (event) => {
   ensureTrustedServerControlSender(event);
   return getOmChatMongoStats();
-});
+}));
 
-ipcMain.handle('server:get-status', async (_event, name) => {
+ipcMain.handle('server:get-status', withAuthorizedRendererPages(AUTHORIZED_RENDERER_PAGES.mainOrServerOperator, 'server:get-status', async (_event, name) => {
   const serverName = String(name || '').trim().toLowerCase();
   if (serverName === 'lan') {
     return getCachedServerStatus('lan', async () => getLanStatusPayload());
@@ -4648,17 +4763,18 @@ ipcMain.handle('server:get-status', async (_event, name) => {
       : false;
     return { success: true, status: { ...status, running: status.running && ready, ready } };
   });
-});
+}));
 
-ipcMain.handle('server:get-logs', async (_event, name) => {
+ipcMain.handle('server:get-logs', withAuthorizedRendererPages(AUTHORIZED_RENDERER_PAGES.mainOrServerOperator, 'server:get-logs', async (_event, name) => {
   const serverName = String(name || '').trim().toLowerCase();
   if (!serverLogs[serverName]) {
     return { success: false, error: 'Unknown server.' };
   }
   return { success: true, logs: serverLogs[serverName] };
-});
+}));
 
-ipcMain.handle('llama:start-server', async (_event, config = {}) => {
+ipcMain.handle('llama:start-server', withAuthorizedRendererPages(AUTHORIZED_RENDERER_PAGES.serverOperator, 'llama:start-server', async (event, config = {}) => {
+  ensureTrustedServerControlSender(event);
   invalidateServerStatusCache('llama');
   const existingConfig = serverConfigs.llama || {};
   const executable = String(config.executable || existingConfig.executable || '').trim();
@@ -4887,9 +5003,10 @@ ipcMain.handle('llama:start-server', async (_event, config = {}) => {
     serverConfigs.llama = null;
     return { success: false, error: e?.message || 'Failed to start llama server.' };
   }
-});
+}));
 
-ipcMain.handle('llama:stop-server', async () => {
+ipcMain.handle('llama:stop-server', withAuthorizedRendererPages(AUTHORIZED_RENDERER_PAGES.serverOperator, 'llama:stop-server', async (event) => {
+  ensureTrustedServerControlSender(event);
   invalidateServerStatusCache('llama');
   const wasRunning = isServerProcessActive(llamaServerProcess);
   if (!wasRunning && !isServerProcessActive(llamaNgrokProcess)) {
@@ -4911,9 +5028,10 @@ ipcMain.handle('llama:stop-server', async () => {
 
   await stopLlamaNgrokTunnelInternal().catch(() => {});
   return { success: true };
-});
+}));
 
-ipcMain.handle('llama:send-command', async (_event, command) => {
+ipcMain.handle('llama:send-command', withAuthorizedRendererPages(AUTHORIZED_RENDERER_PAGES.serverOperator, 'llama:send-command', async (event, command) => {
+  ensureTrustedServerControlSender(event);
   if (!isServerProcessActive(llamaServerProcess) || !llamaServerProcess.stdin) {
     return { success: false, error: 'Llama server is not running.' };
   }
@@ -4923,9 +5041,9 @@ ipcMain.handle('llama:send-command', async (_event, command) => {
   } catch (e) {
     return { success: false, error: e?.message || 'Failed to send command.' };
   }
-});
+}));
 
-ipcMain.handle('llama:check-model-size', async (_event, modelsPath, modelName) => {
+ipcMain.handle('llama:check-model-size', withAuthorizedRendererPages(AUTHORIZED_RENDERER_PAGES.serverOperator, 'llama:check-model-size', async (_event, modelsPath, modelName) => {
   const basePath = String(modelsPath || '').trim();
   const name = String(modelName || '').trim();
   if (!basePath || !name) {
@@ -4944,7 +5062,7 @@ ipcMain.handle('llama:check-model-size', async (_event, modelsPath, modelName) =
   } catch (e) {
     return { size: 0, canLoad: true, availableMemory: 0, error: e?.message || 'Unable to read model size.' };
   }
-});
+}));
 
 function getVirusTotalApiKeyFromEnv() {
   return String(
@@ -6254,6 +6372,7 @@ function createMainWindow() {
       devTools: TEMP_MAIN_AUTO_OPEN_DEVTOOLS
     }
   });
+  attachInternalWindowNavigationGuards(mainWindow, 'main window');
   if (WINDOW_ICON && typeof mainWindow.setIcon === 'function') {
     try { mainWindow.setIcon(WINDOW_ICON); } catch (_) {}
   }
@@ -6534,6 +6653,7 @@ function createPreviewWindow(url) {
         icon: WINDOW_ICON,
         webPreferences: { preload: path.join(__dirname, '../preload.js'), webviewTag: true, contextIsolation: true, nodeIntegration: false, webSecurity: true, sandbox: true, devTools: false }
     });
+    attachInternalWindowNavigationGuards(previewWindow, 'preview window');
     const theme = cachedSettings.theme || 'noir';
     previewWindow.loadFile(path.join(__dirname, '../../html/windows/preview.html'), { query: { url, theme } });
     previewWindow.once('ready-to-show', () => previewWindow.show());
@@ -6801,6 +6921,7 @@ ipcMain.handle('electron-game:launch', async (event, gameConfig) => {
             // Center on screen
             center: true
         });
+        attachInternalWindowNavigationGuards(gameWindow, `electron game ${id || name || 'window'}`);
         
         // Load the game
         await gameWindow.loadFile(fullGamePath);
@@ -6942,7 +7063,7 @@ ipcMain.handle('dialog:select-folder', async () => {
     return null;
 });
 
-ipcMain.handle('files:read-dir', async (e, dirPath) => {
+ipcMain.handle('files:read-dir', withAuthorizedRendererPages(AUTHORIZED_RENDERER_PAGES.serverOperator, 'files:read-dir', async (e, dirPath) => {
     try {
         const abs = path.resolve(String(dirPath || ''));
         if (!isPathInSafeDirectories(abs)) throw new Error('Access denied: Path outside allowed directories');
@@ -6951,20 +7072,10 @@ ipcMain.handle('files:read-dir', async (e, dirPath) => {
     } catch (e) {
         return [];
     }
-});
+}));
 
 function isPrivilegedSettingsSender(event) {
-  const senderUrl = getIpcSenderUrl(event);
-  if (!senderUrl) return false;
-  try {
-    const parsed = new URL(senderUrl);
-    if (parsed.protocol !== 'file:') return false;
-    const pathname = decodeURIComponent(parsed.pathname || '').replace(/\\/g, '/').toLowerCase();
-    return pathname.endsWith('/html/windows/system.html')
-      || pathname.endsWith('/html/pages/scraper.html');
-  } catch (_) {
-    return false;
-  }
+  return isAuthorizedRendererPage(event, AUTHORIZED_RENDERER_PAGES.privilegedSettings);
 }
 
 function cloneSettings(settings) {
@@ -7163,7 +7274,7 @@ ipcMain.handle('settings-save', async (e, s) => {
   return success;
 });
 
-ipcMain.handle('security:get-site-safety-status', async (_event, payload = {}) => {
+ipcMain.handle('security:get-site-safety-status', withAuthorizedRendererPages(AUTHORIZED_RENDERER_PAGES.mainWindow, 'security:get-site-safety-status', async (_event, payload = {}) => {
   try {
     const url = String(payload?.url || '').trim();
     if (!url) return buildSiteSafetyError('', 'No URL available', { code: 'missing_url' });
@@ -7179,9 +7290,9 @@ ipcMain.handle('security:get-site-safety-status', async (_event, payload = {}) =
       error: error?.message || 'Check failed'
     });
   }
-});
+}));
 
-ipcMain.handle('security:prime-site-safety-scan', async (_event, payload = {}) => {
+ipcMain.handle('security:prime-site-safety-scan', withAuthorizedRendererPages(AUTHORIZED_RENDERER_PAGES.mainWindow, 'security:prime-site-safety-scan', async (_event, payload = {}) => {
   try {
     const url = String(payload?.url || '').trim();
     if (!url) return buildSiteSafetyError('', 'No URL available', { code: 'missing_url' });
@@ -7197,31 +7308,38 @@ ipcMain.handle('security:prime-site-safety-scan', async (_event, payload = {}) =
       error: error?.message || 'Check failed'
     });
   }
-});
+}));
 
-ipcMain.handle('security:get-site-settings', async (_event, payload = {}) => {
+ipcMain.handle('security:get-site-settings', withAuthorizedRendererPages(AUTHORIZED_RENDERER_PAGES.siteInfoRead, 'security:get-site-settings', async (_event, payload = {}) => {
   return getSiteSettingsSnapshot(String(payload?.url || '').trim());
-});
+}));
 
-ipcMain.handle('security:set-site-permission', async (_event, payload = {}) => {
+ipcMain.handle('security:set-site-permission', withAuthorizedRendererPages(AUTHORIZED_RENDERER_PAGES.siteSettings, 'security:set-site-permission', async (_event, payload = {}) => {
   return updateSitePermissionSetting(
     String(payload?.url || '').trim(),
     String(payload?.permission || '').trim(),
     String(payload?.decision || '').trim()
   );
-});
+}));
 
-ipcMain.handle('security:reset-site-permissions', async (_event, payload = {}) => {
+ipcMain.handle('security:reset-site-permissions', withAuthorizedRendererPages(AUTHORIZED_RENDERER_PAGES.siteSettings, 'security:reset-site-permissions', async (_event, payload = {}) => {
   return resetSitePermissionSettings(String(payload?.url || '').trim());
-});
+}));
 
-ipcMain.handle('security:clear-site-data', async (_event, payload = {}) => {
+ipcMain.handle('security:clear-site-data', withAuthorizedRendererPages(AUTHORIZED_RENDERER_PAGES.siteSettings, 'security:clear-site-data', async (_event, payload = {}) => {
   return clearSiteStorageData(String(payload?.url || '').trim());
-});
+}));
 
-ipcMain.handle('system-open-path', async (e, targetPath) => {
-    try { if (!targetPath) return false; await shell.openPath(targetPath); return true; } catch (e) { return false; }
-});
+ipcMain.handle('system-open-path', withAuthorizedRendererPages(AUTHORIZED_RENDERER_PAGES.scraper, 'system-open-path', async (e, targetPath) => {
+    try {
+        const safePath = validateSafeOpenPath(targetPath);
+        const openError = await shell.openPath(safePath);
+        return !openError;
+    } catch (e) {
+        console.warn('[Security] system-open-path blocked:', e?.message || e);
+        return false;
+    }
+}));
 
 ipcMain.handle('system-get-user-data-path', () => app.getPath('userData'));
 
@@ -7232,7 +7350,7 @@ ipcMain.handle('system-get-local-ip', () => {
 
 
 // Image Scraping Persistence Handlers
-ipcMain.handle('ai:save-images-to-desktop', async (event, images) => {
+ipcMain.handle('ai:save-images-to-desktop', withAuthorizedRendererPages(AUTHORIZED_RENDERER_PAGES.scraper, 'ai:save-images-to-desktop', async (event, images) => {
     try {
         if (!fs.existsSync(SCRAPES_DIR)) fs.mkdirSync(SCRAPES_DIR, { recursive: true });
         const results = [];
@@ -7248,9 +7366,9 @@ ipcMain.handle('ai:save-images-to-desktop', async (event, images) => {
     } catch (e) {
         return { success: false, error: e.message };
     }
-});
+}));
 
-ipcMain.handle('ai:get-desktop-scrapes', async () => {
+ipcMain.handle('ai:get-desktop-scrapes', withAuthorizedRendererPages(AUTHORIZED_RENDERER_PAGES.scraper, 'ai:get-desktop-scrapes', async () => {
     try {
         if (!fs.existsSync(SCRAPES_DIR)) return [];
         const files = await fs.promises.readdir(SCRAPES_DIR);
@@ -7270,7 +7388,7 @@ ipcMain.handle('ai:get-desktop-scrapes', async () => {
     } catch (e) {
         return [];
     }
-});
+}));
 
 async function generateAIFailureReport(params, error) {
     try {
@@ -7498,11 +7616,11 @@ ipcMain.handle('ai-generate-speech', async (_event, payload = {}) => {
     }
 });
 
-ipcMain.handle('scraper:get-groq-keys', async (_event) => getScraperGroqKeysFromEnv());
-ipcMain.handle('scraper:get-groq-model', async (_event) => getScraperGroqModelFromEnv());
-ipcMain.handle('scraper:get-web-api-keys', async (_event) => getScraperWebApiKeysFromEnv());
+ipcMain.handle('scraper:get-groq-keys', withAuthorizedRendererPages(AUTHORIZED_RENDERER_PAGES.scraper, 'scraper:get-groq-keys', async (_event) => getScraperGroqKeysFromEnv()));
+ipcMain.handle('scraper:get-groq-model', withAuthorizedRendererPages(AUTHORIZED_RENDERER_PAGES.scraper, 'scraper:get-groq-model', async (_event) => getScraperGroqModelFromEnv()));
+ipcMain.handle('scraper:get-web-api-keys', withAuthorizedRendererPages(AUTHORIZED_RENDERER_PAGES.scraper, 'scraper:get-web-api-keys', async (_event) => getScraperWebApiKeysFromEnv()));
 
-ipcMain.handle('scraper:get-usage-stats', async (_event) => {
+ipcMain.handle('scraper:get-usage-stats', withAuthorizedRendererPages(AUTHORIZED_RENDERER_PAGES.scraper, 'scraper:get-usage-stats', async (_event) => {
     try {
         const webApiKeys = getScraperWebApiKeysFromEnv();
         const serpKey = String(webApiKeys.serpapi || '').trim();
@@ -7696,7 +7814,7 @@ ipcMain.handle('scraper:get-usage-stats', async (_event) => {
     } catch (error) {
         return { success: false, error: error?.message || 'Failed to load scraper usage stats.' };
     }
-});
+}));
 
 ipcMain.handle('dialog-save-image', async (event, { dataUrl, defaultName }) => {
     const defaultDir = cachedSettings.downloadPath && fs.existsSync(cachedSettings.downloadPath) ? cachedSettings.downloadPath : app.getPath('downloads');
@@ -7734,32 +7852,32 @@ ipcMain.handle('dialog-open-text', async () => {
     try { const content = await fs.promises.readFile(result.filePaths[0], 'utf8'); return { success: true, content, filePath: result.filePaths[0] }; } catch (e) { return null; }
 });
 
-ipcMain.handle('dialog-select-file', async (event, filters) => {
+ipcMain.handle('dialog-select-file', withAuthorizedRendererPages(AUTHORIZED_RENDERER_PAGES.serverOperator, 'dialog-select-file', async (event, filters) => {
     const result = await dialog.showOpenDialog(mainWindow, {
         properties: ['openFile'],
         filters: filters || [{ name: 'All Files', extensions: ['*'] }]
     });
     if (result.canceled || result.filePaths.length === 0) return null;
     return result.filePaths[0];
-});
+}));
 
-ipcMain.handle('dialog-select-folder', async () => {
+ipcMain.handle('dialog-select-folder', withAuthorizedRendererPages(AUTHORIZED_RENDERER_PAGES.serverOperator, 'dialog-select-folder', async () => {
     const result = await dialog.showOpenDialog(mainWindow, {
         properties: ['openDirectory']
     });
     if (result.canceled || result.filePaths.length === 0) return null;
     return result.filePaths[0];
-});
+}));
 
-ipcMain.handle('dialog-open-custom', async (event, options) => {
+ipcMain.handle('dialog-open-custom', withAuthorizedRendererPages(AUTHORIZED_RENDERER_PAGES.serverOperator, 'dialog-open-custom', async (event, options) => {
     const result = await dialog.showOpenDialog(mainWindow, options);
     if (result.canceled || result.filePaths.length === 0) return null;
     return result.filePaths;
-});
+}));
 
 
 // Security: Validate all file paths to prevent directory traversal attacks
-ipcMain.handle('fs-read-file', async (e, filePath) => {
+ipcMain.handle('fs-read-file', withAuthorizedRendererPages(AUTHORIZED_RENDERER_PAGES.serverOperator, 'fs-read-file', async (e, filePath) => {
     try {
         const abs = path.resolve(String(filePath || ''));
         if (!isPathInSafeDirectories(abs)) throw new Error('Access denied: Path outside allowed directories');
@@ -7768,9 +7886,9 @@ ipcMain.handle('fs-read-file', async (e, filePath) => {
         console.warn('[Security] fs-read-file blocked:', e?.message);
         return null;
     }
-});
+}));
 
-ipcMain.handle('fs-trust-folder', async (e, folderPath) => {
+ipcMain.handle('fs-trust-folder', withAuthorizedRendererPages(AUTHORIZED_RENDERER_PAGES.serverOperator, 'fs-trust-folder', async (e, folderPath) => {
     try {
         const abs = path.resolve(String(folderPath || ''));
         if (!abs) throw new Error('Invalid folder path');
@@ -7785,9 +7903,9 @@ ipcMain.handle('fs-trust-folder', async (e, folderPath) => {
         console.warn('[Security] fs-trust-folder failed:', e?.message);
         return { success: false, error: e?.message };
     }
-});
+}));
 
-ipcMain.handle('fs-read-dir', async (e, dirPath) => {
+ipcMain.handle('fs-read-dir', withAuthorizedRendererPages(AUTHORIZED_RENDERER_PAGES.serverOperator, 'fs-read-dir', async (e, dirPath) => {
     try {
         const abs = path.resolve(String(dirPath || ''));
         if (!isPathInSafeDirectories(abs)) throw new Error('Access denied: Path outside allowed directories');
@@ -7803,9 +7921,9 @@ ipcMain.handle('fs-read-dir', async (e, dirPath) => {
         console.warn('[Security] fs-read-dir blocked:', e?.message);
         return [];
     }
-});
+}));
 
-ipcMain.handle('fs-stat-path', async (e, targetPath) => {
+ipcMain.handle('fs-stat-path', withAuthorizedRendererPages(AUTHORIZED_RENDERER_PAGES.serverOperator, 'fs-stat-path', async (e, targetPath) => {
     try {
         const abs = path.resolve(String(targetPath || ''));
         if (!isPathInSafeDirectories(abs)) throw new Error('Access denied: Path outside allowed directories');
@@ -7820,9 +7938,9 @@ ipcMain.handle('fs-stat-path', async (e, targetPath) => {
     } catch (e) {
         return { exists: false, isFile: false, isDirectory: false, size: 0, mtimeMs: 0 };
     }
-});
+}));
 
-ipcMain.handle('fs-create-file', async (e, { path: filePath, content }) => {
+ipcMain.handle('fs-create-file', withAuthorizedRendererPages(AUTHORIZED_RENDERER_PAGES.serverOperator, 'fs-create-file', async (e, { path: filePath, content }) => {
     try {
         const abs = path.resolve(String(filePath || ''));
         if (!isPathInSafeDirectories(abs)) throw new Error('Access denied: Path outside allowed directories');
@@ -7832,9 +7950,9 @@ ipcMain.handle('fs-create-file', async (e, { path: filePath, content }) => {
         console.warn('[Security] fs-create-file blocked:', e?.message);
         return false;
     }
-});
+}));
 
-ipcMain.handle('fs-create-folder', async (e, dirPath) => {
+ipcMain.handle('fs-create-folder', withAuthorizedRendererPages(AUTHORIZED_RENDERER_PAGES.serverOperator, 'fs-create-folder', async (e, dirPath) => {
     try {
         const abs = path.resolve(String(dirPath || ''));
         if (!isPathInSafeDirectories(abs)) throw new Error('Access denied: Path outside allowed directories');
@@ -7844,9 +7962,9 @@ ipcMain.handle('fs-create-folder', async (e, dirPath) => {
         console.warn('[Security] fs-create-folder blocked:', e?.message);
         return false;
     }
-});
+}));
 
-ipcMain.handle('fs-delete-path', async (e, targetPath) => {
+ipcMain.handle('fs-delete-path', withAuthorizedRendererPages(AUTHORIZED_RENDERER_PAGES.serverOperator, 'fs-delete-path', async (e, targetPath) => {
     try {
         const abs = path.resolve(String(targetPath || ''));
         if (!isPathInSafeDirectories(abs)) throw new Error('Access denied: Path outside allowed directories');
@@ -7859,9 +7977,9 @@ ipcMain.handle('fs-delete-path', async (e, targetPath) => {
         console.warn('[Security] fs-delete-path blocked:', e?.message);
         return false;
     }
-});
+}));
 
-ipcMain.handle('fs-rename-path', async (e, { oldPath, newPath }) => {
+ipcMain.handle('fs-rename-path', withAuthorizedRendererPages(AUTHORIZED_RENDERER_PAGES.serverOperator, 'fs-rename-path', async (e, { oldPath, newPath }) => {
     try {
         const oldAbs = path.resolve(String(oldPath || ''));
         const newAbs = path.resolve(String(newPath || ''));
@@ -7874,7 +7992,7 @@ ipcMain.handle('fs-rename-path', async (e, { oldPath, newPath }) => {
         console.warn('[Security] fs-rename-path blocked:', e?.message);
         return false;
     }
-});
+}));
 
 if (!isStandaloneLikeLaunch) {
   app.whenReady().then(async () => {
@@ -7903,7 +8021,9 @@ if (!isStandaloneLikeLaunch) {
     });
 
     app.on('web-contents-created', (event, contents) => registerGlobalShortcuts(contents));
-    websearch.registerHandlers(() => getRuntimeSettingsWithScraperWebApiKeys(cachedSettings));
+    websearch.registerHandlers(() => getRuntimeSettingsWithScraperWebApiKeys(cachedSettings), {
+      isAuthorizedSender: (event) => isAuthorizedRendererPage(event, AUTHORIZED_RENDERER_PAGES.scraper)
+    });
     await initialExtensionsPromise;
     createMainWindow();
   }).catch(err => {

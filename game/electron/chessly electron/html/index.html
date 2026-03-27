@@ -796,7 +796,7 @@
       function parseSq(s) { return {c: s.charCodeAt(0)-97, r: 8-parseInt(s[1])}; }
 
       document.getElementById('flipBoard').onclick = () => { isFlipped = !isFlipped; renderBoard(); };
-      document.getElementById('startNewGame').onclick = () => window.electronAPI.openNewGame();
+      document.getElementById('startNewGame').onclick = () => window.electronAPI?.openNewGame?.();
       document.getElementById('pauseBtn').onclick = () => {
           // Simple pause visual, doesn't actually stop timer interval in this simplified version logic
           document.getElementById('paused-overlay').classList.toggle('hidden');
@@ -804,7 +804,7 @@
 
       // Init
       (async () => {
-          const profile = await window.electronAPI.getProfile();
+          const profile = await window.electronAPI?.getProfile?.();
           
           // Set Player Info
           if(profile) {
@@ -831,7 +831,7 @@
               document.getElementById('model-opponent').textContent = "Waiting...";
           }
 
-          const prefs = await window.electronAPI.getPreferences();
+          const prefs = await window.electronAPI?.getPreferences?.();
           if (prefs?.boardTheme) document.documentElement.setAttribute('data-theme', prefs.boardTheme);
           
           // Apply Animation Settings
@@ -904,7 +904,7 @@
       });
       
       // New Game Handler
-      window.electronAPI.onNewGameStart((data) => {
+      window.electronAPI?.onNewGameStart?.((data) => {
           game.reset();
           gameActive = true;
           document.getElementById('game-over-modal').style.display = 'none';

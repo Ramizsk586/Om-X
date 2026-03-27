@@ -30,6 +30,7 @@ const {
   parseRolePayload
 } = require('../utils/validate');
 const { sanitizeUser } = require('../utils/serializers');
+const { readRequestCookie } = require('../utils/requestCookies');
 
 const authApiRouter = express.Router();
 const authCompatibilityRouter = express.Router();
@@ -111,26 +112,6 @@ function asyncRoute(handler) {
 }
 
 /**
- * Parse the incoming Cookie header into a simple map.
- * @param {import('express').Request} req Express request object.
- * @returns {Record<string, string>} Parsed cookie values.
- */
-function parseCookies(req) {
-  return String(req.get('cookie') || '')
-    .split(';')
-    .map((item) => item.trim())
-    .filter(Boolean)
-    .reduce((accumulator, entry) => {
-      const separatorIndex = entry.indexOf('=');
-      if (separatorIndex === -1) return accumulator;
-      const key = entry.slice(0, separatorIndex).trim();
-      const value = entry.slice(separatorIndex + 1).trim();
-      accumulator[key] = decodeURIComponent(value);
-      return accumulator;
-    }, {});
-}
-
-/**
  * Persist the refresh token in a secure HTTP-only cookie.
  * @param {import('express').Response} res Express response object.
  * @param {string} refreshToken Raw refresh token.
@@ -166,7 +147,7 @@ function clearRefreshCookie(res) {
 function readRefreshToken(req) {
   const bodyToken = String(req.body?.refreshToken || '').trim();
   if (bodyToken) return bodyToken;
-  return String(parseCookies(req).omchat_refresh || '').trim();
+  return readRequestCookie(req, 'omchat_refresh');
 }
 
 /**
@@ -280,15 +261,12 @@ authApiRouter.post('/login', loginLimiter, asyncRoute(async (req, res) => {
     });
   }
 
-  const session = await userService.finalizeLogin(req, user, req.deviceToken || '');
-  req.deviceToken = session.deviceToken;
+  const session = await userService.finalizeLogin(req, user);
   setRefreshCookie(res, session.refreshToken);
 
   return res.json({
     success: true,
     accessToken: session.accessToken,
-    refreshToken: session.refreshToken,
-    deviceToken: session.deviceToken,
     user: serializeAccountSummary(session.user)
   });
 }));
@@ -300,10 +278,6 @@ authApiRouter.post('/logout', asyncRoute(async (req, res) => {
 
   if (refreshToken) {
     await tokenService.revokeRefreshToken(refreshToken);
-  }
-
-  if (req.deviceToken) {
-    await tokenService.revokeDeviceToken(req.deviceToken);
   }
 
   if (currentUser?.id && !refreshToken) {
@@ -341,7 +315,6 @@ authApiRouter.post('/token/refresh', refreshLimiter, asyncRoute(async (req, res)
 
   return res.json({
     accessToken,
-    refreshToken: rotation.refreshToken,
     user: serializeAccountSummary(user)
   });
 }));
@@ -393,8 +366,6 @@ authApiRouter.post('/users/:id/sessions/revoke', requireRole('admin'), asyncRout
 authCompatibilityRouter.post('/verify-otp', verifyOtpLimiter, asyncRoute(async (req, res) => {
   const email = normalizeEmail(req.body?.email);
   const code = String(req.body?.code || '').trim();
-  const requestDeviceToken = String(req.body?.deviceToken || req.deviceToken || '').trim();
-
   if (!isValidEmail(email) || !otpCodePattern.test(code)) {
     return res.status(400).json({ error: 'invalid_input' });
   }
@@ -434,17 +405,13 @@ authCompatibilityRouter.post('/verify-otp', verifyOtpLimiter, asyncRoute(async (
 
   const session = await userService.finalizeLogin(
     req,
-    userService.sanitizeAuthUser(verifiedUser),
-    requestDeviceToken || null
+    userService.sanitizeAuthUser(verifiedUser)
   );
-  req.deviceToken = session.deviceToken;
   setRefreshCookie(res, session.refreshToken);
 
   return res.json({
     success: true,
     accessToken: session.accessToken,
-    refreshToken: session.refreshToken,
-    deviceToken: session.deviceToken,
     user: serializeAccountSummary(session.user)
   });
 }));
@@ -564,7 +531,6 @@ module.exports = {
   authApiRouter,
   authCompatibilityRouter
 };
-
 
 
 

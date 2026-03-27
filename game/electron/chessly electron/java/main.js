@@ -11,6 +11,7 @@ const {
 
 const path = require("path");
 const fs = require("fs");
+const { fileURLToPath } = require("url");
 const { spawn } = require("child_process");
 const Groq = require("groq-sdk");
 const LanServer = require('./lanServer');
@@ -28,8 +29,11 @@ async function getGoogleGenAI() {
 
 let mainWindow;
 const ICON_PATH = path.join(__dirname, "../assets/icon/chessly.png");
+const APP_ROOT = path.resolve(__dirname, "..");
+const ALLOWED_PRELOAD_EXTENSIONS = new Set([".js", ".cjs", ".mjs"]);
 let initialized = false;
 let ipcRegistered = false;
+const TRUSTED_RENDERER_PROTOCOLS = new Set(["file:"]);
 
 // Data
 let engines = [];
@@ -217,6 +221,116 @@ function attachWindowContextMenu(win) {
   });
 }
 
+function isSameOrSubFsPath(targetPath, basePath) {
+  const target = path.resolve(String(targetPath || ""));
+  const base = path.resolve(String(basePath || ""));
+  if (!target || !base) return false;
+  const rel = path.relative(base, target);
+  return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
+}
+
+function resolveLocalEntryPath(candidatePath) {
+  const value = String(candidatePath || "").trim();
+  if (!value) return "";
+  if (/^file:/i.test(value)) {
+    return path.resolve(fileURLToPath(new URL(value)));
+  }
+  return path.resolve(value);
+}
+
+function validateLocalPreloadEntry(candidatePath) {
+  const resolvedPath = resolveLocalEntryPath(candidatePath);
+  const ext = path.extname(resolvedPath).toLowerCase();
+  if (!resolvedPath || !ALLOWED_PRELOAD_EXTENSIONS.has(ext)) {
+    throw new Error(`Unsupported preload entry: ${candidatePath}`);
+  }
+  if (!isSameOrSubFsPath(resolvedPath, APP_ROOT)) {
+    throw new Error(`Preload must stay inside ${APP_ROOT}`);
+  }
+  return resolvedPath;
+}
+
+function isAllowedInternalWindowUrl(rawUrl) {
+  const value = String(rawUrl || "").trim();
+  if (!value) return false;
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol !== "file:") return false;
+    return isSameOrSubFsPath(path.resolve(fileURLToPath(parsed)), APP_ROOT);
+  } catch (_) {
+    return false;
+  }
+}
+
+function hardenInternalWindow(targetWindow, label = "Chessly window") {
+  if (!targetWindow?.webContents) return;
+
+  targetWindow.webContents.setWindowOpenHandler?.(({ url }) => {
+    console.warn(`[Security] Blocked popup from ${label}: ${url || "unknown"}`);
+    return { action: "deny" };
+  });
+
+  const blockUnexpectedNavigation = (event, url) => {
+    if (isAllowedInternalWindowUrl(url)) return;
+    event.preventDefault();
+    console.warn(`[Security] Blocked navigation from ${label}: ${url || "unknown"}`);
+  };
+
+  targetWindow.webContents.on("will-navigate", blockUnexpectedNavigation);
+  targetWindow.webContents.on("will-redirect", blockUnexpectedNavigation);
+  targetWindow.webContents.on("will-attach-webview", (_event, webPreferences) => {
+    webPreferences.contextIsolation = true;
+    webPreferences.nodeIntegration = false;
+    webPreferences.webSecurity = true;
+    webPreferences.sandbox = true;
+
+    const preloadPath = webPreferences.preload || webPreferences.preloadURL;
+    if (!preloadPath) return;
+
+    try {
+      webPreferences.preload = validateLocalPreloadEntry(preloadPath);
+    } catch (error) {
+      console.warn("[Security] Blocked untrusted Chessly webview preload:", error?.message || error);
+      delete webPreferences.preload;
+      delete webPreferences.preloadURL;
+    }
+  });
+}
+
+function isTrustedIpcSender(event) {
+    try {
+        const senderUrl = String(event?.senderFrame?.url || event?.sender?.getURL?.() || "").trim();
+        if (!senderUrl) return false;
+        const parsed = new URL(senderUrl);
+        if (!TRUSTED_RENDERER_PROTOCOLS.has(parsed.protocol)) return false;
+        const filePath = path.resolve(fileURLToPath(parsed));
+        return isSameOrSubFsPath(filePath, APP_ROOT);
+    } catch (_) {
+        return false;
+    }
+}
+
+function installTrustedIpcGuards() {
+  if (ipcMain.__omxTrustedGuardInstalled) return;
+  ipcMain.__omxTrustedGuardInstalled = true;
+
+  const rawHandle = ipcMain.handle.bind(ipcMain);
+  ipcMain.handle = (channel, handler) => rawHandle(channel, async (event, ...args) => {
+    if (!isTrustedIpcSender(event)) {
+      throw new Error(`Unauthorized IPC invoke: ${channel}`);
+    }
+    return handler(event, ...args);
+  });
+
+  const rawOn = ipcMain.on.bind(ipcMain);
+  ipcMain.on = (channel, listener) => rawOn(channel, (event, ...args) => {
+    if (!isTrustedIpcSender(event)) {
+      return;
+    }
+    return listener(event, ...args);
+  });
+}
+
 function createMainWindow() {
   mainWindow = new BrowserWindow({
     width: 1200, height: 800, minWidth: 1000, minHeight: 650,
@@ -230,6 +344,7 @@ function createMainWindow() {
       sandbox: true
     }
   });
+  hardenInternalWindow(mainWindow, "Chessly main window");
   attachWindowContextMenu(mainWindow);
   mainWindow.loadFile(path.join(__dirname, "../html/index.html"));
   mainWindow.on("closed", () => { 
@@ -244,6 +359,7 @@ function navigateToView(viewName) {
 function setupIPC() {
   if (ipcRegistered) return;
   ipcRegistered = true;
+  installTrustedIpcGuards();
   const safeHandle = (channel, handler) => {
     try {
       if (ipcMain._invokeHandlers && ipcMain._invokeHandlers.has(channel)) return;
@@ -267,6 +383,7 @@ function setupIPC() {
               sandbox: true
           }
       });
+      hardenInternalWindow(win, "Chessly profile window");
       win.loadFile(path.join(__dirname, "../html/profile.html"));
       win.once('ready-to-show', () => win.show());
   });
@@ -301,7 +418,9 @@ function setupIPC() {
 
   ipcMain.on("open-mad-report", (_event, data) => { if (mainWindow) mainWindow.webContents.send('navigate', 'mad-report', data); });
   ipcMain.on("open-analysis-board", () => navigateToView('review'));
-  ipcMain.on("show-console", () => { if (mainWindow) mainWindow.webContents.openDevTools({ mode: "detach" }); });
+  ipcMain.on("show-console", () => {
+      if (!app.isPackaged && mainWindow) mainWindow.webContents.openDevTools({ mode: "detach" });
+  });
 
   ipcMain.on("set-eval-window", (_event, enabled) => {
     userPreferences.showEvalBar = enabled;
@@ -648,6 +767,7 @@ function setupIPC() {
   });
   
   ipcMain.on("open-dev-tools", (event) => {
+      if (app.isPackaged) return;
       const win = BrowserWindow.fromWebContents(event.sender);
       if(win) win.webContents.openDevTools({ mode: 'detach' });
   });

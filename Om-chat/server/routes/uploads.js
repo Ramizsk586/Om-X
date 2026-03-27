@@ -1,8 +1,16 @@
 const express = require('express');
+const requireAuth = require('../middleware/requireAuth');
 const UploadBlob = require('../models/UploadBlob.model');
 const { getModel, isLocalMode } = require('../db/getModel');
 
 const router = express.Router();
+const SAFE_INLINE_MIME_PREFIXES = ['image/', 'audio/', 'video/', 'text/plain'];
+const SAFE_INLINE_MIME_TYPES = new Set([
+  'application/json',
+  'application/pdf'
+]);
+
+router.use(requireAuth);
 
 function getUploadBlobCollection() { return getModel('uploadBlobs', UploadBlob); }
 
@@ -57,11 +65,15 @@ router.get('/:id', async (req, res) => {
 
   const mimeType = String(file.mimeType || 'application/octet-stream');
   const safeName = String(file.originalName || 'attachment').replace(/[\r\n"]/g, '');
+  const normalizedMimeType = mimeType.split(';', 1)[0].trim().toLowerCase();
+  const allowInline = SAFE_INLINE_MIME_TYPES.has(normalizedMimeType)
+    || SAFE_INLINE_MIME_PREFIXES.some((prefix) => normalizedMimeType.startsWith(prefix));
 
-  res.setHeader('Cache-Control', 'public, max-age=3600');
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Content-Type', mimeType);
   res.setHeader('Content-Length', String(Number(file.size) || body.length));
-  res.setHeader('Content-Disposition', `inline; filename="${safeName}"`);
+  res.setHeader('Content-Disposition', `${allowInline ? 'inline' : 'attachment'}; filename="${safeName}"`);
   return res.end(body);
 });
 

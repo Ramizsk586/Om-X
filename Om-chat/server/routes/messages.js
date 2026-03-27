@@ -1,6 +1,7 @@
 const express = require('express');
 const requireAuth = require('../middleware/requireAuth');
 const crypto = require('crypto');
+const dns = require('node:dns').promises;
 const path = require('path');
 const multer = require('multer');
 const UploadBlob = require('../models/UploadBlob.model');
@@ -19,6 +20,7 @@ const {
 const {
   cleanText,
   ensureChannelId,
+  isPrivateHostname,
   validateMessagePayload,
   validateMessageQuery,
   validateOgQuery
@@ -116,6 +118,8 @@ async function fetchPreviewResponse(targetUrl, depth = 0) {
     throw new Error('preview_redirect_limit');
   }
 
+  await assertPublicPreviewTarget(targetUrl);
+
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), PREVIEW_TIMEOUT_MS);
 
@@ -140,6 +144,25 @@ async function fetchPreviewResponse(targetUrl, depth = 0) {
     return response;
   } finally {
     clearTimeout(timeout);
+  }
+}
+
+async function assertPublicPreviewTarget(targetUrl) {
+  const parsed = new URL(String(targetUrl || '').trim());
+  if (isPrivateHostname(parsed.hostname)) {
+    throw new Error('preview_private_target');
+  }
+  if (!dns?.lookup || !parsed.hostname || isPrivateHostname(parsed.hostname)) {
+    return;
+  }
+
+  const records = await dns.lookup(parsed.hostname, { all: true, verbatim: true });
+  if (!Array.isArray(records) || !records.length) {
+    throw new Error('preview_dns_lookup_failed');
+  }
+
+  if (records.some((record) => isPrivateHostname(record?.address || ''))) {
+    throw new Error('preview_private_target');
   }
 }
 

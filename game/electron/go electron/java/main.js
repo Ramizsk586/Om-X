@@ -2,8 +2,12 @@
 const { app, BrowserWindow, ipcMain, dialog, nativeImage, Menu } = require("electron");
 const path = require("path");
 const fs = require("fs");
+const { fileURLToPath } = require("url");
 const Groq = require("groq-sdk");
 const GoEngineClient = require('./goEngineClient');
+const TRUSTED_RENDERER_PROTOCOLS = new Set(["file:"]);
+const APP_ROOT = path.resolve(__dirname, "..");
+const ALLOWED_PRELOAD_EXTENSIONS = new Set([".js", ".cjs", ".mjs"]);
 
 let GoogleGenAIClass = null;
 async function getGoogleGenAI() {
@@ -42,6 +46,45 @@ if (!fs.existsSync(SAVES_DIR)) {
 let engines = [];
 let userPreferences = { goTheme: 'theme-emerald', goShowCoordinates: true };
 let lastGameData = null; 
+
+function buildWindowContextMenu(targetWin, targetContents) {
+    const win = targetWin || BrowserWindow.fromWebContents(targetContents);
+    const wc = targetContents || win?.webContents;
+    const isMax = win?.isMaximized ? win.isMaximized() : false;
+
+    return Menu.buildFromTemplate([
+        { label: 'Back', enabled: !!(wc?.canGoBack && wc.canGoBack()), click: () => { if (wc?.canGoBack()) wc.goBack(); } },
+        { label: 'Reload', click: () => wc?.reload() },
+        { type: 'separator' },
+        { label: 'Minimize', enabled: !!win?.minimizable, click: () => win?.minimize() },
+        { label: isMax ? 'Restore' : 'Maximize', enabled: !!win?.maximizable, click: () => { if (!win) return; isMax ? win.unmaximize() : win.maximize(); } },
+        { label: 'Open DevTools', click: () => wc?.openDevTools?.({ mode: 'detach' }) },
+        { type: 'separator' },
+        { label: 'Close', click: () => win?.close() }
+    ]);
+}
+
+function attachWindowContextMenu(win) {
+    if (!win) return;
+
+    const popupMenu = (contents) => {
+        const owner = BrowserWindow.fromWebContents(contents) || win;
+        const menu = buildWindowContextMenu(owner, contents);
+        menu.popup({ window: owner });
+    };
+
+    win.webContents.on('context-menu', (event) => {
+        event.preventDefault();
+        popupMenu(win.webContents);
+    });
+
+    win.webContents.on('did-attach-webview', (_event, webContents) => {
+        webContents.on('context-menu', (event) => {
+            event.preventDefault();
+            popupMenu(webContents);
+        });
+    });
+}
 
 // --- LOGGER ---
 function logSystemError(error, context = "GO_PROCESS") {
@@ -108,13 +151,126 @@ function createWindow({ embedded = false } = {}) {
             webviewTag: true
         }
     });
+    hardenInternalWindow(mainWindow, "Go main window");
+    attachWindowContextMenu(mainWindow);
     mainWindow.setMenuBarVisibility(false);
     mainWindow.loadFile(path.join(__dirname, "../html/index.html"));
+}
+
+function isSameOrSubFsPath(targetPath, basePath) {
+    const target = path.resolve(String(targetPath || ""));
+    const base = path.resolve(String(basePath || ""));
+    if (!target || !base) return false;
+    const rel = path.relative(base, target);
+    return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
+}
+
+function resolveLocalEntryPath(candidatePath) {
+    const value = String(candidatePath || "").trim();
+    if (!value) return "";
+    if (/^file:/i.test(value)) {
+        return path.resolve(fileURLToPath(new URL(value)));
+    }
+    return path.resolve(value);
+}
+
+function validateLocalPreloadEntry(candidatePath) {
+    const resolvedPath = resolveLocalEntryPath(candidatePath);
+    const ext = path.extname(resolvedPath).toLowerCase();
+    if (!resolvedPath || !ALLOWED_PRELOAD_EXTENSIONS.has(ext)) {
+        throw new Error(`Unsupported preload entry: ${candidatePath}`);
+    }
+    if (!isSameOrSubFsPath(resolvedPath, APP_ROOT)) {
+        throw new Error(`Preload must stay inside ${APP_ROOT}`);
+    }
+    return resolvedPath;
+}
+
+function isAllowedInternalWindowUrl(rawUrl) {
+    const value = String(rawUrl || "").trim();
+    if (!value) return false;
+    try {
+        const parsed = new URL(value);
+        if (parsed.protocol !== "file:") return false;
+        return isSameOrSubFsPath(path.resolve(fileURLToPath(parsed)), APP_ROOT);
+    } catch (_) {
+        return false;
+    }
+}
+
+function hardenInternalWindow(targetWindow, label = "Go window") {
+    if (!targetWindow?.webContents) return;
+
+    targetWindow.webContents.setWindowOpenHandler?.(({ url }) => {
+        console.warn(`[Security] Blocked popup from ${label}: ${url || "unknown"}`);
+        return { action: "deny" };
+    });
+
+    const blockUnexpectedNavigation = (event, url) => {
+        if (isAllowedInternalWindowUrl(url)) return;
+        event.preventDefault();
+        console.warn(`[Security] Blocked navigation from ${label}: ${url || "unknown"}`);
+    };
+
+    targetWindow.webContents.on("will-navigate", blockUnexpectedNavigation);
+    targetWindow.webContents.on("will-redirect", blockUnexpectedNavigation);
+    targetWindow.webContents.on("will-attach-webview", (_event, webPreferences) => {
+        webPreferences.contextIsolation = true;
+        webPreferences.nodeIntegration = false;
+        webPreferences.webSecurity = true;
+        webPreferences.sandbox = true;
+
+        const preloadPath = webPreferences.preload || webPreferences.preloadURL;
+        if (!preloadPath) return;
+
+        try {
+            webPreferences.preload = validateLocalPreloadEntry(preloadPath);
+        } catch (error) {
+            console.warn("[Security] Blocked untrusted Go webview preload:", error?.message || error);
+            delete webPreferences.preload;
+            delete webPreferences.preloadURL;
+        }
+    });
+}
+
+function isTrustedIpcSender(event) {
+    try {
+        const senderUrl = String(event?.senderFrame?.url || event?.sender?.getURL?.() || "").trim();
+        if (!senderUrl) return false;
+        const parsed = new URL(senderUrl);
+        if (!TRUSTED_RENDERER_PROTOCOLS.has(parsed.protocol)) return false;
+        const filePath = path.resolve(fileURLToPath(parsed));
+        return isSameOrSubFsPath(filePath, APP_ROOT);
+    } catch (_) {
+        return false;
+    }
+}
+
+function installTrustedIpcGuards() {
+    if (ipcMain.__omxTrustedGuardInstalled) return;
+    ipcMain.__omxTrustedGuardInstalled = true;
+
+    const rawHandle = ipcMain.handle.bind(ipcMain);
+    ipcMain.handle = (channel, handler) => rawHandle(channel, async (event, ...args) => {
+        if (!isTrustedIpcSender(event)) {
+            throw new Error(`Unauthorized IPC invoke: ${channel}`);
+        }
+        return handler(event, ...args);
+    });
+
+    const rawOn = ipcMain.on.bind(ipcMain);
+    ipcMain.on = (channel, listener) => rawOn(channel, (event, ...args) => {
+        if (!isTrustedIpcSender(event)) {
+            return;
+        }
+        return listener(event, ...args);
+    });
 }
 
 function initApp() {
     if (initialized) return;
     initialized = true;
+    installTrustedIpcGuards();
     loadData();
 }
 
@@ -558,7 +714,9 @@ ipcMain.handle("go-summarize-game", async (event, payload) => {
 });
 
 // Logs & Tools
-ipcMain.on("open-dev-tools", () => mainWindow.webContents.openDevTools({ mode: 'detach' }));
+ipcMain.on("open-dev-tools", () => {
+    if (!app.isPackaged) mainWindow.webContents.openDevTools({ mode: 'detach' });
+});
 ipcMain.handle("browse-directory", async () => {
     const result = await dialog.showOpenDialog({ properties: ["openDirectory"] });
     return result.canceled ? null : result.filePaths[0];

@@ -24,7 +24,7 @@ function randomHex(bytes = 64) {
 
 /**
  * Generate the persistent device token format used by Om Chat clients.
- * @returns {string} Device token suitable for the x-device-token header.
+ * @returns {string} Legacy device token identifier.
  */
 function createDeviceToken() {
   return `dt_${crypto.randomBytes(24).toString('hex')}`;

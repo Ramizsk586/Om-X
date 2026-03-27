@@ -55,6 +55,7 @@ const {
   registerUserSocket,
   unregisterUserSocket
 } = require('../services/presenceService');
+const { readRequestCookie } = require('../utils/requestCookies');
 
 const typingTimers = new Map();
 const typingByChannel = new Map();
@@ -304,9 +305,9 @@ async function resolveSocketUser(socket) {
     }
   }
 
-  const deviceToken = String(socket.handshake?.auth?.deviceToken || '').trim();
-  if (deviceToken) {
-    const authUser = await userService.restoreUserFromDeviceToken(requestLike, deviceToken);
+  const refreshToken = readRequestCookie(requestLike, 'omchat_refresh');
+  if (refreshToken) {
+    const authUser = await userService.restoreUserFromRefreshToken(requestLike, refreshToken);
     if (authUser) {
       socket.request.user = authUser;
       return authUser;

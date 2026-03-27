@@ -1,4 +1,3 @@
-const DEVICE_TOKEN_KEY = 'omchat_device_token';
 const CACHED_SERVERS_KEY = 'omchat_servers';
 const memoryStore = Object.create(null);
 
@@ -58,29 +57,10 @@ function dedupeServers(servers) {
   return Array.from(unique.values());
 }
 
-function generateDeviceToken() {
-  const bytes = new Uint8Array(24);
-  window.crypto.getRandomValues(bytes);
-  return `dt_${Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')}`;
-}
-
 function getRuntimeConfig() {
   return window.__OMCHAT_RUNTIME__ && typeof window.__OMCHAT_RUNTIME__ === 'object'
     ? window.__OMCHAT_RUNTIME__
     : {};
-}
-
-function getOrCreateDeviceToken() {
-  let token = readStorage(DEVICE_TOKEN_KEY);
-  if (!/^dt_[0-9a-f]{48}$/.test(token || '')) {
-    token = generateDeviceToken();
-    writeStorage(DEVICE_TOKEN_KEY, token);
-  }
-  return token;
-}
-
-function getDeviceToken() {
-  return getOrCreateDeviceToken();
 }
 
 function cacheServers(servers) {
@@ -100,7 +80,6 @@ function getCachedServers() {
 removeStorage(CACHED_SERVERS_KEY);
 
 function clearDeviceIdentity() {
-  removeStorage(DEVICE_TOKEN_KEY);
   removeStorage(CACHED_SERVERS_KEY);
 }
 
@@ -119,8 +98,6 @@ function clearDeviceIdentity() {
       requestHeaders.set(key, value);
     });
 
-    requestHeaders.set('x-device-token', getDeviceToken());
-
     if (runtime.csrfToken) {
       requestHeaders.set('x-csrf-token', runtime.csrfToken);
     }
@@ -137,11 +114,8 @@ function clearDeviceIdentity() {
   };
 })();
 
-window.DEVICE_TOKEN_KEY = DEVICE_TOKEN_KEY;
 window.CACHED_SERVERS_KEY = CACHED_SERVERS_KEY;
 window.getOmChatRuntime = getRuntimeConfig;
-window.getOrCreateDeviceToken = getOrCreateDeviceToken;
-window.getDeviceToken = getDeviceToken;
 window.cacheServers = cacheServers;
 window.getCachedServers = getCachedServers;
 window.clearDeviceIdentity = clearDeviceIdentity;

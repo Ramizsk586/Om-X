@@ -1,5 +1,6 @@
 
 document.addEventListener('DOMContentLoaded', () => {
+    const goElectronAPI = window.electronAPI || null;
     // Go Renderer
     const boardContainer = document.getElementById('board-container');
     const statusText = document.getElementById('status-text');
@@ -40,8 +41,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
     async function populateEngineSelectors() {
-        if (!window.electronAPI || !engineSelect) return;
-        const enginesRaw = await window.electronAPI.goEnginesGetAll();
+        if (!goElectronAPI || !engineSelect) return;
+        const enginesRaw = await goElectronAPI.goEnginesGetAll();
         const engines = [...(enginesRaw || [])].sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
         
         const currentVal = engineSelect.value;
@@ -254,22 +255,22 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function syncGameState() {
-        if (window.electronAPI.goGameStateUpdated) {
+        if (goElectronAPI?.goGameStateUpdated) {
             // Include ASCII board for LLMs
             const record = brain.getGameRecord();
             record.ascii = brain.toAsciiBoard();
-            window.electronAPI.goGameStateUpdated(record);
+            goElectronAPI.goGameStateUpdated(record);
         }
     }
 
     // --- GAME LOGIC ---
     async function engineMove() {
-    if (!playingVsEngine || !window.electronAPI?.goEngineGenMove) return;
+    if (!playingVsEngine || !goElectronAPI?.goEngineGenMove) return;
     
     currentlyThinking = true;
     updateStatusText();
 
-    const moveGtp = await window.electronAPI.goEngineGenMove(engineColor);
+    const moveGtp = await goElectronAPI.goEngineGenMove(engineColor);
     
     if (!moveGtp) {
         statusText.textContent = 'Engine communication error.';
@@ -322,7 +323,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (playingVsEngine && !brain.gameOver) {
         const moveGtp = uiToGtp(r, c, currentBoardSize);
         const humanColorGtp = (engineColor === 'w' ? 'black' : 'white');
-        await window.electronAPI.goEnginePlay({ color: humanColorGtp, coord: moveGtp });
+        await goElectronAPI.goEnginePlay({ color: humanColorGtp, coord: moveGtp });
         
         // Use a short timeout to let the UI update before the engine thinks
         setTimeout(engineMove, 100);
@@ -346,13 +347,13 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         // For simplicity, player is always Black for now.
         engineColor = 'w'; 
-        const success = await window.electronAPI.goStartEngine({ engineId: selectedEngineId, boardSize: currentBoardSize });
+        const success = await goElectronAPI?.goStartEngine?.({ engineId: selectedEngineId, boardSize: currentBoardSize });
         if (!success) {
             alert('Failed to start the Go engine. Please check the configuration in the Engines tab.');
             return;
         }
     } else {
-        if (window.electronAPI?.goStopEngine) await window.electronAPI.goStopEngine();
+        if (goElectronAPI?.goStopEngine) await goElectronAPI.goStopEngine();
     }
 
     brain.reset(currentBoardSize);
@@ -380,9 +381,9 @@ document.addEventListener('DOMContentLoaded', () => {
     async function init() {
         // Apply theme and settings from preferences
         try {
-            if (window.electronAPI) {
-                mainPreloadPath = await window.electronAPI.getMainPreloadPath();
-                cachedPrefs = await window.electronAPI.getPreferences();
+            if (goElectronAPI) {
+                mainPreloadPath = await goElectronAPI.getMainPreloadPath();
+                cachedPrefs = await goElectronAPI.getPreferences() || {};
                 document.body.className = cachedPrefs.goTheme || 'theme-emerald';
                 document.body.classList.toggle('show-coords', cachedPrefs.goShowCoordinates !== false);
 
@@ -424,7 +425,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (playingVsEngine && !brain.gameOver && brain.turn === engineColor) {
                 const passedColorGtp = oldTurn === 'b' ? 'black' : 'white';
-                await window.electronAPI.goEnginePlay({ color: passedColorGtp, coord: 'pass' });
+                await goElectronAPI?.goEnginePlay?.({ color: passedColorGtp, coord: 'pass' });
                 setTimeout(engineMove, 100);
             }
         });
@@ -445,7 +446,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const id = engineSelect.value;
             cachedPrefs.goPreferredEngineId = id;
             try {
-                await window.electronAPI.savePreferences({ goPreferredEngineId: id });
+                await goElectronAPI?.savePreferences?.({ goPreferredEngineId: id });
             } catch (e) {
                 console.warn('Failed to save preferred engine', e);
             }
@@ -463,7 +464,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const size = parseInt(boardSizeSelector.querySelector('.selected').dataset.size, 10);
             const engineId = engineSelect.value;
             
-            window.electronAPI.savePreferences({
+            goElectronAPI?.savePreferences?.({
                 goLastMode: mode,
                 goLastBoardSize: size,
                 ...(engineId ? { goPreferredEngineId: engineId } : {})
@@ -482,13 +483,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
         modalReviewBtn.addEventListener('click', () => {
             gameOverModal.classList.remove('visible');
-            if (window.electronAPI.startReviewMode) {
+            if (goElectronAPI?.startReviewMode) {
                 const gameRecord = brain.getGameRecord();
                 gameRecord.players = { 
                     b: playingVsEngine && engineColor === 'b' ? selectedEngineId : 'Player',
                     w: playingVsEngine && engineColor === 'w' ? selectedEngineId : 'Player'
                 };
-                window.electronAPI.startReviewMode(gameRecord);
+                goElectronAPI.startReviewMode(gameRecord);
             }
         });
 
@@ -511,8 +512,9 @@ document.addEventListener('DOMContentLoaded', () => {
             } else {
                 views.container.style.display = 'flex';
                 const correctedUrl = `../html/${url}`;
-                const preloadPathForUrl = mainPreloadPath.replace(/\\/g, '/');
-                views.container.innerHTML = `<webview src="${correctedUrl}" style="width:100%; height:100%; border:0;" preload="file://${preloadPathForUrl}"></webview>`;
+                const preloadPathForUrl = mainPreloadPath ? mainPreloadPath.replace(/\\/g, '/') : '';
+                const preloadAttr = preloadPathForUrl ? ` preload="file://${preloadPathForUrl}"` : '';
+                views.container.innerHTML = `<webview src="${correctedUrl}" style="width:100%; height:100%; border:0;"${preloadAttr}></webview>`;
             }
         }
 
@@ -524,8 +526,8 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('nav-settings').addEventListener('click', () => navigateTo('settings', 'settings.html'));
 
         // Listen for events forwarded from other views/main process
-        if (window.electronAPI && window.electronAPI.onForwardToAllViews) {
-            window.electronAPI.onForwardToAllViews(({ channel, data }) => {
+        if (goElectronAPI?.onForwardToAllViews) {
+            goElectronAPI.onForwardToAllViews(({ channel, data }) => {
                 if (channel === 'go-theme-changed') {
                     document.body.className = data;
                 } else if (channel === 'go-coords-changed') {
@@ -536,8 +538,8 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
 
-        if (window.electronAPI && window.electronAPI.onLoadReviewPanel) {
-            window.electronAPI.onLoadReviewPanel(gameData => {
+        if (goElectronAPI?.onLoadReviewPanel) {
+            goElectronAPI.onLoadReviewPanel(gameData => {
                 navigateTo('review', 'review.html');
                 // The review panel will also pull data on load via getLastGame as a robust fallback.
             });

@@ -12,7 +12,6 @@ export function connectSocket(handlers = {}) {
     socket = window.io({
       path: runtime.socketPath || '/socket.io',
       auth: {
-        deviceToken: typeof window.getDeviceToken === 'function' ? window.getDeviceToken() : null,
         csrfToken: runtime.csrfToken || ''
       },
       withCredentials: true,

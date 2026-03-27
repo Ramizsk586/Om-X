@@ -1,5 +1,102 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
+const TRUSTED_CONTEXT_PROTOCOLS = new Set(['file:']);
+const TRUSTED_FILE_PATH_SEGMENTS = ['/html/'];
+
+function normalizeFsPathString(value) {
+  let raw = String(value || '').trim();
+  if (!raw) return '';
+
+  raw = raw.replace(/\\/g, '/');
+
+  let prefix = '';
+  const driveMatch = raw.match(/^\/?([A-Za-z]:)(\/|$)/);
+  if (driveMatch) {
+    prefix = `${driveMatch[1].toLowerCase()}/`;
+    raw = raw.slice(driveMatch[0].startsWith('/') ? driveMatch[1].length + 2 : driveMatch[1].length + 1);
+  } else if (raw.startsWith('//')) {
+    prefix = '//';
+    raw = raw.slice(2);
+  } else if (raw.startsWith('/')) {
+    prefix = '/';
+    raw = raw.slice(1);
+  }
+
+  const stack = [];
+  for (const segment of raw.split('/')) {
+    if (!segment || segment === '.') continue;
+    if (segment === '..') {
+      if (stack.length) stack.pop();
+      continue;
+    }
+    stack.push(segment);
+  }
+
+  return `${prefix}${stack.join('/')}`;
+}
+
+function isTrustedFilePreloadUrl(urlObj) {
+  try {
+    if (!urlObj || urlObj.protocol !== 'file:') return false;
+    const pathname = normalizeFsPathString(decodeURIComponent(urlObj.pathname || ''));
+    return TRUSTED_FILE_PATH_SEGMENTS.some((segment) => pathname.includes(segment));
+  } catch (_) {
+    return false;
+  }
+}
+
+function getCurrentPageUrl() {
+  try {
+    if (typeof location !== 'undefined' && typeof location.href === 'string') return location.href;
+  } catch (_) {}
+  return '';
+}
+
+function isTrustedPreloadContext() {
+  const href = getCurrentPageUrl();
+  if (!href) return false;
+  try {
+    const url = new URL(href);
+    if (!TRUSTED_CONTEXT_PROTOCOLS.has(url.protocol)) return false;
+    return isTrustedFilePreloadUrl(url);
+  } catch (_) {
+    return false;
+  }
+}
+
+const __rawInvoke = ipcRenderer.invoke.bind(ipcRenderer);
+const __rawSend = ipcRenderer.send.bind(ipcRenderer);
+const __rawSendToHost = ipcRenderer.sendToHost.bind(ipcRenderer);
+
+function blockUntrustedPreloadChannel(kind, channel) {
+  const pageUrl = getCurrentPageUrl() || 'unknown';
+  console.warn(`[Security][Preload] Blocked ${kind} ${channel} from ${pageUrl}`);
+}
+
+ipcRenderer.invoke = (channel, ...args) => {
+  if (!isTrustedPreloadContext()) {
+    blockUntrustedPreloadChannel('invoke', channel);
+    return Promise.reject(new Error(`Blocked IPC invoke from untrusted page: ${channel}`));
+  }
+  return __rawInvoke(channel, ...args);
+};
+
+ipcRenderer.send = (channel, ...args) => {
+  if (!isTrustedPreloadContext()) {
+    blockUntrustedPreloadChannel('send', channel);
+    return;
+  }
+  return __rawSend(channel, ...args);
+};
+
+ipcRenderer.sendToHost = (channel, ...args) => {
+  if (!isTrustedPreloadContext()) {
+    blockUntrustedPreloadChannel('sendToHost', channel);
+    return;
+  }
+  return __rawSendToHost(channel, ...args);
+};
+
 // Security: Do NOT expose raw API credentials to renderer.
 // Use IPC handlers instead to securely manage sensitive data.
 contextBridge.exposeInMainWorld('env', {

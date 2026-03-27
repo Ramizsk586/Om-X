@@ -579,6 +579,7 @@ module.exports = {
   ensureChannelId,
   ensureInviteCode,
   ensureMessageId,
+  isPrivateHostname,
   ensureServerId,
   ensureUserId,
   validateAuthJoinPayload,

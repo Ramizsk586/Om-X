@@ -271,8 +271,33 @@ async function performDuckDuckGoSearch(query, aiConfig = {}, retryCount = 1) {
     return await performWebSearch(query, scoped, retryCount, { forceProvider: 'duckduckgo' });
 }
 
-function registerHandlers(getSettingsFn) {
+function getSenderUrl(event) {
+    try {
+        const frameUrl = event?.senderFrame?.url;
+        if (typeof frameUrl === 'string' && frameUrl) return frameUrl;
+    } catch (_) {}
+    try {
+        if (event?.sender && typeof event.sender.getURL === 'function') {
+            return event.sender.getURL() || '';
+        }
+    } catch (_) {}
+    return '';
+}
+
+function assertAuthorizedSearchSender(event, channel, isAuthorizedSender) {
+    if (typeof isAuthorizedSender !== 'function' || isAuthorizedSender(event)) return;
+    const senderUrl = getSenderUrl(event) || 'unknown';
+    console.warn(`[Security][IPC] Blocked ${channel} from ${senderUrl}`);
+    throw new Error(`Unauthorized IPC call: ${channel}`);
+}
+
+function registerHandlers(getSettingsFn, options = {}) {
+    const isAuthorizedSender = typeof options?.isAuthorizedSender === 'function'
+        ? options.isAuthorizedSender
+        : null;
+
     ipcMain.handle('ai:web-search', async (event, query) => {
+        assertAuthorizedSearchSender(event, 'ai:web-search', isAuthorizedSender);
         const settings = getSettingsFn();
         // Ensure image scraping is enabled for this specific call
         const searchConfig = { 
@@ -282,7 +307,8 @@ function registerHandlers(getSettingsFn) {
         };
         return await performWebSearch(query, searchConfig, 2);
     });
-    ipcMain.handle('ai:web-search-ddg', async (_event, query) => {
+    ipcMain.handle('ai:web-search-ddg', async (event, query) => {
+        assertAuthorizedSearchSender(event, 'ai:web-search-ddg', isAuthorizedSender);
         const settings = getSettingsFn();
         const searchConfig = {
             ...settings?.aiConfig,
@@ -291,7 +317,8 @@ function registerHandlers(getSettingsFn) {
         };
         return await performWebSearch(query, searchConfig, 2, { forceProvider: 'duckduckgo' });
     });
-    ipcMain.handle('ai:web-search-serp', async (_event, query) => {
+    ipcMain.handle('ai:web-search-serp', async (event, query) => {
+        assertAuthorizedSearchSender(event, 'ai:web-search-serp', isAuthorizedSender);
         const settings = getSettingsFn();
         const searchConfig = {
             ...settings?.aiConfig,
@@ -300,7 +327,8 @@ function registerHandlers(getSettingsFn) {
         };
         return await performWebSearch(query, searchConfig, 1, { forceProvider: 'serpapi' });
     });
-    ipcMain.handle('ai:web-search-status', async () => {
+    ipcMain.handle('ai:web-search-status', async (event) => {
+        assertAuthorizedSearchSender(event, 'ai:web-search-status', isAuthorizedSender);
         const settings = getSettingsFn();
         return { enabled: !!settings?.aiConfig?.webSearchEnabled, provider: settings?.aiConfig?.searchProvider || 'native' };
     });

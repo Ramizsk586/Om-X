@@ -57,7 +57,7 @@ contextBridge.exposeInMainWorld('omxCrypto', {
 
 contextBridge.exposeInMainWorld('webviewAPI', {
   sendToHost: (channel, data) => {
-    ipcRenderer.sendToHost(channel, data);
+    console.warn('[Security][Webview] Blocked sendToHost from guest page:', String(channel || 'unknown'));
   },
   onMessage: (channel, callback) => {
     ipcRenderer.on(channel, (event, data) => callback(data));

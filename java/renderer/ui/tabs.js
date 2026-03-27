@@ -36,7 +36,9 @@ export class TabManager {
     this.PRELOAD_URL = new URL('../../preload.js', import.meta.url).href;
     this.WEBVIEW_PRELOAD_URL = new URL('../../webviewPreload.js', import.meta.url).href;
     this.SESSIONGUARD_SCRIPT_URL = new URL('../../sessionGuard.js', import.meta.url).href;
-    this.APP_ROOT_URL = new URL('../../../', import.meta.url).href;
+    this.TRUSTED_HOST_ROOTS = [
+      new URL('../../../html/', import.meta.url).href
+    ];
     this.OMX_ICON_URL = new URL('../../../assets/icons/app.ico', import.meta.url).href;
     this.OMCHAT_ICON_URL = new URL('../../../Om-chat/public/assets/omx-browser.png', import.meta.url).href;
     
@@ -354,8 +356,23 @@ export class TabManager {
       const parsed = new URL(url);
       if (parsed.protocol !== 'file:') return false;
       const normalizedUrl = this._normalizeUrlForCompare(parsed.href);
-      const normalizedRoot = this._normalizeUrlForCompare(this.APP_ROOT_URL);
-      return normalizedUrl.startsWith(normalizedRoot);
+      return this.TRUSTED_HOST_ROOTS.some((root) => {
+        const normalizedRoot = this._normalizeUrlForCompare(root);
+        return normalizedUrl.startsWith(normalizedRoot);
+      });
+    } catch (_) {
+      return false;
+    }
+  }
+
+  isBlockedGuestNavigation(currentUrl = '', nextUrl = '') {
+    const senderUrl = String(currentUrl || '').trim();
+    const destinationUrl = String(nextUrl || '').trim();
+    if (!senderUrl || !destinationUrl) return false;
+    if (this.isTrustedHostPageUrl(senderUrl)) return false;
+    try {
+      const parsed = new URL(destinationUrl, window.location.href);
+      return String(parsed.protocol || '').toLowerCase() === 'file:';
     } catch (_) {
       return false;
     }
@@ -415,7 +432,7 @@ export class TabManager {
     this.settings = settings || {};
     this.tabs.forEach((tab) => {
       if (!tab?.webview) return;
-      tab.webview.setAttribute('allowpopups', 'yes');
+      tab.webview.setAttribute('allowpopups', 'no');
       this.applySitePermissions(tab.webview, tab.webview.getURL ? tab.webview.getURL() : tab.url);
       if (!tab.domReady) return;
       this.applyGlobalWebsiteCss(tab.webview);
@@ -5552,7 +5569,7 @@ body[class*="overflow-hidden"]:not([data-legit]) {
     webview.preload = trustedHostPage ? this.PRELOAD_URL : this.WEBVIEW_PRELOAD_URL;
     webview.setAttribute('plugins', 'on');
     webview.setAttribute('webpreferences', 'contextIsolation=yes, nodeIntegration=no, sandbox=yes, plugins=yes');
-    webview.setAttribute('allowpopups', 'yes');
+    webview.setAttribute('allowpopups', 'no');
     this._attachWebviewListeners(webview, tabState);
     this.webviewContainer.appendChild(webview);
     webview.src = tabState.url;
@@ -5717,6 +5734,12 @@ body[class*="overflow-hidden"]:not([data-legit]) {
     webview.addEventListener('mousedown', dismissMenus);
 
     webview.addEventListener('will-navigate', (e) => {
+        if (this.isBlockedGuestNavigation((webview.getURL && webview.getURL()) || tabState.url || '', e.url)) {
+            e.preventDefault();
+            const defenseUrl = this.createDefenseUrl('blocked-local-navigation', e.url, 'Websites cannot open local app files or local disk paths.');
+            webview.src = defenseUrl;
+            return;
+        }
         const safety = this.checkUrlSafety(e.url);
         if (!safety.safe) {
             e.preventDefault();
@@ -5959,6 +5982,11 @@ body[class*="overflow-hidden"]:not([data-legit]) {
     });
     webview.addEventListener('new-window', (e) => {
       e.preventDefault();
+      if (this.isBlockedGuestNavigation((webview.getURL && webview.getURL()) || tabState.url || '', e.url)) {
+          const defenseUrl = this.createDefenseUrl('blocked-local-navigation', e.url, 'Websites cannot open local app files or local disk paths.');
+          this.createTab(defenseUrl);
+          return;
+      }
       const safety = this.checkUrlSafety(e.url);
       let destUrl = e.url;
       if (!safety.safe) {
@@ -5970,10 +5998,8 @@ body[class*="overflow-hidden"]:not([data-legit]) {
        const senderUrl = (webview.getURL && webview.getURL()) || tabState.url || '';
        const trustedHostMessage = this.isTrustedHostPageUrl(senderUrl);
        if (!trustedHostMessage) {
-           if (event.channel === 'run-html' || event.channel === 'open-tab' || event.channel === 'open-devtools' || event.channel === 'show-search-overlay') {
-               console.warn('[Tabs] Blocked host IPC message from untrusted page:', event.channel, senderUrl);
-               return;
-           }
+           console.warn('[Tabs] Blocked host IPC message from untrusted page:', event.channel, senderUrl);
+           return;
        }
        if (event.channel === 'run-html') {
            const content = event.args[0];

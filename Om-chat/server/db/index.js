@@ -1305,6 +1305,18 @@ async function createMessage({ serverId, channelId, userId, username, avatarColo
   return hydrateMessageReply(message);
 }
 
+async function canActorAccessMessage(message, actorId) {
+  if (!message || !actorId) return false;
+
+  if (message.serverId == null) {
+    const dm = getDmById(message.channelId);
+    return Boolean(dm && Array.isArray(dm.participants) && dm.participants.includes(actorId));
+  }
+
+  const server = await getServerById(message.serverId);
+  return Boolean(server && getMember(server, actorId));
+}
+
 /**
  * Update a message authored by the actor.
  * @param {string} messageId Message identifier.
@@ -1315,6 +1327,7 @@ async function createMessage({ serverId, channelId, userId, username, avatarColo
 async function updateMessage(messageId, actorId, content) {
   const message = getMessage(messageId);
   if (!message || message.userId !== actorId) return null;
+  if (!(await canActorAccessMessage(message, actorId))) return null;
   message.content = String(content || '').trim();
   message.edited = true;
   message.editedAt = now();
@@ -1340,6 +1353,7 @@ async function updateMessage(messageId, actorId, content) {
 async function deleteMessage(messageId, actorId) {
   const message = getMessage(messageId);
   if (!message) return null;
+  if (!(await canActorAccessMessage(message, actorId))) return null;
   const attachmentUrls = collectAttachmentUrls([message]);
 
   if (message.serverId == null) {
@@ -1372,6 +1386,7 @@ async function deleteMessage(messageId, actorId) {
 async function addReaction(messageId, actorId, emoji) {
   const message = getMessage(messageId);
   if (!message || !emoji) return null;
+  if (!(await canActorAccessMessage(message, actorId))) return null;
   message.reactions = message.reactions || {};
   const current = message.reactions[emoji] || [];
   if (!current.includes(actorId)) current.push(actorId);
@@ -1393,6 +1408,7 @@ async function addReaction(messageId, actorId, emoji) {
 async function removeReaction(messageId, actorId, emoji) {
   const message = getMessage(messageId);
   if (!message || !message.reactions || !emoji) return null;
+  if (!(await canActorAccessMessage(message, actorId))) return null;
 
   const current = message.reactions[emoji] || [];
   const next = current.filter((uid) => uid !== actorId);
@@ -1418,6 +1434,7 @@ async function removeReaction(messageId, actorId, emoji) {
 async function pinMessage(messageId, actorId) {
   const message = getMessage(messageId);
   if (!message || message.serverId == null) return null;
+  if (!(await canActorAccessMessage(message, actorId))) return null;
   const server = await getServerById(message.serverId);
   if (!server || (!isAdmin(server, actorId) && !hasPermission(server, actorId, 'manage_messages'))) return null;
   message.pinned = true;
@@ -1438,6 +1455,7 @@ async function pinMessage(messageId, actorId) {
 async function unpinMessage(messageId, actorId) {
   const message = getMessage(messageId);
   if (!message || message.serverId == null) return null;
+  if (!(await canActorAccessMessage(message, actorId))) return null;
   const server = await getServerById(message.serverId);
   if (!server || (!isAdmin(server, actorId) && !hasPermission(server, actorId, 'manage_messages'))) return null;
   message.pinned = false;

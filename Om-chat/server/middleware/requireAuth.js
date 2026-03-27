@@ -1,6 +1,7 @@
 const tokenService = require('../services/tokenService');
 const userService = require('../services/userService');
 const { createLogger } = require('../utils/logger');
+const { readRequestCookie } = require('../utils/requestCookies');
 
 const logger = createLogger('require-auth');
 
@@ -18,7 +19,7 @@ function readBearerToken(req) {
  * Attach the resolved identity to the request.
  * @param {import('express').Request} req Express request object.
  * @param {Record<string, unknown>} user Resolved user payload.
- * @param {'session'|'jwt'|'device'} authMethod Successful authentication method.
+ * @param {'session'|'jwt'|'refresh'} authMethod Successful authentication method.
  * @returns {Record<string, unknown>} Attached user payload.
  */
 function attachRequestUser(req, user, authMethod) {
@@ -59,11 +60,11 @@ async function authenticateRequestUser(req, options = {}) {
     }
   }
 
-  const headerToken = String(req.get('x-device-token') || req.deviceToken || '').trim();
-  if (headerToken) {
-    const authUser = await userService.restoreUserFromDeviceToken(req, headerToken);
+  const refreshToken = readRequestCookie(req, 'omchat_refresh');
+  if (refreshToken) {
+    const authUser = await userService.restoreUserFromRefreshToken(req, refreshToken);
     if (authUser) {
-      return attachRequestUser(req, authUser, 'device');
+      return attachRequestUser(req, authUser, 'refresh');
     }
   }
 

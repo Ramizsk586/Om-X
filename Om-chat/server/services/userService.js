@@ -56,8 +56,7 @@ function pickAvatarColor(seed) {
  * @returns {string} Best-effort client IP string.
  */
 function getRequestIp(req) {
-  const forwarded = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
-  return forwarded || req.ip || req.socket?.remoteAddress || '';
+  return req.ip || req.socket?.remoteAddress || '';
 }
 
 /**
@@ -297,6 +296,27 @@ async function restoreUserFromDeviceToken(req, rawDeviceToken) {
 }
 
 /**
+ * Restore an authenticated session from a persisted refresh token.
+ * @param {import('express').Request} req Express request object.
+ * @param {string} rawRefreshToken Raw refresh token from the cookie.
+ * @returns {Promise<null|ReturnType<typeof sanitizeAuthUser>>} Restored auth user.
+ */
+async function restoreUserFromRefreshToken(req, rawRefreshToken) {
+  const refreshRecord = await tokenService.resolveRefreshToken(rawRefreshToken);
+  if (!refreshRecord?.userId) return null;
+
+  const authUser = sanitizeAuthUser(await userRepo.findUserById(refreshRecord.userId));
+  if (!authUser || authUser.isBanned) {
+    await tokenService.revokeRefreshToken(rawRefreshToken);
+    return null;
+  }
+
+  await establishAuthenticatedSession(req, authUser);
+  await syncUserToChatProfile(authUser);
+  return authUser;
+}
+
+/**
  * Clear the current cookie session and remove its revocable server-side session log.
  * @param {import('express').Request} req Express request object.
  * @returns {Promise<void>} Promise that resolves after the session is cleared.
@@ -313,21 +333,16 @@ async function clearSession(req) {
  * Complete a successful login flow and return auth tokens plus the sanitized user.
  * @param {import('express').Request} req Express request object.
  * @param {ReturnType<typeof sanitizeAuthUser>} user Authenticated user.
- * @param {string} [deviceToken] Device token supplied by the client.
- * @returns {Promise<{accessToken: string, refreshToken: string, deviceToken: string, user: ReturnType<typeof sanitizeAuthUser>}>} Login response payload.
+ * @returns {Promise<{accessToken: string, refreshToken: string, user: ReturnType<typeof sanitizeAuthUser>}>} Login response payload.
  */
-async function finalizeLogin(req, user, deviceToken) {
+async function finalizeLogin(req, user) {
   await establishAuthenticatedSession(req, user);
   const accessToken = tokenService.createAccessToken(user);
   const refreshToken = await tokenService.issueRefreshToken(user.id);
-  const boundDeviceToken = await tokenService.bindDeviceToken(user.id, deviceToken, {
-    userAgent: req.get('user-agent') || ''
-  });
 
   return {
     accessToken,
     refreshToken: refreshToken.token,
-    deviceToken: boundDeviceToken,
     user
   };
 }
@@ -406,6 +421,7 @@ module.exports = {
   listUsers,
   registerUser,
   resolveSessionUser,
+  restoreUserFromRefreshToken,
   restoreUserFromDeviceToken,
   revokeUserSessions,
   sanitizeAuthUser,
@@ -414,8 +430,6 @@ module.exports = {
   updateAuthProfile,
   updateUserRole
 };
-
-
 
 
 

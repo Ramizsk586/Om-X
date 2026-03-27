@@ -3735,9 +3735,10 @@ async function deleteDmConversation(dmId) {
     danger: true,
     onConfirm: async () => {
       const response = await fetch(`/api/dm/${encodeURIComponent(dmId)}/delete`, { method: 'POST' });
-      if (!response.ok) return false;
+      if (!response.ok && response.status !== 404) return false;
 
       delete state.unread[dmId];
+      state.dmChannels = state.dmChannels.filter((item) => item.id !== dmId);
 
       if (state.currentView === 'dm' && state.currentChannelId === dmId) {
         const fallback = getPreferredServerChannel(state.channels);
@@ -6501,10 +6502,21 @@ function wireSocket() {
       }
     },
     error: (payload) => {
-      console.warn('[Om Chat] Socket error:', payload);
       const code = String(payload?.code || '').trim();
+      const message = String(payload?.message || '').trim();
+      console.warn(
+        `[Om Chat] Socket error${code ? ` (${code})` : ''}${message ? `: ${message}` : ''}`,
+        payload
+      );
+
       if (code === 'member_muted') {
         showVoiceTooltip('You are muted in this server');
+        return;
+      }
+
+      if (code === 'not_member' || code === 'server_not_found' || code === 'unauthorized') {
+        const requestedServerId = state.server?.id || new URLSearchParams(window.location.search).get('server') || '';
+        window.location.href = buildLandingUrl(requestedServerId);
       }
     }
   });

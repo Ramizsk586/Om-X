@@ -13,13 +13,13 @@ require('../loadEnv');
 
 const appConfig = require('./config');
 const createSession = require('./middleware/session');
-const deviceAuthMiddleware = require('./middleware/deviceAuth');
 const { createAccessMiddleware, authorizeSocket, readAccessConfig } = require('./middleware/accessControl');
 const { createExpressRateLimit } = require('./middleware/rateLimit');
 const { ValidationError } = require('./utils/validation');
 const { sanitizeAccessInfo } = require('./utils/serializers');
 const { initDb } = require('./db');
 const connectMongo = require('./db/mongo');
+const { readRequestCookie } = require('./utils/requestCookies');
 
 const { authApiRouter, authCompatibilityRouter } = require('./routes/auth');
 const deviceRoutes = require('./routes/device');
@@ -300,14 +300,18 @@ function readForwardedHeader(value) {
 }
 
 function buildRequestOrigin(headers = {}, fallbackProtocol = 'http') {
-  const protocol = readForwardedHeader(headers['x-forwarded-proto']) || fallbackProtocol || 'http';
-  const host = readForwardedHeader(headers['x-forwarded-host']) || readForwardedHeader(headers.host);
+  // Only derive origins from the direct request host. Reverse-proxy deployments
+  // should set PUBLIC_BASE_URL explicitly instead of letting client-controlled
+  // forwarded headers mutate trusted origins at runtime.
+  const protocol = fallbackProtocol || 'http';
+  const host = readForwardedHeader(headers.host);
   return host ? normalizeOrigin(`${protocol}://${host}`) : '';
 }
 
 function syncAccessInfoOrigin(accessInfo, origin) {
   const normalized = normalizeOrigin(origin);
   if (!accessInfo || !normalized) return normalized;
+  if (accessInfo.publicUrlLocked) return normalized;
 
   const localOrigin = normalizeOrigin(accessInfo.localUrl);
   const networkOrigin = normalizeOrigin(accessInfo.networkUrl);
@@ -345,9 +349,6 @@ function rememberRequestOrigin(req, allowedOrigins, accessInfo = null) {
   if ((origin && origin !== currentOrigin) || (referer && referer !== currentOrigin)) {
     return currentOrigin;
   }
-
-  rememberAllowedOrigin(allowedOrigins, currentOrigin);
-  syncAccessInfoOrigin(accessInfo, currentOrigin);
   return currentOrigin;
 }
 
@@ -363,9 +364,6 @@ function rememberSocketOrigin(socket, allowedOrigins, accessInfo = null) {
   if (origin && origin !== currentOrigin) {
     return currentOrigin;
   }
-
-  rememberAllowedOrigin(allowedOrigins, currentOrigin);
-  syncAccessInfoOrigin(accessInfo, currentOrigin);
   return currentOrigin;
 }
 
@@ -411,7 +409,8 @@ function getAccessInfo(host, port, protocol = 'http', publicBaseUrl = '') {
     networkUrl,
     addresses,
     publicUrl: normalizedPublicBaseUrl,
-    joinBaseUrl: normalizedPublicBaseUrl || localUrl
+    joinBaseUrl: normalizedPublicBaseUrl || localUrl,
+    publicUrlLocked: Boolean(normalizedPublicBaseUrl)
   };
 }
 
@@ -591,6 +590,7 @@ function applyPublicBaseUrl(targetRuntime, publicBaseUrl) {
   const normalized = normalizeBaseUrl(publicBaseUrl);
   targetRuntime.accessInfo.publicUrl = normalized || '';
   targetRuntime.accessInfo.joinBaseUrl = normalized || targetRuntime.accessInfo.localUrl;
+  targetRuntime.accessInfo.publicUrlLocked = Boolean(normalized);
   // Rebuild the full allowed-origin set so the new public URL is immediately
   // accepted by CORS and CSRF checks without requiring a restart.
   targetRuntime.originState.allowedOrigins = collectAllowedOrigins(targetRuntime.accessInfo, targetRuntime.configuredOrigins);
@@ -697,18 +697,10 @@ function createRuntime({ host, port, sessionSecret, tlsOptions, trustProxySettin
   app.use(sessionMiddleware);
   app.use(ensureSessionCsrf);
   app.use((req, _res, next) => {
-    const prevPublicUrl = accessInfo.publicUrl;
     rememberRequestOrigin(req, originState.allowedOrigins, accessInfo);
-    // Log the first time a new tunnelled/proxied origin is detected so the
-    // operator knows the server has auto-accepted the ngrok or reverse-proxy
-    // URL without needing to set PUBLIC_BASE_URL manually.
-    if (accessInfo.publicUrl && accessInfo.publicUrl !== prevPublicUrl) {
-      console.log(`[Om Chat] Auto-detected public URL via proxy headers: ${accessInfo.publicUrl}`);
-    }
     next();
   });
   app.use(createAccessMiddleware(accessConfig));
-  app.use(deviceAuthMiddleware);
   app.use(createCsrfProtection(() => originState.allowedOrigins));
 
   const apiLimiter = createExpressRateLimit({
@@ -738,7 +730,8 @@ function createRuntime({ host, port, sessionSecret, tlsOptions, trustProxySettin
 
     const expectedCsrf = socket.request?.session?.csrfToken || '';
     const receivedCsrf = String(socket.handshake?.auth?.csrfToken || '').trim();
-    const hasAlternateAuth = Boolean(socket.request?.session?.userId || socket.handshake?.auth?.token || socket.handshake?.auth?.deviceToken);
+    const refreshCookie = readRequestCookie(socket.request, 'omchat_refresh');
+    const hasAlternateAuth = Boolean(socket.request?.session?.userId || socket.handshake?.auth?.token || refreshCookie);
     if (expectedCsrf && receivedCsrf !== expectedCsrf) {
       return next(new Error('csrf_invalid'));
     }

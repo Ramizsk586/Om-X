@@ -381,19 +381,46 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (links.length === 0) {
             mp4LinksList.innerHTML = '<div style="text-align:center;padding:20px;color:rgba(255,255,255,0.5);">No .mp4 links found on this page.</div>';
         } else {
-            mp4LinksList.innerHTML = links.map((link, index) => `
-                <div style="
+            const fragment = document.createDocumentFragment();
+            links.forEach((link, index) => {
+                const row = document.createElement('div');
+                row.style.cssText = `
                     padding:8px 10px;margin-bottom:4px;border-radius:8px;
                     background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);
                     font-size:11px;word-break:break-all;color:rgba(255,255,255,0.85);
-                    display:flex;align-items:center;gap:8px;">
-                    <span style="color:rgba(255,255,255,0.3);min-width:20px;">${index + 1}.</span>
-                    <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(link)}">${escapeHtml(link)}</span>
-                    <button onclick="navigator.clipboard.writeText('${escapeHtml(link).replace(/'/g, "\\'")}').then(() => this.textContent='Copied!').catch(() => this.textContent='Error'); setTimeout(() => this.textContent='Copy', 1500);" 
-                            style="background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.1);
-                                   color:rgba(255,255,255,0.8);padding:4px 8px;border-radius:6px;cursor:pointer;font-size:10px;">Copy</button>
-                </div>
-            `).join('');
+                    display:flex;align-items:center;gap:8px;`;
+
+                const indexLabel = document.createElement('span');
+                indexLabel.style.cssText = 'color:rgba(255,255,255,0.3);min-width:20px;';
+                indexLabel.textContent = `${index + 1}.`;
+
+                const linkLabel = document.createElement('span');
+                linkLabel.style.cssText = 'flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+                linkLabel.title = String(link || '');
+                linkLabel.textContent = String(link || '');
+
+                const copyButton = document.createElement('button');
+                copyButton.type = 'button';
+                copyButton.textContent = 'Copy';
+                copyButton.style.cssText = `
+                    background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.1);
+                    color:rgba(255,255,255,0.8);padding:4px 8px;border-radius:6px;cursor:pointer;font-size:10px;`;
+                copyButton.addEventListener('click', async () => {
+                    try {
+                        await navigator.clipboard.writeText(String(link || ''));
+                        copyButton.textContent = 'Copied!';
+                    } catch (_) {
+                        copyButton.textContent = 'Error';
+                    }
+                    setTimeout(() => {
+                        copyButton.textContent = 'Copy';
+                    }, 1500);
+                });
+
+                row.append(indexLabel, linkLabel, copyButton);
+                fragment.appendChild(row);
+            });
+            mp4LinksList.replaceChildren(fragment);
         }
         mp4LinksOverlay.classList.remove('hidden');
     };
@@ -1899,11 +1926,16 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     };
 
+    const settingsAPI = window.browserAPI?.settings || {
+        get: async () => ({}),
+        save: async () => false
+    };
+
     const persistYouTubeAddonPreferences = async (partialYoutubeAddon = {}, options = {}) => {
         if (_ytSavePending) return;
         _ytSavePending = true;
         try {
-            if (!cachedSettings) cachedSettings = await window.browserAPI.settings.get();
+            if (!cachedSettings) cachedSettings = await settingsAPI.get();
             const prev = getYouTubeAddonSettings(cachedSettings);
             const next = { ...(cachedSettings?.youtubeAddon || {}), ...partialYoutubeAddon };
             const shouldReload = options.reloadOnEnable === true
@@ -1913,7 +1945,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             cachedSettings = nextSettings;
             syncYouTubeAddonPanel();
             tabManager?.updateSettings?.(nextSettings);
-            const success = await window.browserAPI.settings.save(nextSettings);
+            const success = await settingsAPI.save(nextSettings);
             if (!success) console.warn('[YouTube Addon] Failed to save settings.');
             if (success && shouldReload) {
                 const primed = await primeActiveYouTubeCleanUiActivation();
@@ -1930,12 +1962,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (_duckSavePending) return;
         _duckSavePending = true;
         try {
-            if (!cachedSettings) cachedSettings = await window.browserAPI.settings.get();
+            if (!cachedSettings) cachedSettings = await settingsAPI.get();
             const nextSettings = { ...(cachedSettings || {}), aiChat: { ...(cachedSettings?.aiChat || {}), ...partialAiChat } };
             cachedSettings = nextSettings;
             syncDuckAiPanel();
             tabManager?.updateSettings?.(nextSettings);
-            const success = await window.browserAPI.settings.save(nextSettings);
+            const success = await settingsAPI.save(nextSettings);
             if (!success) console.warn('[Duck AI Panel] Failed to save settings.');
         } catch (e) {
             console.warn('[Duck AI Panel] Save error:', e);
@@ -1967,7 +1999,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (_settingsLoading) return;
         _settingsLoading = true;
         try {
-            cachedSettings = injectedSettings || await window.browserAPI.settings.get();
+            cachedSettings = injectedSettings || await settingsAPI.get();
             if (cachedSettings) {
                 applyTheme(cachedSettings.theme);
                 screenshotDelaySeconds = cachedSettings.screenshot?.delaySeconds ?? 0;
@@ -1997,10 +2029,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         screenshotDelaySeconds = Number(seconds) || 0;
         updateDelayLabel(screenshotDelaySeconds);
         try {
-            const settings = await window.browserAPI.settings.get();
+            const settings = await settingsAPI.get();
             settings.screenshot = settings.screenshot || {};
             settings.screenshot.delaySeconds = screenshotDelaySeconds;
-            await window.browserAPI.settings.save(settings);
+            await settingsAPI.save(settings);
         } catch (e) {
             console.warn('[Screenshot] Failed to save delay setting:', e);
         }
@@ -2187,14 +2219,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     // ── DOWNLOADS TOAST ────────────────────────────────────────────────────────
+    const downloadsBridge = window.browserAPI?.downloads;
+
     if (dlCancelBtn) {
         dlCancelBtn.onclick = async (event) => {
             event.preventDefault();
             event.stopPropagation();
             if (!activeToastDownloadId) return;
+            if (!downloadsBridge?.cancel) return;
             dlCancelBtn.disabled = true;
             try {
-                await window.browserAPI.downloads.cancel(activeToastDownloadId);
+                await downloadsBridge.cancel(activeToastDownloadId);
             } catch (error) {
                 console.error('[Downloads] Toast cancel failed', error);
             } finally {
@@ -2203,8 +2238,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         };
     }
 
-    if (window.browserAPI.downloads?.onUpdate) {
-        window.browserAPI.downloads.onUpdate((item) => {
+    if (downloadsBridge?.onUpdate) {
+        downloadsBridge.onUpdate((item) => {
             if (!downloadToast) return;
             const state         = String(item?.state || '').toLowerCase();
             const isActiveState = ['progressing', 'paused', 'scanning', 'pending'].includes(state);
@@ -2335,7 +2370,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     // ── SEARCH SYSTEM ──────────────────────────────────────────────────────────
-    const searchSystem = initSearchSystem({ tabManager, settingsAPI: window.browserAPI.settings, HOME_URL });
+    const searchSystem = initSearchSystem({ tabManager, settingsAPI, HOME_URL });
 
     bindSidebarNavigation();
 

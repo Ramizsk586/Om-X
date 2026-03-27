@@ -10,6 +10,7 @@ const {
   createServer,
   deleteServerData,
   ensureOperatorRole,
+  getMember,
   getServerById,
   getServerDataWithMembers,
   hasPermission,
@@ -138,6 +139,7 @@ router.get('/:id', async (req, res, next) => {
     const serverId = ensureServerId(req.params.id, 'id');
     const payload = await getServerDataWithMembers(serverId);
     if (!payload) return res.status(404).json({ error: 'server_not_found' });
+    if (!getMember(payload, req.session.userId)) return res.status(403).json({ error: 'not_member' });
     return res.json({ server: serializeServer(payload, req) });
   } catch (error) {
     return next(error);
@@ -466,6 +468,7 @@ router.get('/:id/e2e-status', async (req, res, next) => {
     const serverId = ensureServerId(req.params.id, 'id');
     const server = await getServerById(serverId);
     if (!server) return res.status(404).json({ error: 'server_not_found' });
+    if (!getMember(server, req.session.userId)) return res.status(403).json({ error: 'not_member' });
     return res.json({ e2eShown: Boolean(server.e2eShown) });
   } catch (error) {
     return next(error);
