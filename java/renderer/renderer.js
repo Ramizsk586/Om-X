@@ -296,6 +296,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     let openWebUiLogLastCount = 0;
     let openWebUiTabId        = null;
     let openWebUiTabUrl       = '';
+    let llamaWebUiTabId       = null;
+    let llamaWebUiTabUrl      = '';
+    let openWebUiProbeState   = { checked: false, running: false, localUrl: '' };
+    const hasOpenWebUiLiveOutput = Boolean(window.browserAPI?.openWebUI?.onOutput);
     let _settingsLoading      = false;   // guard against parallel loadSettings calls
     let _ytSavePending        = false;   // guard against concurrent persist calls
     let _duckSavePending      = false;
@@ -1409,7 +1413,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!controls) return;
         const activeTabId = tabManager?.activeTabId ?? null;
         const hideForOpenWebUi = activeTabId != null && activeTabId === openWebUiTabId;
-        controls.classList.toggle('hidden', hideForOpenWebUi);
+        const hideForLlamaWebUi = activeTabId != null && activeTabId === llamaWebUiTabId;
+        controls.classList.toggle('hidden', hideForOpenWebUi || hideForLlamaWebUi);
     };
 
     const buildOmChatUrl = (host = 'localhost', port = OM_CHAT_DEFAULT_PORT, pathname = '/') => {
@@ -1417,6 +1422,54 @@ document.addEventListener('DOMContentLoaded', async () => {
         const safePort = Number(port) || OM_CHAT_DEFAULT_PORT;
         const safePath = String(pathname || '/').startsWith('/') ? String(pathname || '/') : `/${String(pathname || '')}`;
         return `http://${safeHost}:${safePort}${safePath}`;
+    };
+
+    const openOpenWebUiTab = (url) => {
+        const localUrl = String(url || openWebUiTabUrl || '').trim();
+        if (!localUrl) return false;
+        openAppTab(localUrl);
+        setTimeout(() => {
+            const activeId = tabManager?.activeTabId ?? null;
+            if (activeId != null) {
+                openWebUiTabId = activeId;
+                openWebUiTabUrl = localUrl;
+                syncWindowControlsVisibility();
+            }
+        }, 0);
+        return true;
+    };
+
+    const openLlamaWebUiTab = (url = '') => {
+        const targetUrl = String(url || llamaWebUiTabUrl || getLlamaServerUrl() || '').trim();
+        if (!targetUrl) return false;
+        openAppTab(targetUrl);
+        setTimeout(() => {
+            const activeId = tabManager?.activeTabId ?? null;
+            if (activeId != null) {
+                llamaWebUiTabId = activeId;
+                llamaWebUiTabUrl = targetUrl;
+                syncWindowControlsVisibility();
+            }
+        }, 0);
+        return true;
+    };
+
+    const refreshOpenWebUiProbe = async () => {
+        if (!window.browserAPI?.openWebUI?.probe) return openWebUiProbeState;
+        try {
+            const probe = await window.browserAPI.openWebUI.probe();
+            if (probe?.success) {
+                openWebUiProbeState = {
+                    checked: true,
+                    running: Boolean(probe.running),
+                    localUrl: String(probe.localUrl || '').trim()
+                };
+                if (openWebUiProbeState.localUrl) {
+                    openWebUiTabUrl = openWebUiProbeState.localUrl;
+                }
+            }
+        } catch (_) {}
+        return openWebUiProbeState;
     };
 
     const getLlamaServerUrl = () => {
@@ -1460,13 +1513,30 @@ document.addEventListener('DOMContentLoaded', async () => {
             const statusRes = await window.browserAPI?.servers?.getStatus?.('llama');
             if (statusRes?.success && statusRes.status?.running) {
                 const resolved = resolveLlamaStatusUrl(statusRes.status);
-                if (resolved) return resolved;
-                return getLlamaServerUrl();
+                if (resolved) {
+                    llamaWebUiTabUrl = resolved;
+                    return resolved;
+                }
+                const fallbackUrl = getLlamaServerUrl();
+                llamaWebUiTabUrl = fallbackUrl;
+                return fallbackUrl;
             }
         } catch (error) {
             console.warn('[AI Chat] Local AI status check failed:', error?.message || error);
         }
         return DUCK_AI_URL;
+    };
+
+    const openAiChatTarget = async () => {
+        hideFeaturesHomePopup();
+        const targetUrl = String(await getAiChatTargetUrl() || '').trim();
+        if (!targetUrl) return;
+        const llamaUrl = String(llamaWebUiTabUrl || getLlamaServerUrl() || '').trim();
+        if (llamaUrl && targetUrl === llamaUrl) {
+            openLlamaWebUiTab(targetUrl);
+            return;
+        }
+        openAppTab(targetUrl);
     };
 
     const setOmChatLaunchVisible = (visible) => {
@@ -1731,6 +1801,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     const startOpenWebUiLogPolling = () => {
+        if (hasOpenWebUiLiveOutput) return;
         stopOpenWebUiLogPolling();
         openWebUiLogLastCount = 0;
         pollOpenWebUiLogs();
@@ -1751,6 +1822,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             const signal = payload?.signal ? `signal ${payload.signal}` : '';
             const message = manualStop ? 'Open WebUI stopped.' : `Open WebUI process exited (${code}${signal ? `, ${signal}` : ''}).`;
             const isError = !manualStop && Number(payload?.code) !== 0;
+            openWebUiProbeState = {
+                checked: true,
+                running: false,
+                localUrl: openWebUiTabUrl || ''
+            };
             setOpenWebUiStatusMessage(message, isError ? 'error' : '');
             appendOpenWebUiLog(message, isError ? 'error' : 'info');
         });
@@ -1769,6 +1845,23 @@ document.addEventListener('DOMContentLoaded', async () => {
         setOpenWebUiVisible(true);
         setOpenWebUiCommands([], '');
         resetOpenWebUiLog();
+        setOpenWebUiMode('commands');
+        setOpenWebUiStatusMessage('Checking Open WebUI...', '');
+
+        if (openWebUiProbeState.checked && openWebUiProbeState.running) {
+            if (openOpenWebUiTab(openWebUiProbeState.localUrl)) {
+                setOpenWebUiVisibleSafe(false);
+                return;
+            }
+        }
+
+        const quickProbe = await refreshOpenWebUiProbe();
+        if (quickProbe?.running) {
+            if (openOpenWebUiTab(quickProbe.localUrl)) {
+                setOpenWebUiVisibleSafe(false);
+                return;
+            }
+        }
 
         const status = await window.browserAPI?.openWebUI?.getStatus?.();
         if (!status?.success) {
@@ -1776,6 +1869,19 @@ document.addEventListener('DOMContentLoaded', async () => {
             setOpenWebUiStatusMessage(status?.error || 'Unable to check Open WebUI status.', 'error');
             setOpenWebUiCommands([], 'Open WebUI status could not be read.');
             return;
+        }
+
+        if (status.phase === 'running') {
+            const runningUrl = String(status.localUrl || openWebUiTabUrl || '').trim();
+            openWebUiProbeState = {
+                checked: true,
+                running: true,
+                localUrl: runningUrl
+            };
+            if (openOpenWebUiTab(runningUrl)) {
+                setOpenWebUiVisibleSafe(false);
+                return;
+            }
         }
 
         if (status.phase === 'install-prereqs' || status.phase === 'setup-env') {
@@ -1808,15 +1914,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                 return;
             }
 
-            openAppTab(localUrl);
-            setTimeout(() => {
-                const activeId = tabManager?.activeTabId || null;
-                if (activeId != null) {
-                    openWebUiTabId = activeId;
-                    openWebUiTabUrl = localUrl;
-                    syncWindowControlsVisibility();
-                }
-            }, 0);
+            openWebUiProbeState = {
+                checked: true,
+                running: true,
+                localUrl
+            };
+            openOpenWebUiTab(localUrl);
             setOpenWebUiStatusMessage(result.alreadyRunning ? 'Open WebUI is already online.' : 'Open WebUI is online. Opening local UI...', 'success');
             appendOpenWebUiLog(`Opened ${localUrl}`, 'success');
         } catch (error) {
@@ -2411,7 +2514,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         bindClick(btnNavHome,                             () => handleSidebarHomeAction());
         bindClick(document.getElementById('btn-nav-history'),  () => { hideFeaturesHomePopup(); openAppTab(HISTORY_URL);   });
         bindClick(document.getElementById('btn-nav-settings'), () => { hideFeaturesHomePopup(); openAppTab(SETTINGS_URL);  });
-        bindClick(document.getElementById('btn-nav-ai-chat'),  async () => { hideFeaturesHomePopup(); openAppTab(await getAiChatTargetUrl()); });
+        bindClick(document.getElementById('btn-nav-ai-chat'),  async () => { await openAiChatTarget(); });
         bindClick(document.getElementById('btn-nav-downloads'),() => { hideFeaturesHomePopup(); openAppTab(DOWNLOADS_URL); });
         bindClick(openWebUiButton, async () => { await launchOpenWebUi(); });
         bindClick(btnNavNewTab,                           () => searchSystem.handleNewTabRequest());
@@ -2511,11 +2614,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             darkModeTabs.delete(tabId);
             if (tabId === openWebUiTabId) {
                 openWebUiTabId = null;
-                openWebUiTabUrl = '';
                 syncWindowControlsVisibility();
-                try {
-                    await window.browserAPI?.openWebUI?.stop?.();
-                } catch (_) {}
+            }
+            if (tabId === llamaWebUiTabId) {
+                llamaWebUiTabId = null;
+                syncWindowControlsVisibility();
             }
         }
     );
@@ -2796,6 +2899,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     refreshBookmarks();
     syncSiteToolQuickLaunchButtons();
     syncNavigationTopPanelButtons();
+    refreshOpenWebUiProbe().catch(() => {});
 
     loadSettings().catch(e => console.warn('Initial settings load failed', e));
 

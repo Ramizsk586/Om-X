@@ -67,6 +67,134 @@ contextBridge.exposeInMainWorld('webviewAPI', {
 // ─────────────────────────────────────────────────────────────────────────
 //  Adult Content Blocker for Webview - Blurs images from blocked domains
 // ─────────────────────────────────────────────────────────────────────────
+(function installWindowOpenBridge() {
+  window.addEventListener('omx-open-tab-request', (event) => {
+    const url = String(event?.detail?.url || '').trim();
+    if (!url) return;
+    try {
+      ipcRenderer.sendToHost('open-tab', url);
+    } catch (_) {}
+  }, true);
+
+  const injectedSource = `
+    (() => {
+      if (window.__omxWindowOpenPatchedInPage) return;
+      window.__omxWindowOpenPatchedInPage = true;
+
+      const USER_GESTURE_WINDOW_MS = 1400;
+      let lastUserGestureAt = 0;
+
+      const markUserGesture = () => {
+        lastUserGestureAt = Date.now();
+      };
+
+      const hasRecentUserGesture = () => (Date.now() - lastUserGestureAt) <= USER_GESTURE_WINDOW_MS;
+
+      const resolveTargetUrl = (value) => {
+        const raw = String(value || '').trim();
+        if (!raw) return '';
+        try {
+          return new URL(raw, window.location.href).href;
+        } catch (_) {
+          return raw;
+        }
+      };
+
+      const requestHostTab = (url) => {
+        const resolved = resolveTargetUrl(url);
+        if (!resolved) return '';
+        window.dispatchEvent(new CustomEvent('omx-open-tab-request', {
+          detail: { url: resolved }
+        }));
+        return resolved;
+      };
+
+      const createWindowProxyStub = (initialUrl) => {
+        const stubLocation = {
+          href: initialUrl,
+          assign(nextUrl) {
+            const resolved = requestHostTab(nextUrl);
+            if (!resolved) return;
+            stubLocation.href = resolved;
+          },
+          replace(nextUrl) {
+            const resolved = resolveTargetUrl(nextUrl);
+            if (!resolved) return;
+            stubLocation.href = resolved;
+            window.location.replace(resolved);
+          }
+        };
+
+        return {
+          closed: false,
+          opener: window,
+          focus() {},
+          blur() {},
+          close() {
+            this.closed = true;
+          },
+          postMessage() {},
+          location: stubLocation
+        };
+      };
+
+      window.addEventListener('pointerdown', markUserGesture, true);
+      window.addEventListener('mousedown', markUserGesture, true);
+      window.addEventListener('touchstart', markUserGesture, true);
+      window.addEventListener('keydown', markUserGesture, true);
+      window.addEventListener('click', markUserGesture, true);
+
+      const originalWindowOpen = window.open.bind(window);
+      window.open = function patchedWindowOpen(url, target, features) {
+        const resolvedUrl = resolveTargetUrl(url);
+        const normalizedTarget = String(target || '').trim().toLowerCase();
+        const shouldOpenTab = !normalizedTarget || normalizedTarget === '_blank';
+
+        if (!resolvedUrl) {
+          return originalWindowOpen(url, target, features);
+        }
+
+        if (shouldOpenTab && hasRecentUserGesture()) {
+          requestHostTab(resolvedUrl);
+          return createWindowProxyStub(resolvedUrl);
+        }
+
+        if (normalizedTarget === '_self') {
+          window.location.href = resolvedUrl;
+          return window;
+        }
+
+        return originalWindowOpen(url, target, features);
+      };
+    })();
+  `;
+
+  const injectIntoPageWorld = () => {
+    try {
+      const host = document.documentElement || document.head || document.body;
+      if (!host) return false;
+      const injectedScript = document.createElement('script');
+      injectedScript.textContent = injectedSource;
+      host.appendChild(injectedScript);
+      injectedScript.remove();
+      return true;
+    } catch (_) {
+      return false;
+    }
+  };
+
+  if (!injectIntoPageWorld()) {
+    const retryInject = () => {
+      if (injectIntoPageWorld()) {
+        document.removeEventListener('DOMContentLoaded', retryInject, true);
+        window.removeEventListener('load', retryInject, true);
+      }
+    };
+    document.addEventListener('DOMContentLoaded', retryInject, true);
+    window.addEventListener('load', retryInject, true);
+  }
+})();
+
 (function() {
   'use strict';
 

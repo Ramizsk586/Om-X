@@ -213,7 +213,9 @@ A unified MCP server that provides structured AI tools via the Model Context Pro
 ### How It Works
 - Built on **@modelcontextprotocol/sdk** with Express.js HTTP transport
 - Exposes MCP tools via **POST /mcp** and **POST /sse** endpoints
+- Exposes an **OpenAI-compatible API** via **GET /v1/models** and **POST /v1/chat/completions**
 - Aggregates multiple search/data APIs under one MCP server
+- Can run a tool-calling loop against an upstream OpenAI-compatible model so web/news/wiki tools can collect data before the final answer is returned
 - Supports API key configuration for premium services
 
 ### Available Tools
@@ -264,6 +266,11 @@ window.browserAPI.mcp.stopServer()             // Stop MCP server
 window.browserAPI.mcp.onOutput(callback)        // Stream output
 window.browserAPI.mcp.onExit(callback)          // Process exit
 ```
+
+### OpenAI-Compatible Notes
+- `GET /v1/models`: Lists the configured upstream model plus the local `omx-mcp-tools` wrapper
+- `POST /v1/chat/completions`: Accepts OpenAI-style chat requests and can execute local tools such as `web_search`, `ddg_web_search`, `tavily_web_search`, `wiki_search`, `news_top_headlines`, and `device_time`
+- When an upstream OpenAI-compatible model is configured, the server resolves tool calls, collects the search data, then sends the tool results back to the model for the final response
 
 ---
 

@@ -327,6 +327,7 @@ contextBridge.exposeInMainWorld('browserAPI', {
     onSyncDone: (callback) => ipcRenderer.on('omchat-sync-done', (event, data) => callback(data))
   },
   openWebUI: {
+    probe: () => ipcRenderer.invoke('openwebui:probe'),
     getStatus: () => ipcRenderer.invoke('openwebui:get-status'),
     start: () => ipcRenderer.invoke('openwebui:start'),
     stop: () => ipcRenderer.invoke('openwebui:stop'),

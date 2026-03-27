@@ -1,6 +1,7 @@
 const { app, BrowserWindow, BrowserView, ipcMain, Menu, screen, dialog, session, shell, webContents, crashReporter, protocol, nativeImage, nativeTheme } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const { spawn, exec, execFile } = require('child_process');
 const https = require('https');
 const net = require('net');
@@ -690,6 +691,150 @@ function getOpenWebUiLocalUrl() {
   return `http://${OPEN_WEBUI_HOST}:${OPEN_WEBUI_PORT}`;
 }
 
+function getOpenWebUiWorkingDir() {
+  try {
+    return path.join(app.getPath('userData'), 'open-webui');
+  } catch (_) {
+    return path.resolve(process.cwd(), 'open-webui');
+  }
+}
+
+function getOpenWebUiSecretKeyPath() {
+  return path.join(getOpenWebUiWorkingDir(), '.webui_secret_key');
+}
+
+function getOrCreateOpenWebUiSecretKey() {
+  const secretPath = getOpenWebUiSecretKeyPath();
+  try {
+    const existing = fs.existsSync(secretPath)
+      ? fs.readFileSync(secretPath, 'utf8').trim()
+      : '';
+    if (existing && Buffer.byteLength(existing, 'utf8') >= 32) return existing;
+  } catch (_) {}
+
+  const generated = crypto.randomBytes(32).toString('hex');
+  try {
+    fs.mkdirSync(path.dirname(secretPath), { recursive: true });
+    fs.writeFileSync(secretPath, generated, 'utf8');
+  } catch (_) {}
+  return generated;
+}
+
+function resolveFfmpegExecutable() {
+  const candidateDirs = [
+    process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'Microsoft', 'WinGet', 'Packages') : '',
+    process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'Programs') : '',
+    process.env.ProgramFiles || '',
+    process.env['ProgramFiles(x86)'] || ''
+  ]
+    .map((value) => unwrapWrappedQuotes(value))
+    .filter(Boolean);
+
+  const candidates = [
+    process.env.FFMPEG_BINARY,
+    process.env.FFMPEG_PATH,
+    process.env.USERPROFILE ? path.join(process.env.USERPROFILE, 'miniconda3', 'Library', 'bin', 'ffmpeg.exe') : '',
+    process.env.USERPROFILE ? path.join(process.env.USERPROFILE, 'Miniconda3', 'Library', 'bin', 'ffmpeg.exe') : '',
+    process.env.CONDA_PREFIX ? path.join(process.env.CONDA_PREFIX, 'Library', 'bin', 'ffmpeg.exe') : '',
+    process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'Microsoft', 'WinGet', 'Links', 'ffmpeg.exe') : '',
+    process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'Microsoft', 'WinGet', 'Packages', 'Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe', 'ffmpeg-8.1-full_build', 'bin', 'ffmpeg.exe') : ''
+  ]
+    .map((value) => unwrapWrappedQuotes(value))
+    .filter(Boolean);
+
+  for (const candidate of candidates) {
+    try {
+      if (fs.existsSync(candidate)) return candidate;
+    } catch (_) {}
+  }
+
+  const packageNamePatterns = [/^Gyan\.FFmpeg/i, /ffmpeg/i];
+  const executableNamePatterns = [/^ffmpeg(?:\.exe)?$/i];
+  const searchRoots = [...new Set(candidateDirs)];
+
+  const walkForExecutable = (rootDir, depth = 0) => {
+    if (!rootDir || depth > 4) return '';
+    let entries = [];
+    try {
+      entries = fs.readdirSync(rootDir, { withFileTypes: true });
+    } catch (_) {
+      return '';
+    }
+
+    for (const entry of entries) {
+      const fullPath = path.join(rootDir, entry.name);
+      if (entry.isFile() && executableNamePatterns.some((pattern) => pattern.test(entry.name))) {
+        return fullPath;
+      }
+    }
+
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const fullPath = path.join(rootDir, entry.name);
+      const shouldDive = depth === 0
+        ? packageNamePatterns.some((pattern) => pattern.test(entry.name))
+        : true;
+      if (!shouldDive) continue;
+      const found = walkForExecutable(fullPath, depth + 1);
+      if (found) return found;
+    }
+
+    return '';
+  };
+
+  for (const rootDir of searchRoots) {
+    const found = walkForExecutable(rootDir, 0);
+    if (found) return found;
+  }
+
+  return '';
+}
+
+function buildOpenWebUiChildEnv(localUrl) {
+  const ffmpegPath = resolveFfmpegExecutable();
+  const ffmpegDir = ffmpegPath ? path.dirname(ffmpegPath) : '';
+  const windowsDir = String(process.env.WINDIR || 'C:\\Windows').trim() || 'C:\\Windows';
+  const system32Dir = path.join(windowsDir, 'System32');
+  const powerShellDir = path.join(system32Dir, 'WindowsPowerShell', 'v1.0');
+  const cmdExePath = path.join(system32Dir, 'cmd.exe');
+  const powerShellExePath = path.join(powerShellDir, 'powershell.exe');
+  const secretKey = getOrCreateOpenWebUiSecretKey();
+  const childEnv = {
+    ...process.env,
+    PYTHONIOENCODING: 'utf-8',
+    PYTHONUTF8: '1',
+    WEBUI_AUTH: 'False',
+    WEBUI_AUTO_LOGIN: 'True',
+    WEBUI_SECRET_KEY: secretKey,
+    CORS_ALLOW_ORIGIN: localUrl,
+    USER_AGENT: process.env.USER_AGENT || 'Om-X Open WebUI Launcher',
+    ComSpec: process.env.ComSpec || cmdExePath,
+    COMSPEC: process.env.COMSPEC || process.env.ComSpec || cmdExePath
+  };
+
+  childEnv.PATH = [system32Dir, powerShellDir, childEnv.PATH].filter(Boolean).join(path.delimiter);
+  childEnv.Path = childEnv.PATH;
+
+  if (fs.existsSync(powerShellExePath)) {
+    childEnv.POWERSHELL_EXE = powerShellExePath;
+  }
+
+  if (ffmpegPath) {
+    childEnv.FFMPEG_BINARY = ffmpegPath;
+    childEnv.FFMPEG_PATH = ffmpegPath;
+    childEnv.IMAGEIO_FFMPEG_EXE = ffmpegPath;
+    childEnv.PYDUB_FFMPEG_PATH = ffmpegPath;
+    childEnv.PATH = [ffmpegDir, childEnv.PATH].filter(Boolean).join(path.delimiter);
+  } else {
+    childEnv.PYTHONWARNINGS = [
+      childEnv.PYTHONWARNINGS,
+      'ignore::RuntimeWarning:pydub.utils'
+    ].filter(Boolean).join(',');
+  }
+
+  return { childEnv, ffmpegPath };
+}
+
 function unwrapWrappedQuotes(value = '') {
   let normalized = String(value || '').trim();
   while (
@@ -711,6 +856,58 @@ async function terminateManagedChildProcess(child) {
   try {
     child.kill();
   } catch (_) {}
+}
+
+async function terminateProcessListeningOnPort(port) {
+  const normalizedPort = Number(port);
+  if (!Number.isInteger(normalizedPort) || normalizedPort <= 0) return false;
+
+  if (process.platform === 'win32') {
+    const script = [
+      `$port = ${normalizedPort}`,
+      "$connections = Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue",
+      "if (-not $connections) { exit 0 }",
+      "$pids = $connections | Select-Object -ExpandProperty OwningProcess -Unique",
+      "foreach ($pid in $pids) {",
+      "  if ($pid -and $pid -ne $PID) {",
+      "    try { Stop-Process -Id $pid -Force -ErrorAction Stop } catch {}",
+      "  }",
+      "}"
+    ].join('; ');
+    const result = await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script], { timeout: 15000 });
+    return result.ok;
+  }
+
+  return false;
+}
+
+async function terminateOpenWebUiProcesses() {
+  if (process.platform !== 'win32') return false;
+
+  const script = [
+    "$patterns = @(",
+    `  '${OPEN_WEBUI_ENV_NAME}'.ToLowerInvariant(),`,
+    "  'open-webui serve',",
+    "  'open_webui'",
+    ")",
+    "$self = $PID",
+    "$procs = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {",
+    "  $cmd = [string]($_.CommandLine)",
+    "  if ([string]::IsNullOrWhiteSpace($cmd)) { return $false }",
+    "  $lower = $cmd.ToLowerInvariant()",
+    "  return ($patterns | Where-Object { $lower.Contains($_) }).Count -gt 0",
+    "}",
+    "foreach ($proc in $procs) {",
+    "  $pid = [int]$proc.ProcessId",
+    "  if ($pid -and $pid -ne $self) {",
+    "    try { Stop-Process -Id $pid -Force -ErrorAction Stop } catch {}",
+    "  }",
+    "}",
+    "exit 0"
+  ].join('; ');
+
+  const result = await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script], { timeout: 15000 });
+  return result.ok;
 }
 
 async function resolveCondaExecutable() {
@@ -780,12 +977,15 @@ async function getOpenWebUiSetupState() {
   const condaExe = await resolveCondaExecutable();
   const python310Installed = await detectPython310Installed();
   const minicondaInstalled = Boolean(condaExe);
+  const ffmpegInstalled = Boolean(resolveFfmpegExecutable());
   const localUrl = getOpenWebUiLocalUrl();
-  const running = isServerProcessActive(openWebUiProcess) && await checkTcpPort(OPEN_WEBUI_HOST, OPEN_WEBUI_PORT);
+  const portActive = await checkTcpPort(OPEN_WEBUI_HOST, OPEN_WEBUI_PORT);
+  const running = portActive;
+  const managedRunning = isServerProcessActive(openWebUiProcess);
 
   let envExists = false;
   let packageInstalled = false;
-  if (condaExe) {
+  if (!running && condaExe) {
     const envs = await listCondaEnvs(condaExe);
     envExists = envs.some((line) => new RegExp(`(^|\\s|[\\\\/])${OPEN_WEBUI_ENV_NAME}(\\s|$)`, 'i').test(line));
     if (envExists) {
@@ -799,14 +999,20 @@ async function getOpenWebUiSetupState() {
   let message = 'Click launch to start Open WebUI in the managed Miniconda environment.';
   let commands = [];
 
-  if (!python310Installed || !minicondaInstalled) {
+  if (!python310Installed || !minicondaInstalled || !ffmpegInstalled) {
     phase = 'install-prereqs';
-    title = `Install Python ${OPEN_WEBUI_PYTHON_VERSION} and Miniconda first.`;
+    title = `Install Open WebUI prerequisites first.`;
     message = 'Run these commands in Command Prompt or PowerShell, then open the icon again.';
-    commands = [
-      `winget install -e --id Python.Python.${OPEN_WEBUI_PYTHON_VERSION}`,
-      'winget install -e --id Anaconda.Miniconda3'
-    ];
+    commands = [];
+    if (!python310Installed) {
+      commands.push(`winget install -e --id Python.Python.${OPEN_WEBUI_PYTHON_VERSION}`);
+    }
+    if (!minicondaInstalled) {
+      commands.push('winget install -e --id Anaconda.Miniconda3');
+    }
+    if (!ffmpegInstalled) {
+      commands.push('winget install -e --id Gyan.FFmpeg');
+    }
   } else if (!envExists || !packageInstalled) {
     phase = 'setup-env';
     title = 'Finish the Open WebUI environment setup.';
@@ -832,6 +1038,8 @@ async function getOpenWebUiSetupState() {
     message,
     commands,
     running,
+    managedRunning,
+    ffmpegInstalled,
     ready: running,
     localUrl,
     envName: OPEN_WEBUI_ENV_NAME
@@ -839,11 +1047,16 @@ async function getOpenWebUiSetupState() {
 }
 
 async function stopOpenWebUiInternal() {
-  if (!isServerProcessActive(openWebUiProcess)) {
+  const hadManagedProcess = isServerProcessActive(openWebUiProcess);
+  if (!hadManagedProcess) {
     openWebUiProcess = null;
     openWebUiStartInProgress = false;
     serverStarts.openwebui = null;
     serverConfigs.openwebui = null;
+    if (await checkTcpPort(OPEN_WEBUI_HOST, OPEN_WEBUI_PORT)) {
+      await terminateProcessListeningOnPort(OPEN_WEBUI_PORT);
+    }
+    await terminateOpenWebUiProcesses();
     return;
   }
   const child = openWebUiProcess;
@@ -853,6 +1066,10 @@ async function stopOpenWebUiInternal() {
   serverStarts.openwebui = null;
   serverConfigs.openwebui = null;
   await terminateManagedChildProcess(child);
+  if (await checkTcpPort(OPEN_WEBUI_HOST, OPEN_WEBUI_PORT)) {
+    await terminateProcessListeningOnPort(OPEN_WEBUI_PORT);
+  }
+  await terminateOpenWebUiProcesses();
 }
 
 function pushServerLog(name, type, data) {
@@ -1637,9 +1854,10 @@ async function startMcpBackground(config = {}) {
   const host = String(config.host || '127.0.0.1').trim() || '127.0.0.1';
   const port = Number(config.port || 3000) || 3000;
   const enabledTools = (config.enabledTools && typeof config.enabledTools === 'object') ? config.enabledTools : {};
+  const llm = (config.llm && typeof config.llm === 'object') ? config.llm : {};
 
   if (isMcpBackgroundRunning()) {
-    writeMcpBackgroundMetadata(fs.readFileSync(OMX_MCP_BG_PID_FILE, 'utf-8').trim(), { host, port, enabledTools });
+    writeMcpBackgroundMetadata(fs.readFileSync(OMX_MCP_BG_PID_FILE, 'utf-8').trim(), { host, port, enabledTools, llm });
     return { success: true, host, port, alreadyRunning: true, pid: Number(fs.readFileSync(OMX_MCP_BG_PID_FILE, 'utf-8').trim()) || null };
   }
 
@@ -1648,7 +1866,7 @@ async function startMcpBackground(config = {}) {
       const childEnv = {
         ...process.env,
         MCP_TRANSPORT: 'http',
-        MCP_SERVER_OPTIONS: JSON.stringify({ host, port, enabledTools })
+        MCP_SERVER_OPTIONS: JSON.stringify({ host, port, enabledTools, llm })
       };
       const child = spawn(process.execPath, [OMX_MCP_BOOTSTRAP, 'mcp'], {
         detached: true,
@@ -1657,7 +1875,7 @@ async function startMcpBackground(config = {}) {
         env: childEnv
       });
       child.unref();
-      writeMcpBackgroundMetadata(child.pid, { host, port, enabledTools });
+      writeMcpBackgroundMetadata(child.pid, { host, port, enabledTools, llm });
       setTimeout(() => resolve({ success: true, host, port, pid: child.pid }), 400);
     } catch (error) {
       clearMcpBackgroundMetadata();
@@ -2734,7 +2952,8 @@ async function shutdownManagedServers() {
         serverConfigs.mcp = {
           host: String(currentMcpConfig.host || '127.0.0.1').trim() || '127.0.0.1',
           port: Number(currentMcpConfig.port || 3000) || 3000,
-          enabledTools: (currentMcpConfig.enabledTools && typeof currentMcpConfig.enabledTools === 'object') ? currentMcpConfig.enabledTools : {}
+          enabledTools: (currentMcpConfig.enabledTools && typeof currentMcpConfig.enabledTools === 'object') ? currentMcpConfig.enabledTools : {},
+          llm: (currentMcpConfig.llm && typeof currentMcpConfig.llm === 'object') ? currentMcpConfig.llm : {}
         };
         const bgResult = await startMcpBackground(serverConfigs.mcp);
         if (bgResult?.success) {
@@ -2814,7 +3033,7 @@ async function shutdownManagedServers() {
       }
     }
 
-    if (isServerProcessActive(openWebUiProcess)) {
+    if (isServerProcessActive(openWebUiProcess) || await checkTcpPort(OPEN_WEBUI_HOST, OPEN_WEBUI_PORT)) {
       pushServerLog('openwebui', 'info', 'Om-X is closing. Stopping Open WebUI.');
       await stopOpenWebUiInternal();
     }
@@ -4791,6 +5010,27 @@ ipcMain.handle('mcp:start-server', withAuthorizedRendererPages(AUTHORIZED_RENDER
   }
 
   try {
+    const runtimeSettings = cachedSettings || DEFAULT_SETTINGS;
+    const activeProvider = String(runtimeSettings?.activeProvider || runtimeSettings?.llm?.provider || 'google').trim() || 'google';
+    const providerConfig = runtimeSettings?.providers?.[activeProvider] || {};
+    const llmBaseUrl = String(
+      providerConfig?.baseUrl
+      || (activeProvider === 'openai-compatible' ? runtimeSettings?.aiConfig?.openaiCompatible?.baseUrl : '')
+      || ''
+    ).trim();
+    const llmModel = String(
+      providerConfig?.model
+      || runtimeSettings?.llm?.model
+      || getSharedLlmModelForProvider(activeProvider)
+      || ''
+    ).trim();
+    const llmApiKey = String(
+      providerConfig?.key
+      || runtimeSettings?.llm?.key
+      || getSharedLlmApiKeyFromEnv(activeProvider)
+      || ''
+    ).trim();
+
     const moduleRef = await loadMcpModule();
     await moduleRef.startServer({
       host,
@@ -4800,6 +5040,12 @@ ipcMain.handle('mcp:start-server', withAuthorizedRendererPages(AUTHORIZED_RENDER
         serpApiKey: webApiKeys.serpapi,
         tavilyApiKey: webApiKeys.tavily,
         newsApiKey: webApiKeys.newsapi
+      },
+      llm: {
+        provider: activeProvider,
+        baseUrl: llmBaseUrl,
+        apiKey: llmApiKey,
+        model: llmModel
       }
     });
     mcpServerProcess = {
@@ -4811,9 +5057,20 @@ ipcMain.handle('mcp:start-server', withAuthorizedRendererPages(AUTHORIZED_RENDER
       }
     };
     serverStarts.mcp = Date.now();
-    serverConfigs.mcp = { host, port, enabledTools };
+    serverConfigs.mcp = {
+      host,
+      port,
+      enabledTools,
+      llm: {
+        provider: activeProvider,
+        baseUrl: llmBaseUrl,
+        model: llmModel
+      }
+    };
     pushServerLog('mcp', 'info', `MCP HTTP server listening at http://${host}:${port}/mcp`);
+    pushServerLog('mcp', 'info', `OpenAI-compatible chat endpoint listening at http://${host}:${port}/v1/chat/completions`);
     mainWindow?.webContents?.send('mcp-server-output', { type: 'stdout', data: `MCP HTTP server listening at http://${host}:${port}/mcp\n` });
+    mainWindow?.webContents?.send('mcp-server-output', { type: 'stdout', data: `OpenAI-compatible chat endpoint listening at http://${host}:${port}/v1/chat/completions\n` });
     mainWindow?.webContents?.send('mcp-server-output', { type: 'stdout', data: `Enabled MCP tool groups: ${Object.entries(enabledTools).filter(([, enabled]) => enabled).map(([name]) => name).join(', ')}\n` });
     return { success: true, pid: mcpServerProcess.pid, host, port, enabledTools };
   } catch (e) {
@@ -4917,16 +5174,27 @@ ipcMain.handle('openwebui:get-status', withAuthorizedRendererPages(AUTHORIZED_RE
   return getOpenWebUiSetupState();
 }));
 
+ipcMain.handle('openwebui:probe', withAuthorizedRendererPages(AUTHORIZED_RENDERER_PAGES.mainWindow, 'openwebui:probe', async (event) => {
+  ensureTrustedServerControlSender(event);
+  const localUrl = getOpenWebUiLocalUrl();
+  const running = await checkTcpPort(OPEN_WEBUI_HOST, OPEN_WEBUI_PORT);
+  return {
+    success: true,
+    running,
+    localUrl
+  };
+}));
+
 ipcMain.handle('openwebui:start', withAuthorizedRendererPages(AUTHORIZED_RENDERER_PAGES.mainWindow, 'openwebui:start', async (event) => {
   ensureTrustedServerControlSender(event);
 
   const state = await getOpenWebUiSetupState();
-  if (state.phase === 'install-prereqs' || state.phase === 'setup-env') {
-    return { success: false, needsSetup: true, ...state };
+  if (state.running) {
+    return { success: true, alreadyRunning: true, localUrl: state.localUrl };
   }
 
-  if (state.running && isServerProcessActive(openWebUiProcess)) {
-    return { success: true, alreadyRunning: true, localUrl: state.localUrl };
+  if (state.phase === 'install-prereqs' || state.phase === 'setup-env') {
+    return { success: false, needsSetup: true, ...state };
   }
 
   if (isServerProcessActive(openWebUiProcess)) {
@@ -4947,7 +5215,7 @@ ipcMain.handle('openwebui:start', withAuthorizedRendererPages(AUTHORIZED_RENDERE
   }
 
   const localUrl = getOpenWebUiLocalUrl();
-  const workingDir = path.join(app.getPath('userData'), 'open-webui');
+  const workingDir = getOpenWebUiWorkingDir();
   try {
     fs.mkdirSync(workingDir, { recursive: true });
   } catch (_) {}
@@ -4960,11 +5228,10 @@ ipcMain.handle('openwebui:start', withAuthorizedRendererPages(AUTHORIZED_RENDERE
     const cmdExe = process.env.ComSpec || 'C:\\Windows\\System32\\cmd.exe';
     const normalizedCondaActivateScript = unwrapWrappedQuotes(condaActivateScript);
     const command = `call ${normalizedCondaActivateScript} activate ${OPEN_WEBUI_ENV_NAME} && open-webui serve --host ${OPEN_WEBUI_HOST} --port ${OPEN_WEBUI_PORT}`;
-    const childEnv = {
-      ...process.env,
-      PYTHONIOENCODING: 'utf-8',
-      PYTHONUTF8: '1'
-    };
+    const { childEnv, ffmpegPath } = buildOpenWebUiChildEnv(localUrl);
+    pushServerLog('openwebui', 'info', 'Launching Open WebUI with local auth disabled so the UI opens directly.');
+    pushServerLog('openwebui', 'info', `Using CORS_ALLOW_ORIGIN=${localUrl}`);
+    pushServerLog('openwebui', 'info', ffmpegPath ? `Using ffmpeg from ${ffmpegPath}` : 'ffmpeg was not found on PATH. Suppressing the pydub warning; audio transcoding may stay unavailable until ffmpeg is installed.');
     openWebUiProcess = spawn(cmdExe, ['/d', '/c', `"${command}"`], {
       cwd: workingDir,
       stdio: 'pipe',

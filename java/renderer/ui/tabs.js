@@ -47,6 +47,7 @@ export class TabManager {
     this.TEXT_STUDIO_ICON = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%237c4dff'%3E%3Cpath d='M9.4 16.6L4.8 12l4.6-4.6L8 6l-6 6 6 6 1.4-1.4zm5.2 0l4.6-4.6-4.6-4.6L16 6l6 6-6 6-1.4-1.4z'/%3E%3C/svg%3E";
     this.HISTORY_ICON = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23ffffff'%3E%3Cpath d='M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-1 6v5l4.28 2.54.72-1.21-3.5-2.08V9H12z'/%3E%3C/svg%3E";
     this.GAMES_ICON = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%237c4dff'%3E%3Cpath d='M21 6H3c-1.1 0-2 .9-2 2v8c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-10 7H8v3H6v-3H3v-2h3V8h2v3h3v2zm4.5 2c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm4-3c-.83 0-1.5-.67-1.5-1.5S18.67 9 19.5 9s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z'/%3E%3C/svg%3E";
+    this.DOWNLOADS_ICON = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2300c2ff'%3E%3Cpath d='M5 20h14v-2H5v2zm7-18v10.17l3.59-3.58L17 10l-5 5-5-5 1.41-1.41L11 12.17V2h1z'/%3E%3C/svg%3E";
     this.SHIELD_ICON = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23ff5252'%3E%3Cpath d='M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm-1 6h2v2h-2V7zm0 4h2v6h-2v-6z'/%3E%3C/svg%3E";
     this.HOME_ICON = this.OMX_ICON_URL;
     this.CHAT_ICON = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2347c44e'%3E%3Cpath d='M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z'/%3E%3C/svg%3E";
@@ -5432,6 +5433,7 @@ body[class*="overflow-hidden"]:not([data-legit]) {
     const isDefensePage = finalUrl.includes('security-defense-blocked.html');
     const isHomePage = finalUrl.includes('home.html');
     const isTodoPage = finalUrl.includes('todo.html');
+    const isDownloadsPage = finalUrl.includes('downloads.html');
     const isScraberPage = finalUrl.includes('scraper.html');
     const isServerOperatorPage = finalUrl.includes('server-operator.html');
     const isLocalAIPage = this.isLocalOrHostedAiUrl(finalUrl);
@@ -5448,13 +5450,13 @@ body[class*="overflow-hidden"]:not([data-legit]) {
 
     const { tabItem, titleEl, iconEl, spinnerEl } = this.createTabUI(id, {
         isSystemPage, isTextStudio, isHistoryPage, isGamesPage, isDefensePage,
-        isHomePage, isTodoPage, isScraberPage, isServerOperatorPage, isLocalAIPage, isOmChat
+        isHomePage, isTodoPage, isDownloadsPage, isScraberPage, isServerOperatorPage, isLocalAIPage, isOmChat
     }, finalUrl);
     const tabState = {
       id, webview: null, tabItem, titleEl, iconEl, spinnerEl, url: finalUrl,
       lastAccessed: Date.now(), suspended: false, isSystemPage,
       isTextStudio, isHistoryPage, isGamesPage, isDefensePage,
-      isHomePage, isTodoPage, isScraberPage, isServerOperatorPage, isLocalAIPage,
+      isHomePage, isTodoPage, isDownloadsPage, isScraberPage, isServerOperatorPage, isLocalAIPage,
       isOmChat, noSuspend: isOmChat || isScraberPage,
       isLoading: true, isMainFrameLoading: true, customIcon: isOmChat, audible: false,
       interactiveSearch: options.interactiveSearch || null
@@ -5495,6 +5497,7 @@ body[class*="overflow-hidden"]:not([data-legit]) {
     else if (flags.isHistoryPage) { iconSrc = this.HISTORY_ICON; title = 'History'; }
     else if (flags.isGamesPage) { iconSrc = this.GAMES_ICON; title = 'Games'; }
     else if (flags.isTodoPage) { iconSrc = this.TODO_ICON; title = 'Todo'; }
+    else if (flags.isDownloadsPage) { iconSrc = this.DOWNLOADS_ICON; title = 'Downloads'; }
     else if (flags.isScraberPage) { iconSrc = this.AI_SETTINGS_ICON; title = 'Scraper'; }
     else if (flags.isLocalAIPage) { iconSrc = this.CHAT_ICON; title = 'AI Chat'; }
     else if (flags.isDefensePage) { iconSrc = this.SHIELD_ICON; title = 'Security Alert'; tabItem.classList.add('defense-tab'); }
@@ -5866,7 +5869,7 @@ body[class*="overflow-hidden"]:not([data-legit]) {
       }
 
       try {
-        if(!tabState.isSystemPage && !tabState.isTextStudio && !tabState.isHistoryPage && !tabState.isGamesPage && !tabState.isDefensePage && !tabState.isLocalAIPage) {
+        if(!tabState.isSystemPage && !tabState.isTextStudio && !tabState.isHistoryPage && !tabState.isGamesPage && !tabState.isDefensePage && !tabState.isLocalAIPage && !tabState.isDownloadsPage) {
             const pageTitle = webview.getTitle();
             if (pageTitle) {
                 tabState.titleEl.textContent = pageTitle;
@@ -5888,14 +5891,14 @@ body[class*="overflow-hidden"]:not([data-legit]) {
        }
     });
     webview.addEventListener('page-title-updated', (e) => {
-       if(!tabState.isSystemPage && !tabState.isTextStudio && !tabState.isHistoryPage && !tabState.isGamesPage && !tabState.isDefensePage && !tabState.isLocalAIPage) {
+       if(!tabState.isSystemPage && !tabState.isTextStudio && !tabState.isHistoryPage && !tabState.isGamesPage && !tabState.isDefensePage && !tabState.isLocalAIPage && !tabState.isDownloadsPage) {
            tabState.titleEl.textContent = e.title;
            tabState.tabItem.title = e.title;
            if (this.activeAudioTabId === tabState.id && this.playerTitle) this.playerTitle.textContent = e.title;
        }
     });
     webview.addEventListener('page-favicon-updated', (e) => {
-       if (!tabState.customIcon && !tabState.isSystemPage && !tabState.isTextStudio && !tabState.isHistoryPage && !tabState.isGamesPage && !tabState.isDefensePage && !tabState.isLocalAIPage && e.favicons && e.favicons.length > 0) {
+       if (!tabState.customIcon && !tabState.isSystemPage && !tabState.isTextStudio && !tabState.isHistoryPage && !tabState.isGamesPage && !tabState.isDefensePage && !tabState.isLocalAIPage && !tabState.isDownloadsPage && e.favicons && e.favicons.length > 0) {
          tabState.iconEl.src = e.favicons[0];
          if (!tabState.isLoading) tabState.iconEl.style.visibility = 'visible';
        }
@@ -5909,7 +5912,7 @@ body[class*="overflow-hidden"]:not([data-legit]) {
       if (this.isPdfUrl(e.url) && !tabState.customIcon) {
         tabState.titleEl.textContent = webview.getTitle() || 'PDF Viewer';
       }
-      if (!tabState.isSystemPage && !tabState.isTextStudio && !tabState.isHistoryPage && !tabState.isGamesPage && !tabState.isDefensePage && !tabState.isLocalAIPage && !e.url.includes('html/pages/home.html') && !e.url.startsWith('data:') && !e.url.startsWith('file:')) {
+      if (!tabState.isSystemPage && !tabState.isTextStudio && !tabState.isHistoryPage && !tabState.isGamesPage && !tabState.isDefensePage && !tabState.isLocalAIPage && !tabState.isDownloadsPage && !e.url.includes('html/pages/home.html') && !e.url.startsWith('data:') && !e.url.startsWith('file:')) {
           if (window.browserAPI && window.browserAPI.history) {
              window.browserAPI.history.push({
                  title: webview.getTitle() || e.url,
@@ -5997,7 +6000,8 @@ body[class*="overflow-hidden"]:not([data-legit]) {
     webview.addEventListener('ipc-message', (event) => {
        const senderUrl = (webview.getURL && webview.getURL()) || tabState.url || '';
        const trustedHostMessage = this.isTrustedHostPageUrl(senderUrl);
-       if (!trustedHostMessage) {
+       const isGuestOpenTabRequest = event.channel === 'open-tab';
+       if (!trustedHostMessage && !isGuestOpenTabRequest) {
            console.warn('[Tabs] Blocked host IPC message from untrusted page:', event.channel, senderUrl);
            return;
        }
@@ -6006,8 +6010,19 @@ body[class*="overflow-hidden"]:not([data-legit]) {
            const url = `data:text/html;charset=utf-8,${encodeURIComponent(content)}`;
            this.createTab(url);
        } else if (event.channel === 'open-tab') {
-           const url = event.args[0];
-           this.createTab(url);
+           const url = String(event.args[0] || '').trim();
+           if (!url) return;
+           if (this.isBlockedGuestNavigation(senderUrl, url)) {
+               const defenseUrl = this.createDefenseUrl('blocked-local-navigation', url, 'Websites cannot open local app files or local disk paths.');
+               this.createTab(defenseUrl);
+               return;
+           }
+           let targetUrl = url;
+           const safety = this.checkUrlSafety(url);
+           if (!safety.safe) {
+               targetUrl = this.createDefenseUrl(safety.type, safety.originalUrl, safety.reason);
+           }
+           this.createTab(targetUrl);
        } else if (event.channel === 'open-devtools') {
            try { webview.openDevTools({ mode: 'detach' }); } catch (e) {}
        } else if (event.channel === 'show-search-overlay') {

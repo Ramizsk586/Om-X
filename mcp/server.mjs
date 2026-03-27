@@ -36,6 +36,13 @@ let activeServerOptions = {
     serpApiKey: "",
     tavilyApiKey: "",
     newsApiKey: ""
+  },
+  llm: {
+    provider: "",
+    baseUrl: "",
+    apiKey: "",
+    model: "",
+    headers: {}
   }
 };
 
@@ -95,6 +102,72 @@ function normalizeResults(items = [], limit = 8) {
     if (out.length >= limit) break;
   }
   return out;
+}
+
+function normalizeHeaderRecord(headers = {}) {
+  if (!headers || typeof headers !== "object") return {};
+  return Object.fromEntries(
+    Object.entries(headers)
+      .map(([key, value]) => [String(key || "").trim(), String(value || "").trim()])
+      .filter(([key, value]) => key && value)
+  );
+}
+
+function getDefaultBaseUrlForProvider(provider = "") {
+  switch (String(provider || "").trim().toLowerCase()) {
+    case "openai":
+      return "https://api.openai.com/v1";
+    case "groq":
+      return "https://api.groq.com/openai/v1";
+    case "openrouter":
+      return "https://openrouter.ai/api/v1";
+    case "mistral":
+      return "https://api.mistral.ai/v1";
+    default:
+      return "";
+  }
+}
+
+function normalizeBaseUrl(baseUrl = "", provider = "") {
+  const raw = String(baseUrl || "").trim() || getDefaultBaseUrlForProvider(provider);
+  if (!raw) return "";
+  return raw.endsWith("/") ? raw.slice(0, -1) : raw;
+}
+
+function getActiveLlmConfig() {
+  const llm = activeServerOptions?.llm || {};
+  const provider = String(llm.provider || process.env.OMX_MCP_LLM_PROVIDER || "").trim().toLowerCase();
+  const baseUrl = normalizeBaseUrl(
+    llm.baseUrl
+      || process.env.OMX_MCP_LLM_BASE_URL
+      || process.env.OMX_OPENAI_COMPATIBLE_BASE_URL
+      || process.env.OPENAI_BASE_URL
+      || "",
+    provider
+  );
+  const apiKey = String(
+    llm.apiKey
+      || process.env.OMX_MCP_LLM_API_KEY
+      || process.env.OMX_OPENAI_COMPATIBLE_API_KEY
+      || process.env.OPENAI_API_KEY
+      || ""
+  ).trim();
+  const model = String(
+    llm.model
+      || process.env.OMX_MCP_LLM_MODEL
+      || process.env.OMX_OPENAI_COMPATIBLE_MODEL
+      || process.env.OPENAI_MODEL
+      || ""
+  ).trim();
+  const headers = normalizeHeaderRecord(llm.headers || {});
+
+  return {
+    provider,
+    baseUrl,
+    apiKey,
+    model,
+    headers
+  };
 }
 
 async function serpWebSearch({ query, maxResults = 5, includeImages = false, imageCount = 4 }) {
@@ -287,6 +360,260 @@ async function sources(args) {
   };
 }
 
+const TOOL_REGISTRY = {
+  wiki_search: {
+    enabled: (tools) => tools.wiki,
+    description: "Search Wikipedia pages using the Wikipedia API.",
+    mcpSchema: {
+      query: z.string().min(2).describe("Wikipedia topic"),
+      maxResults: z.number().int().min(1).max(10).default(5)
+    },
+    openAiSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        query: { type: "string", description: "Wikipedia topic" },
+        maxResults: { type: "integer", minimum: 1, maximum: 10, default: 5 }
+      },
+      required: ["query"]
+    },
+    handler: async ({ query, maxResults }) => wikiSearch({ query, limit: maxResults })
+  },
+  wiki_page: {
+    enabled: (tools) => tools.wiki,
+    description: "Fetch a Wikipedia page by page_id.",
+    mcpSchema: {
+      pageId: z.number().int().describe("Wikipedia page id")
+    },
+    openAiSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        pageId: { type: "integer", description: "Wikipedia page id" }
+      },
+      required: ["pageId"]
+    },
+    handler: async ({ pageId }) => wikiPage({ pageId })
+  },
+  web_search: {
+    enabled: (tools) => tools.webSearch,
+    description: "Search the public web using SerpAPI and return organic results with optional image results.",
+    mcpSchema: {
+      query: z.string().min(2).describe("Search query"),
+      maxResults: z.number().int().min(1).max(10).default(5),
+      includeImages: z.boolean().default(false),
+      imageCount: z.number().int().min(1).max(10).default(4)
+    },
+    openAiSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        query: { type: "string", description: "Search query" },
+        maxResults: { type: "integer", minimum: 1, maximum: 10, default: 5 },
+        includeImages: { type: "boolean", default: false },
+        imageCount: { type: "integer", minimum: 1, maximum: 10, default: 4 }
+      },
+      required: ["query"]
+    },
+    handler: async ({ query, maxResults, includeImages, imageCount }) => (
+      serpWebSearch({ query, maxResults, includeImages, imageCount })
+    )
+  },
+  ddg_web_search: {
+    enabled: (tools) => tools.duckduckgo,
+    description: "Search the public web with DuckDuckGo and return normalized organic results.",
+    mcpSchema: {
+      query: z.string().min(2).describe("Search query"),
+      maxResults: z.number().int().min(1).max(10).default(5),
+      safeSearch: z.enum(["off", "moderate", "strict"]).default("moderate"),
+      page: z.number().int().min(1).max(20).default(1)
+    },
+    openAiSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        query: { type: "string", description: "Search query" },
+        maxResults: { type: "integer", minimum: 1, maximum: 10, default: 5 },
+        safeSearch: { type: "string", enum: ["off", "moderate", "strict"], default: "moderate" },
+        page: { type: "integer", minimum: 1, maximum: 20, default: 1 }
+      },
+      required: ["query"]
+    },
+    handler: async ({ query, maxResults, safeSearch, page }) => (
+      ddgWebSearch({ query, maxResults, safeSearch, page })
+    )
+  },
+  ddg_image_search: {
+    enabled: (tools) => tools.duckduckgo,
+    description: "Search DuckDuckGo images and return normalized image results.",
+    mcpSchema: {
+      query: z.string().min(2).describe("Image search query"),
+      maxResults: z.number().int().min(1).max(20).default(10),
+      safeSearch: z.enum(["off", "moderate", "strict"]).default("moderate")
+    },
+    openAiSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        query: { type: "string", description: "Image search query" },
+        maxResults: { type: "integer", minimum: 1, maximum: 20, default: 10 },
+        safeSearch: { type: "string", enum: ["off", "moderate", "strict"], default: "moderate" }
+      },
+      required: ["query"]
+    },
+    handler: async ({ query, maxResults, safeSearch }) => (
+      ddgImageSearch({ query, maxResults, safeSearch })
+    )
+  },
+  ddg_video_search: {
+    enabled: (tools) => tools.duckduckgo,
+    description: "Search DuckDuckGo-backed web results for video pages and return normalized video results.",
+    mcpSchema: {
+      query: z.string().min(2).describe("Video search query"),
+      maxResults: z.number().int().min(1).max(10).default(5)
+    },
+    openAiSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        query: { type: "string", description: "Video search query" },
+        maxResults: { type: "integer", minimum: 1, maximum: 10, default: 5 }
+      },
+      required: ["query"]
+    },
+    handler: async ({ query, maxResults }) => ddgVideoSearch({ query, maxResults })
+  },
+  tavily_web_search: {
+    enabled: (tools) => tools.tavily,
+    description: "Search the public web using Tavily and return normalized search results with an optional answer.",
+    mcpSchema: {
+      query: z.string().min(2).describe("Search query"),
+      maxResults: z.number().int().min(1).max(10).default(5),
+      searchDepth: z.enum(["basic", "advanced"]).default("advanced"),
+      includeAnswer: z.boolean().default(true)
+    },
+    openAiSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        query: { type: "string", description: "Search query" },
+        maxResults: { type: "integer", minimum: 1, maximum: 10, default: 5 },
+        searchDepth: { type: "string", enum: ["basic", "advanced"], default: "advanced" },
+        includeAnswer: { type: "boolean", default: true }
+      },
+      required: ["query"]
+    },
+    handler: async ({ query, maxResults, searchDepth, includeAnswer }) => (
+      tavilyWebSearch({ query, maxResults, searchDepth, includeAnswer })
+    )
+  },
+  device_time: {
+    enabled: (tools) => tools.news,
+    description: "Get the current date and time from this device.",
+    mcpSchema: {},
+    openAiSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {}
+    },
+    handler: async () => ({
+      provider: "device",
+      type: "current_time",
+      ...getDeviceTimeInfo()
+    })
+  },
+  news_top_headlines: {
+    enabled: (tools) => tools.news,
+    description: "Get live top headlines from NewsAPI.",
+    mcpSchema: {
+      sources: z.string().optional().describe("Comma-separated source ids"),
+      q: z.string().optional().describe("Keywords or phrase"),
+      category: z.enum(["business", "entertainment", "general", "health", "science", "sports", "technology"]).optional(),
+      language: z.string().optional().describe("2-letter language code"),
+      country: z.string().optional().describe("2-letter country code"),
+      page: z.number().int().min(1).max(100).default(1),
+      pageSize: z.number().int().min(1).max(100).default(10)
+    },
+    openAiSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        sources: { type: "string", description: "Comma-separated source ids" },
+        q: { type: "string", description: "Keywords or phrase" },
+        category: { type: "string", enum: ["business", "entertainment", "general", "health", "science", "sports", "technology"] },
+        language: { type: "string", description: "2-letter language code" },
+        country: { type: "string", description: "2-letter country code" },
+        page: { type: "integer", minimum: 1, maximum: 100, default: 1 },
+        pageSize: { type: "integer", minimum: 1, maximum: 100, default: 10 }
+      }
+    },
+    handler: async (args) => topHeadlines(args)
+  },
+  news_sources: {
+    enabled: (tools) => tools.news,
+    description: "List available NewsAPI sources.",
+    mcpSchema: {
+      category: z.enum(["business", "entertainment", "general", "health", "science", "sports", "technology"]).optional(),
+      language: z.string().optional().describe("2-letter language code"),
+      country: z.string().optional().describe("2-letter country code")
+    },
+    openAiSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        category: { type: "string", enum: ["business", "entertainment", "general", "health", "science", "sports", "technology"] },
+        language: { type: "string", description: "2-letter language code" },
+        country: { type: "string", description: "2-letter country code" }
+      }
+    },
+    handler: async (args) => sources(args)
+  }
+};
+
+function getEnabledToolRegistry(enabledTools = getActiveEnabledTools()) {
+  return Object.fromEntries(
+    Object.entries(TOOL_REGISTRY).filter(([, definition]) => definition.enabled(enabledTools))
+  );
+}
+
+function buildOpenAiToolDefinitions(enabledTools = getActiveEnabledTools(), callerTools = []) {
+  const registry = getEnabledToolRegistry(enabledTools);
+  const namesFromCaller = new Set(
+    (Array.isArray(callerTools) ? callerTools : [])
+      .map((tool) => String(tool?.function?.name || "").trim())
+      .filter(Boolean)
+  );
+  const tools = Array.isArray(callerTools) ? [...callerTools] : [];
+
+  for (const [name, definition] of Object.entries(registry)) {
+    if (namesFromCaller.has(name)) continue;
+    tools.push({
+      type: "function",
+      function: {
+        name,
+        description: definition.description,
+        parameters: definition.openAiSchema
+      }
+    });
+  }
+
+  return tools;
+}
+
+async function runRegisteredTool(name, rawArgs = {}) {
+  const registry = getEnabledToolRegistry();
+  const definition = registry[name];
+  if (!definition) {
+    throw new Error(`Tool "${name}" is not enabled on this server.`);
+  }
+
+  const args = typeof rawArgs === "string"
+    ? JSON.parse(rawArgs || "{}")
+    : (rawArgs && typeof rawArgs === "object" ? rawArgs : {});
+
+  return await definition.handler(args);
+}
+
 function addToolWithErrorHandling(server, name, description, schema, handler) {
   server.tool(name, description, schema, async (args) => {
     try {
@@ -317,158 +644,11 @@ function buildServer() {
   const enabledTools = getActiveEnabledTools();
   const server = new McpServer({
     name: "omx-mcp",
-    version: "2.5.0"
+    version: "2.6.0"
   });
 
-  if (enabledTools.wiki) {
-    addToolWithErrorHandling(
-      server,
-      "wiki_search",
-      "Search Wikipedia pages using the Wikipedia API.",
-      {
-        query: z.string().min(2).describe("Wikipedia topic"),
-        maxResults: z.number().int().min(1).max(10).default(5)
-      },
-      async ({ query, maxResults }) => wikiSearch({ query, limit: maxResults })
-    );
-
-    addToolWithErrorHandling(
-      server,
-      "wiki_page",
-      "Fetch a Wikipedia page by page_id.",
-      {
-        pageId: z.number().int().describe("Wikipedia page id")
-      },
-      async ({ pageId }) => wikiPage({ pageId })
-    );
-  }
-
-  if (enabledTools.webSearch) {
-    addToolWithErrorHandling(
-      server,
-      "web_search",
-      "Search the public web using SerpAPI and return organic results with optional image results.",
-      {
-        query: z.string().min(2).describe("Search query"),
-        maxResults: z.number().int().min(1).max(10).default(5),
-        includeImages: z.boolean().default(false),
-        imageCount: z.number().int().min(1).max(10).default(4)
-      },
-      async ({ query, maxResults, includeImages, imageCount }) => (
-        serpWebSearch({ query, maxResults, includeImages, imageCount })
-      )
-    );
-  }
-
-  if (enabledTools.duckduckgo) {
-    addToolWithErrorHandling(
-      server,
-      "ddg_web_search",
-      "Search the public web with DuckDuckGo and return normalized organic results.",
-      {
-        query: z.string().min(2).describe("Search query"),
-        maxResults: z.number().int().min(1).max(10).default(5),
-        safeSearch: z.enum(["off", "moderate", "strict"]).default("moderate"),
-        page: z.number().int().min(1).max(20).default(1)
-      },
-      async ({ query, maxResults, safeSearch, page }) => (
-        ddgWebSearch({ query, maxResults, safeSearch, page })
-      )
-    );
-
-    addToolWithErrorHandling(
-      server,
-      "ddg_image_search",
-      "Search DuckDuckGo images and return normalized image results.",
-      {
-        query: z.string().min(2).describe("Image search query"),
-        maxResults: z.number().int().min(1).max(20).default(10),
-        safeSearch: z.enum(["off", "moderate", "strict"]).default("moderate")
-      },
-      async ({ query, maxResults, safeSearch }) => (
-        ddgImageSearch({ query, maxResults, safeSearch })
-      )
-    );
-
-    addToolWithErrorHandling(
-      server,
-      "ddg_video_search",
-      "Search DuckDuckGo-backed web results for video pages and return normalized video results.",
-      {
-        query: z.string().min(2).describe("Video search query"),
-        maxResults: z.number().int().min(1).max(10).default(5)
-      },
-      async ({ query, maxResults }) => ddgVideoSearch({ query, maxResults })
-    );
-  }
-
-  if (enabledTools.tavily) {
-    addToolWithErrorHandling(
-      server,
-      "tavily_web_search",
-      "Search the public web using Tavily and return normalized search results with an optional answer.",
-      {
-        query: z.string().min(2).describe("Search query"),
-        maxResults: z.number().int().min(1).max(10).default(5),
-        searchDepth: z.enum(["basic", "advanced"]).default("advanced"),
-        includeAnswer: z.boolean().default(true)
-      },
-      async ({ query, maxResults, searchDepth, includeAnswer }) => (
-        tavilyWebSearch({ query, maxResults, searchDepth, includeAnswer })
-      )
-    );
-  }
-
-  if (enabledTools.news) {
-    server.tool(
-      "device_time",
-      "Get the current date and time from this device. Use this tool before any news tool when the request depends on today, latest, recent, this week, this month, or date filters.",
-      {},
-      async () => ({
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(
-              {
-                provider: "device",
-                type: "current_time",
-                ...getDeviceTimeInfo()
-              },
-              null,
-              2
-            )
-          }
-        ]
-      })
-    );
-
-    addToolWithErrorHandling(
-      server,
-      "news_top_headlines",
-      "Get live top headlines from NewsAPI. Before using this tool for latest or recent news, call device_time first to get the current local date. If no filters are provided, this tool defaults to US headlines.",
-      {
-        sources: z.string().optional().describe("Comma-separated source ids"),
-        q: z.string().optional().describe("Keywords or phrase"),
-        category: z.enum(["business", "entertainment", "general", "health", "science", "sports", "technology"]).optional(),
-        language: z.string().optional().describe("2-letter language code"),
-        country: z.string().optional().describe("2-letter country code"),
-        page: z.number().int().min(1).max(100).default(1),
-        pageSize: z.number().int().min(1).max(100).default(10)
-      },
-      async (args) => topHeadlines(args)
-    );
-
-    addToolWithErrorHandling(
-      server,
-      "news_sources",
-      "List available NewsAPI sources.",
-      {
-        category: z.enum(["business", "entertainment", "general", "health", "science", "sports", "technology"]).optional(),
-        language: z.string().optional().describe("2-letter language code"),
-        country: z.string().optional().describe("2-letter country code")
-      },
-      async (args) => sources(args)
-    );
+  for (const [name, definition] of Object.entries(getEnabledToolRegistry(enabledTools))) {
+    addToolWithErrorHandling(server, name, definition.description, definition.mcpSchema, definition.handler);
   }
 
   const hasDiagramTools = enabledTools.diagramGeneration
@@ -534,6 +714,147 @@ function getBody(req) {
   return null;
 }
 
+function createOpenAiError(res, status, message, type = "invalid_request_error", code = null) {
+  res.status(status).json({
+    error: {
+      message,
+      type,
+      ...(code ? { code } : {})
+    }
+  });
+}
+
+function makeChatCompletionId() {
+  return `chatcmpl_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function extractAssistantTextContent(content) {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .map((part) => {
+      if (!part || typeof part !== "object") return "";
+      if (part.type === "text") return String(part.text || "");
+      return "";
+    })
+    .filter(Boolean)
+    .join("\n")
+    .trim();
+}
+
+function buildStreamingChunk(id, model, delta, finishReason = null) {
+  return `data: ${JSON.stringify({
+    id,
+    object: "chat.completion.chunk",
+    created: Math.floor(Date.now() / 1000),
+    model,
+    choices: [
+      {
+        index: 0,
+        delta,
+        finish_reason: finishReason
+      }
+    ]
+  })}\n\n`;
+}
+
+async function callOpenAiCompatibleUpstream(body) {
+  const llm = getActiveLlmConfig();
+  if (!llm.baseUrl) {
+    throw new Error("No OpenAI-compatible upstream base URL is configured for the MCP server.");
+  }
+
+  const headers = {
+    "Content-Type": "application/json",
+    ...llm.headers
+  };
+  if (llm.apiKey) {
+    headers.Authorization = `Bearer ${llm.apiKey}`;
+  }
+
+  const response = await fetch(`${llm.baseUrl}/chat/completions`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(90000)
+  });
+
+  if (!response.ok) {
+    const details = await response.text().catch(() => "");
+    throw new Error(`Upstream chat completion failed: ${response.status}${details ? ` - ${details}` : ""}`);
+  }
+
+  return await response.json();
+}
+
+async function runOpenAiToolLoop(requestBody = {}) {
+  const llm = getActiveLlmConfig();
+  const model = String(requestBody.model || llm.model || "").trim();
+  if (!model) {
+    throw new Error("No model is configured for the OpenAI-compatible MCP chat endpoint.");
+  }
+
+  const toolDefs = buildOpenAiToolDefinitions(getActiveEnabledTools(), requestBody.tools);
+  const toolChoice = toolDefs.length > 0 ? (requestBody.tool_choice ?? "auto") : undefined;
+  const messages = Array.isArray(requestBody.messages) ? [...requestBody.messages] : [];
+  let finalResponse = null;
+
+  for (let step = 0; step < 6; step += 1) {
+    finalResponse = await callOpenAiCompatibleUpstream({
+      model,
+      messages,
+      tools: toolDefs.length > 0 ? toolDefs : undefined,
+      tool_choice: toolChoice,
+      temperature: requestBody.temperature,
+      max_tokens: requestBody.max_tokens,
+      top_p: requestBody.top_p,
+      presence_penalty: requestBody.presence_penalty,
+      frequency_penalty: requestBody.frequency_penalty,
+      response_format: requestBody.response_format,
+      stream: false
+    });
+
+    const choice = finalResponse?.choices?.[0] || {};
+    const assistantMessage = choice?.message || {};
+    const toolCalls = Array.isArray(assistantMessage.tool_calls) ? assistantMessage.tool_calls : [];
+
+    if (toolCalls.length === 0) {
+      return finalResponse;
+    }
+
+    messages.push({
+      role: "assistant",
+      content: assistantMessage.content ?? "",
+      tool_calls: toolCalls
+    });
+
+    for (const toolCall of toolCalls) {
+      const toolName = String(toolCall?.function?.name || "").trim();
+      const argsRaw = toolCall?.function?.arguments || "{}";
+      try {
+        const result = await runRegisteredTool(toolName, argsRaw);
+        messages.push({
+          role: "tool",
+          tool_call_id: String(toolCall?.id || ""),
+          name: toolName,
+          content: JSON.stringify(result, null, 2)
+        });
+      } catch (error) {
+        messages.push({
+          role: "tool",
+          tool_call_id: String(toolCall?.id || ""),
+          name: toolName,
+          content: JSON.stringify({
+            error: error?.message || String(error)
+          }, null, 2)
+        });
+      }
+    }
+  }
+
+  return finalResponse;
+}
+
 async function handleStreamableRequest(req, res) {
   const server = buildServer();
   const transport = new StreamableHTTPServerTransport({
@@ -557,6 +878,96 @@ async function handleStreamableRequest(req, res) {
 
 app.post("/mcp", handleStreamableRequest);
 
+app.get("/v1/models", (_req, res) => {
+  const llm = getActiveLlmConfig();
+  const enabledTools = Object.keys(getEnabledToolRegistry());
+  const models = [];
+
+  if (llm.model) {
+    models.push({
+      id: llm.model,
+      object: "model",
+      created: 0,
+      owned_by: llm.provider || "omx-mcp",
+      metadata: {
+        type: "openai-compatible-upstream",
+        toolCount: enabledTools.length
+      }
+    });
+  }
+
+  models.push({
+    id: "omx-mcp-tools",
+    object: "model",
+    created: 0,
+    owned_by: "omx-mcp",
+    metadata: {
+      upstreamModel: llm.model || "",
+      toolNames: enabledTools
+    }
+  });
+
+  res.json({
+    object: "list",
+    data: models
+  });
+});
+
+app.post("/v1/chat/completions", async (req, res) => {
+  const body = getBody(req);
+  if (!body || !Array.isArray(body.messages)) {
+    createOpenAiError(res, 400, "A JSON body with a messages array is required.");
+    return;
+  }
+
+  try {
+    const completion = await runOpenAiToolLoop(body);
+    const id = String(completion?.id || makeChatCompletionId());
+    const model = String(completion?.model || body.model || getActiveLlmConfig().model || "omx-mcp-tools");
+
+    if (body.stream === true) {
+      const content = extractAssistantTextContent(completion?.choices?.[0]?.message?.content);
+      res.status(200);
+      res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+      res.setHeader("Cache-Control", "no-cache, no-transform");
+      res.setHeader("Connection", "keep-alive");
+      res.flushHeaders?.();
+      res.write(buildStreamingChunk(id, model, { role: "assistant" }));
+      if (content) {
+        res.write(buildStreamingChunk(id, model, { content }));
+      }
+      res.write(buildStreamingChunk(id, model, {}, "stop"));
+      res.write("data: [DONE]\n\n");
+      res.end();
+      return;
+    }
+
+    res.json({
+      id,
+      object: "chat.completion",
+      created: Number(completion?.created || Math.floor(Date.now() / 1000)),
+      model,
+      choices: Array.isArray(completion?.choices) ? completion.choices : [
+        {
+          index: 0,
+          message: {
+            role: "assistant",
+            content: ""
+          },
+          finish_reason: "stop"
+        }
+      ],
+      usage: completion?.usage || {
+        prompt_tokens: 0,
+        completion_tokens: 0,
+        total_tokens: 0
+      }
+    });
+  } catch (error) {
+    createOpenAiError(res, 500, error?.message || "Chat completion failed.", "server_error");
+  }
+});
+
 app.get("/mcp", (_req, res) => {
   res.status(405).json({ error: "Use POST for MCP requests." });
 });
@@ -577,6 +988,13 @@ export async function startServer(options = {}) {
       serpApiKey: String(options.apiKeys?.serpApiKey || options.apiKey || "").trim(),
       tavilyApiKey: String(options.apiKeys?.tavilyApiKey || "").trim(),
       newsApiKey: String(options.apiKeys?.newsApiKey || "").trim()
+    },
+    llm: {
+      provider: String(options.llm?.provider || "").trim(),
+      baseUrl: String(options.llm?.baseUrl || "").trim(),
+      apiKey: String(options.llm?.apiKey || "").trim(),
+      model: String(options.llm?.model || "").trim(),
+      headers: normalizeHeaderRecord(options.llm?.headers || {})
     }
   };
 
@@ -608,6 +1026,7 @@ export async function startServer(options = {}) {
   activeHttpServer = await new Promise((resolve, reject) => {
     const server = app.listen(port, host, () => {
       console.log(`Unified MCP HTTP server listening at http://${host}:${port}/mcp`);
+      console.log(`OpenAI-compatible chat endpoint listening at http://${host}:${port}/v1/chat/completions`);
       console.log(`Unified MCP Streamable HTTP alias listening at http://${host}:${port}/sse`);
       console.log(`Enabled MCP tool groups: ${enabledSummary || "none"}`);
       activeTransportMode = "http";
@@ -631,6 +1050,13 @@ export async function stopServer() {
         serpApiKey: "",
         tavilyApiKey: "",
         newsApiKey: ""
+      },
+      llm: {
+        provider: "",
+        baseUrl: "",
+        apiKey: "",
+        model: "",
+        headers: {}
       }
     };
     try {
@@ -652,6 +1078,13 @@ export async function stopServer() {
       serpApiKey: "",
       tavilyApiKey: "",
       newsApiKey: ""
+    },
+    llm: {
+      provider: "",
+      baseUrl: "",
+      apiKey: "",
+      model: "",
+      headers: {}
     }
   };
   await new Promise((resolve, reject) => {
