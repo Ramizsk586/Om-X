@@ -49,6 +49,17 @@ const CUSTOM_TOP_APPS_MAX = 5;
 
 const OM_CHAT_DEFAULT_PORT = 3031;
 const DUCK_AI_URL          = 'https://duck.ai/chat';
+const getUrlIdentity = (value = '') => {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    try {
+        const parsed = new URL(raw, window.location.href);
+        return `${parsed.protocol}//${parsed.host}${parsed.pathname}`.toLowerCase();
+    } catch (_) {
+        return raw.split(/[?#]/, 1)[0].trim().toLowerCase();
+    }
+};
+const isServerOperatorAppUrl = (value = '') => getUrlIdentity(value) === getUrlIdentity(SERVER_OPERATOR_URL);
 const GOOGLE_QUICK_APPS = Object.freeze([
     {
         id: 'search',
@@ -1678,23 +1689,33 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // ── APP-TAB UTILS ─────────────────────────────────────────────────────────
     const openAppTab = (url, options = {}) => {
+        const targetUrl = String(url || '').trim();
+        if (!targetUrl) return;
+        const isServerOperatorTarget = isServerOperatorAppUrl(targetUrl);
         const existing = options.isOmChat
             ? tabManager.tabs.find(t => t.isOmChat)
-            : tabManager.tabs.find(t => t.url === url);
+            : isServerOperatorTarget
+                ? tabManager.tabs.find(t => isServerOperatorAppUrl(t.url))
+                : tabManager.tabs.find(t => t.url === targetUrl);
         if (existing) {
             if (options.isOmChat) {
                 existing.isOmChat = true;
                 existing.noSuspend = true;
-                if (existing.url !== url) {
-                    existing.url = url;
+                if (existing.url !== targetUrl) {
+                    existing.url = targetUrl;
                     if (existing.webview) {
-                        existing.webview.src = url;
+                        existing.webview.src = targetUrl;
                     }
+                }
+            } else if (isServerOperatorTarget && existing.url !== targetUrl) {
+                existing.url = targetUrl;
+                if (existing.webview) {
+                    existing.webview.src = targetUrl;
                 }
             }
             tabManager.setActiveTab(existing.id);
         } else {
-            tabManager.createTab(url, options);
+            tabManager.createTab(targetUrl, options);
         }
         featuresHomePopup?.classList.add('hidden');
     };

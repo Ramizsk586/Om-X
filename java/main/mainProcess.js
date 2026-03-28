@@ -364,22 +364,7 @@ function attachInternalWindowNavigationGuards(targetWindow, label = 'window', op
         if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
           return {
             action: 'allow',
-            overrideBrowserWindowOptions: {
-              parent: targetWindow,
-              width: 520,
-              height: 720,
-              minWidth: 420,
-              minHeight: 560,
-              autoHideMenuBar: true,
-              backgroundColor: '#111111',
-              webPreferences: {
-                contextIsolation: true,
-                nodeIntegration: false,
-                sandbox: true,
-                webSecurity: true,
-                devTools: TEMP_MAIN_AUTO_OPEN_DEVTOOLS
-              }
-            }
+            overrideBrowserWindowOptions: getOmxPopupWindowOptions(targetWindow)
           };
         }
       } catch (_) {}
@@ -409,22 +394,7 @@ function attachExternalPopupAllowance(contents) {
         const hostWindow = BrowserWindow.fromWebContents(hostContents) || mainWindow || null;
         return {
           action: 'allow',
-          overrideBrowserWindowOptions: {
-            parent: hostWindow || undefined,
-            width: 520,
-            height: 720,
-            minWidth: 420,
-            minHeight: 560,
-            autoHideMenuBar: true,
-            backgroundColor: '#111111',
-            webPreferences: {
-              contextIsolation: true,
-              nodeIntegration: false,
-              sandbox: true,
-              webSecurity: true,
-              devTools: TEMP_MAIN_AUTO_OPEN_DEVTOOLS
-            }
-          }
+          overrideBrowserWindowOptions: getOmxPopupWindowOptions(hostWindow)
         };
       }
     } catch (_) {}
@@ -3878,6 +3848,27 @@ const WINDOW_ICON_IMAGE = (() => {
 })();
 const BROWSER_WINDOW_ICON = WINDOW_ICON_IMAGE || WINDOW_ICON;
 let pendingAppLaunch = null;
+
+function getOmxPopupWindowOptions(parentWindow = null) {
+  return {
+    parent: parentWindow || undefined,
+    width: 520,
+    height: 720,
+    minWidth: 420,
+    minHeight: 560,
+    autoHideMenuBar: true,
+    backgroundColor: '#18181b',
+    title: 'Om-X',
+    icon: BROWSER_WINDOW_ICON || undefined,
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      webSecurity: true,
+      devTools: TEMP_MAIN_AUTO_OPEN_DEVTOOLS
+    }
+  };
+}
 
 function parseLaunchArgs(args) {
     for (const arg of args) {

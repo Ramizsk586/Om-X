@@ -86,6 +86,25 @@ function escapeHtml(value) {
         .replace(/'/g, '&#39;');
 }
 
+function getRequestedServerOperatorPanel() {
+    try {
+        const params = new URLSearchParams(window.location.search || '');
+        const panel = String(params.get('panel') || '').trim().toLowerCase();
+        return panel === 'mcp' ? 'mcp' : 'llama';
+    } catch (_) {
+        return 'llama';
+    }
+}
+
+function applyRequestedServerOperatorPanel(panelName = '') {
+    const requestedPanel = panelName === 'mcp' ? 'mcp' : 'llama';
+    const llamaPanel = document.getElementById('panel-llama');
+    const mcpPanel = document.getElementById('panel-mcp');
+    if (llamaPanel) llamaPanel.classList.toggle('active', requestedPanel === 'llama');
+    if (mcpPanel) mcpPanel.classList.toggle('active', requestedPanel === 'mcp');
+    return requestedPanel;
+}
+
 function updateMcpRuntimeStatus(statusElementId, status) {
     const labels = {
         offline: 'Offline',
@@ -2584,6 +2603,7 @@ class PocketTTSRenderer {
 }
 
 function initMinecraft() {
+    applyRequestedServerOperatorPanel(getRequestedServerOperatorPanel());
     try {
         window.llamaServerRenderer = new LlamaServerRenderer();
         window.llamaServerRenderer.init();

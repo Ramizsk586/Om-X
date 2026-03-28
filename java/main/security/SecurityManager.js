@@ -558,12 +558,26 @@ class SecurityManager {
     }
   }
 
+  resolvePopupWindowIcon() {
+    const candidates = [
+      path.join(app.getAppPath(), 'assets', 'icons', 'app.ico'),
+      path.join(app.getAppPath(), 'assets', 'icons', 'app.png')
+    ];
+    for (const candidate of candidates) {
+      try {
+        if (fs.existsSync(candidate)) return candidate;
+      } catch (_) {}
+    }
+    return undefined;
+  }
+
   buildTrustedPopupAllowance(contents) {
     const hostContents = contents?.hostWebContents || contents || null;
     let hostWindow = this.mainWindow || null;
     try {
       if (hostContents) hostWindow = BrowserWindow.fromWebContents(hostContents) || hostWindow;
     } catch (_) {}
+    const popupIcon = this.resolvePopupWindowIcon();
     return {
       action: 'allow',
       overrideBrowserWindowOptions: {
@@ -573,7 +587,9 @@ class SecurityManager {
         minWidth: 420,
         minHeight: 560,
         autoHideMenuBar: true,
-        backgroundColor: '#111111',
+        backgroundColor: '#18181b',
+        title: 'Om-X',
+        icon: popupIcon,
         webPreferences: {
           contextIsolation: true,
           nodeIntegration: false,
@@ -582,6 +598,23 @@ class SecurityManager {
         }
       }
     };
+  }
+
+  shouldRoutePopupToTab(contents) {
+    try {
+      if (contents?.getType?.() === 'webview') return true;
+    } catch (_) {}
+    return Boolean(contents?.hostWebContents);
+  }
+
+  routePopupToTab(targetUrl = '') {
+    const safeUrl = String(targetUrl || '').trim();
+    if (!safeUrl || !this.mainWindow || this.mainWindow.isDestroyed?.()) return;
+    try {
+      this.mainWindow.webContents.send('open-tab', safeUrl);
+    } catch (error) {
+      console.warn('[Security] Failed to redirect popup into tab:', error?.message || error);
+    }
   }
 
   updateSettings(newSettings) {
@@ -841,19 +874,16 @@ class SecurityManager {
               if (this.isTrustedAuthPopupUrl(targetUrl)) {
                   return this.buildTrustedPopupAllowance(contents);
               }
-              if (!this.getPopupBlockerConfig().enabled) return { action: 'allow' };
 
-              // Electron 33 may deny popup creation before the renderer webview sees a
-              // usable new-window event, so convert guest popups into browser tabs here.
-              try {
-                  if (contents.getType?.() === 'webview' && this.mainWindow && !this.mainWindow.isDestroyed?.()) {
-                      this.mainWindow.webContents.send('open-tab', targetUrl);
-                  }
-              } catch (error) {
-                  console.warn('[Security] Failed to redirect popup into tab:', error?.message || error);
+              // Guest webviews should open normal sites in Om-X tabs, not detached windows.
+              if (this.shouldRoutePopupToTab(contents)) {
+                  this.routePopupToTab(targetUrl);
+                  return { action: 'deny' };
               }
 
-              // Never allow guest pages to spawn separate native popup windows.
+              if (!this.getPopupBlockerConfig().enabled) return { action: 'allow' };
+
+              // Block non-trusted popup windows outside the guest-tab routing path.
               return { action: 'deny' };
           });
       });
