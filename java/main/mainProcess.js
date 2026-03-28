@@ -353,10 +353,37 @@ function isTrustedInternalWindowUrl(url = '') {
   }
 }
 
-function attachInternalWindowNavigationGuards(targetWindow, label = 'window') {
+function attachInternalWindowNavigationGuards(targetWindow, label = 'window', options = {}) {
   if (!targetWindow?.webContents) return;
+  const allowExternalHttpPopups = options?.allowExternalHttpPopups === true;
 
   targetWindow.webContents.setWindowOpenHandler?.(({ url }) => {
+    if (allowExternalHttpPopups) {
+      try {
+        const parsed = new URL(String(url || '').trim());
+        if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+          return {
+            action: 'allow',
+            overrideBrowserWindowOptions: {
+              parent: targetWindow,
+              width: 520,
+              height: 720,
+              minWidth: 420,
+              minHeight: 560,
+              autoHideMenuBar: true,
+              backgroundColor: '#111111',
+              webPreferences: {
+                contextIsolation: true,
+                nodeIntegration: false,
+                sandbox: true,
+                webSecurity: true,
+                devTools: TEMP_MAIN_AUTO_OPEN_DEVTOOLS
+              }
+            }
+          };
+        }
+      } catch (_) {}
+    }
     console.warn(`[Security] Blocked popup from ${label}: ${url || 'unknown'}`);
     return { action: 'deny' };
   });
@@ -369,6 +396,40 @@ function attachInternalWindowNavigationGuards(targetWindow, label = 'window') {
 
   targetWindow.webContents.on('will-navigate', blockUnexpectedNavigation);
   targetWindow.webContents.on('will-redirect', blockUnexpectedNavigation);
+}
+
+function attachExternalPopupAllowance(contents) {
+  if (!contents || contents.isDestroyed?.() || typeof contents.setWindowOpenHandler !== 'function') return;
+
+  contents.setWindowOpenHandler(({ url }) => {
+    try {
+      const parsed = new URL(String(url || '').trim());
+      if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+        const hostContents = contents.hostWebContents || contents;
+        const hostWindow = BrowserWindow.fromWebContents(hostContents) || mainWindow || null;
+        return {
+          action: 'allow',
+          overrideBrowserWindowOptions: {
+            parent: hostWindow || undefined,
+            width: 520,
+            height: 720,
+            minWidth: 420,
+            minHeight: 560,
+            autoHideMenuBar: true,
+            backgroundColor: '#111111',
+            webPreferences: {
+              contextIsolation: true,
+              nodeIntegration: false,
+              sandbox: true,
+              webSecurity: true,
+              devTools: TEMP_MAIN_AUTO_OPEN_DEVTOOLS
+            }
+          }
+        };
+      }
+    } catch (_) {}
+    return { action: 'deny' };
+  });
 }
 
 function logBlockedIpc(kind, channel, event) {
@@ -3478,6 +3539,7 @@ function startLlamaMemoryGuard() {
   }, settings.sampleIntervalMs);
 }
 
+
 async function shutdownManagedServers() {
   if (hasCompletedServerShutdown) return;
   if (isServerShutdownInProgress) return;
@@ -3486,75 +3548,6 @@ async function shutdownManagedServers() {
 
   try {
     const shutdownTasks = [];
-
-    if (isServerProcessActive(llamaServerProcess)) {
-      pushServerLog('llama', 'info', 'Om-X is closing. Stopping llama server.');
-      clearLlamaMemoryGuard();
-      const llamaChild = llamaServerProcess;
-      llamaServerProcess = null;
-      serverStarts.llama = null;
-      serverConfigs.llama = null;
-      shutdownTasks.push(
-        terminateManagedChildProcess(llamaChild)
-          .catch((e) => console.warn('[Shutdown] Llama kill error:', e?.message))
-          .then(() => stopLlamaNgrokTunnelInternal().catch(() => {}))
-      );
-    } else {
-      shutdownTasks.push(stopLlamaNgrokTunnelInternal().catch(() => {}));
-    }
-
-    if (mcpServerProcess && mcpServerProcess.killed !== true) {
-      const alwaysOnMcp = Boolean(cachedSettings?.mcp?.alwaysOn);
-      if (alwaysOnMcp) {
-        pushServerLog('mcp', 'info', 'Om-X is closing. Always On enabled - keeping MCP server running in background.');
-        const currentMcpConfig = serverConfigs.mcp || {};
-        shutdownTasks.push((async () => {
-          try {
-            const moduleRef = await loadMcpModule();
-            await moduleRef.stopServer();
-          } catch (_) {}
-          try { mcpServerProcess.kill(); } catch (_) {}
-          mcpServerProcess = null;
-          serverStarts.mcp = null;
-          serverConfigs.mcp = {
-            host: String(currentMcpConfig.host || '127.0.0.1').trim() || '127.0.0.1',
-            port: Number(currentMcpConfig.port || 3000) || 3000,
-            enabledTools: (currentMcpConfig.enabledTools && typeof currentMcpConfig.enabledTools === 'object') ? currentMcpConfig.enabledTools : {},
-            llm: (currentMcpConfig.llm && typeof currentMcpConfig.llm === 'object') ? currentMcpConfig.llm : {}
-          };
-          const bgResult = await startMcpBackground(serverConfigs.mcp);
-          if (bgResult?.success) {
-            pushServerLog('mcp', 'success', `MCP background server running at http://${serverConfigs.mcp.host}:${serverConfigs.mcp.port}/mcp`);
-          } else {
-            pushServerLog('mcp', 'error', bgResult?.error || 'Failed to keep MCP running in background.');
-            serverConfigs.mcp = null;
-          }
-        })().catch((e) => console.warn('[Shutdown] MCP handoff error:', e?.message)));
-      } else {
-        pushServerLog('mcp', 'info', 'Om-X is closing. Stopping MCP server.');
-        shutdownTasks.push((async () => {
-          try {
-            const moduleRef = await loadMcpModule();
-            await moduleRef.stopServer();
-          } catch (_) {}
-          const mcpChild = mcpServerProcess;
-          mcpServerProcess = null;
-          serverStarts.mcp = null;
-          serverConfigs.mcp = null;
-          await terminateManagedChildProcess(mcpChild).catch(() => {});
-        })().catch((e) => console.warn('[Shutdown] MCP stop error:', e?.message)));
-      }
-    }
-
-    if (lanServerInstance?.getStatus?.().isRunning) {
-      pushServerLog('lan', 'info', 'Om-X is closing. Stopping LAN server.');
-      try {
-        lanServerInstance.stop();
-      } catch (_) {}
-      lanServerProcess = null;
-      serverStarts.lan = null;
-      serverConfigs.lan = null;
-    }
 
     if (isServerProcessActive(omChatServerProcess) || isServerProcessActive(omChatNgrokProcess)) {
       const alwaysOn = Boolean(cachedSettings?.omchat?.alwaysOn);
@@ -5938,6 +5931,26 @@ ipcMain.handle('openwebui:stop', withAuthorizedRendererPages(AUTHORIZED_RENDERER
   return { success: true };
 }));
 
+ipcMain.handle('ollama:kill-for-tab-close', withAuthorizedRendererPages(AUTHORIZED_RENDERER_PAGES.mainWindow, 'ollama:kill-for-tab-close', async (_event, options = {}) => {
+  if (process.platform !== 'win32') {
+    return { success: false, skipped: true, error: 'taskkill is only available on Windows.' };
+  }
+
+  const killPython = options?.killPython === true;
+  const runs = [];
+  for (let i = 0; i < 2; i++) {
+    runs.push(await execFileAsync('taskkill', ['/F', '/IM', 'ollama.exe'], { timeout: 15000 }));
+  }
+  if (killPython) {
+    runs.push(await execFileAsync('taskkill', ['/IM', 'python.exe', '/F'], { timeout: 15000 }));
+  }
+
+  return {
+    success: runs.every((run) => run?.ok),
+    runs
+  };
+}));
+
 ipcMain.handle('server:get-status', withAuthorizedRendererPages(AUTHORIZED_RENDERER_PAGES.mainOrServerOperator, 'server:get-status', async (_event, name) => {
   const serverName = String(name || '').trim().toLowerCase();
   if (serverName === 'lan') {
@@ -6520,7 +6533,7 @@ function normalizeLockedSecuritySettings(settings = {}) {
       ...security,
       popupBlocker: {
         ...popupBlocker,
-        enabled: true
+        enabled: popupBlocker.enabled === true
       },
       cookieShield: {
         ...cookieShield,
@@ -7080,7 +7093,7 @@ function createMainWindow() {
       devTools: TEMP_MAIN_AUTO_OPEN_DEVTOOLS
     }
   });
-  attachInternalWindowNavigationGuards(mainWindow, 'main window');
+  attachInternalWindowNavigationGuards(mainWindow, 'main window', { allowExternalHttpPopups: true });
   if (BROWSER_WINDOW_ICON && typeof mainWindow.setIcon === 'function') {
     try { mainWindow.setIcon(BROWSER_WINDOW_ICON); } catch (_) {}
   }
@@ -7091,6 +7104,7 @@ function createMainWindow() {
     app.on('web-contents-created', (_event, contents) => {
       attachShortsHideToContents(contents);
       attachGlobalScrollbarToContents(contents);
+      attachExternalPopupAllowance(contents);
     });
   }
   mainWindow.webContents.on('will-attach-webview', (_event, webPreferences) => {
@@ -7100,6 +7114,7 @@ function createMainWindow() {
     webPreferences.webSecurity = true;
     webPreferences.sandbox = true;
     webPreferences.plugins = true;
+    webPreferences.nativeWindowOpen = true;
 
     const preloadPath = webPreferences.preload || webPreferences.preloadURL;
     if (!preloadPath) return;
@@ -8783,24 +8798,5 @@ if (isMiniLaunch) {
     console.error('[MiniLaunch] Startup Error:', err);
   });
 }
-
-app.on('before-quit', (event) => {
-  if (hasCompletedServerShutdown || isServerShutdownInProgress) {
-    return;
-  }
-  event.preventDefault();
-  Promise.allSettled([
-    bookmarksStore.flush(),
-    historyStore.flush(),
-    downloadsStore.flush()
-  ])
-    .then(() => shutdownManagedServers())
-    .catch((error) => {
-      console.error('[Shutdown] Failed to stop managed servers cleanly:', error);
-    })
-    .finally(() => {
-      app.quit();
-    });
-});
 
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });

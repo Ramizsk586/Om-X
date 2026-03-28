@@ -234,7 +234,8 @@ contextBridge.exposeInMainWorld('browserAPI', {
     replace: () => ipcRenderer.invoke('env:replace-file')
   },
   app: {
-    restart: () => ipcRenderer.invoke('app-restart')
+    restart: () => ipcRenderer.invoke('app-restart'),
+    killOllamaForTabClose: (options) => ipcRenderer.invoke('ollama:kill-for-tab-close', options)
   },
   system: {
     getLocalIP: () => ipcRenderer.invoke('system-get-local-ip'),

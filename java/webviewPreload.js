@@ -449,6 +449,17 @@ contextBridge.exposeInMainWorld('webviewAPI', {
         }
       };
 
+      const isTrustedAuthPopupUrl = (value) => {
+        const resolved = resolveTargetUrl(value);
+        if (!resolved) return false;
+        try {
+          const parsed = new URL(resolved);
+          return parsed.protocol === 'https:' && String(parsed.hostname || '').toLowerCase() === 'accounts.google.com';
+        } catch (_) {
+          return false;
+        }
+      };
+
       const requestHostTab = (url) => {
         const resolved = resolveTargetUrl(url);
         if (!resolved) return '';
@@ -509,6 +520,7 @@ contextBridge.exposeInMainWorld('webviewAPI', {
         if (anchor.hasAttribute('download')) return false;
         const href = resolveTargetUrl(anchor.getAttribute('href') || anchor.href || '');
         if (!href) return false;
+        if (isTrustedAuthPopupUrl(href)) return false;
         const target = String(anchor.getAttribute('target') || '').trim().toLowerCase();
         return target === '_blank';
       };
@@ -548,14 +560,18 @@ contextBridge.exposeInMainWorld('webviewAPI', {
           return originalWindowOpen(url, target, features);
         }
 
-        if (shouldOpenTab && hasRecentUserGesture()) {
-          requestHostTab(resolvedUrl);
-          return createWindowProxyStub(resolvedUrl);
-        }
-
         if (normalizedTarget === '_self') {
           window.location.href = resolvedUrl;
           return window;
+        }
+
+        if (isTrustedAuthPopupUrl(resolvedUrl)) {
+          return originalWindowOpen(url, target, features);
+        }
+
+        if (shouldOpenTab && hasRecentUserGesture()) {
+          requestHostTab(resolvedUrl);
+          return createWindowProxyStub(resolvedUrl);
         }
 
         return originalWindowOpen(url, target, features);

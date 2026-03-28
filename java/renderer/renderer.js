@@ -354,6 +354,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const webviewContextMenu            = document.getElementById('webview-context-menu');
     const tabContextMenu                = document.getElementById('tab-context-menu');
     const ctxHideWindowControlsMenuItem = document.getElementById('ctx-hide-window-controls');
+    const ctxSessionPopupsMenuItem      = document.getElementById('ctx-session-popups');
     const btnMin                        = document.getElementById('btn-min');
     const btnMax                        = document.getElementById('btn-max');
     const btnClose                      = document.getElementById('btn-close');
@@ -1564,6 +1565,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                     span.textContent = isHiddenForSite ? 'Show Window Controls' : 'Hide Window Controls';
                 }
                 ctxHideWindowControlsMenuItem.style.color = isHiddenForSite ? '#ffb74d' : '';
+            }
+
+            if (ctxSessionPopupsMenuItem) {
+                ctxSessionPopupsMenuItem.classList.add('hidden');
             }
         }
     };
@@ -3563,7 +3568,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         },
         handleWebviewContextMenu,
         handleTabContextMenu,
-        async (tabId) => {
+        async (tabId, tabInfo = {}) => {
             darkModeTabs.delete(tabId);
             if (tabId === openWebUiTabId) {
                 openWebUiTabId = null;
@@ -3572,6 +3577,15 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (tabId === llamaWebUiTabId) {
                 llamaWebUiTabId = null;
                 syncWindowControlsVisibility();
+            }
+            if ((tabInfo?.isScraberPage || tabInfo?.isOpenWebUiPage) && window.browserAPI?.app?.killOllamaForTabClose) {
+                try {
+                    await window.browserAPI.app.killOllamaForTabClose({
+                        killPython: tabInfo?.isOpenWebUiPage === true
+                    });
+                } catch (error) {
+                    console.warn('[Renderer] Failed to kill Ollama after tab close:', error);
+                }
             }
         }
     );
@@ -3643,6 +3657,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const ctxCopyUrl     = document.getElementById('ctx-copy-url');
     const ctxDarkMode    = document.getElementById('ctx-dark-mode');
     const ctxHideWindowControls = ctxHideWindowControlsMenuItem;
+    const ctxSessionPopups = ctxSessionPopupsMenuItem;
 
     if (ctxBookmarkTab) ctxBookmarkTab.onclick = () => {
         const tab = tabManager.tabs.find(t => t.id === currentTabContextId);
@@ -3666,6 +3681,17 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!isHttpWebsiteUrl(tabUrl)) return;
         const nextHiddenState = !isWindowControlsHiddenForUrl(tabUrl);
         await persistWebsiteUiPreferencesForUrl(tabUrl, { hideWindowControls: nextHiddenState });
+    };
+    if (ctxSessionPopups) ctxSessionPopups.onclick = () => {
+        const tab = tabManager.tabs.find(t => t.id === currentTabContextId);
+        const tabUrl = getTabRuntimeUrl(tab);
+        closeAllContextMenus();
+        if (!isHttpWebsiteUrl(tabUrl)) return;
+        const nextAllowedState = !tabManager.areSessionPopupsAllowed(tabUrl);
+        tabManager.setSessionPopupPermission(tabUrl, nextAllowedState);
+        if (nextAllowedState && tab?.id != null) {
+            tabManager.recreateTabWebview(tab.id);
+        }
     };
 
     // ── QUICK-PANEL BUTTONS ────────────────────────────────────────────────────

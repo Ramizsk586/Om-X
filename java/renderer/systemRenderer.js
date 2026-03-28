@@ -630,7 +630,7 @@ const applyThemeClass = (theme) => {
             },
             popupBlocker: {
                 ...(window.omxSettings.security?.popupBlocker || {}),
-                enabled: true
+                enabled: els.featPopupBlocker?.checked ?? false
             },
             cookieShield: {
                 ...(window.omxSettings.security?.cookieShield || {}),

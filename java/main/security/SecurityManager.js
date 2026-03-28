@@ -1,4 +1,4 @@
-const { app, webContents } = require('electron');
+const { app, BrowserWindow, webContents } = require('electron');
 const WebFirewall = require('./firewall/WebFirewall');
 const { checkAdultContent } = require('./Adult_block/AdultContentBlocker');
 const path = require('path');
@@ -549,6 +549,41 @@ class SecurityManager {
     return value.includes('security-defense-blocked.html');
   }
 
+  isTrustedAuthPopupUrl(url = '') {
+    try {
+      const parsed = new URL(String(url || '').trim());
+      return parsed.protocol === 'https:' && String(parsed.hostname || '').toLowerCase() === 'accounts.google.com';
+    } catch (_) {
+      return false;
+    }
+  }
+
+  buildTrustedPopupAllowance(contents) {
+    const hostContents = contents?.hostWebContents || contents || null;
+    let hostWindow = this.mainWindow || null;
+    try {
+      if (hostContents) hostWindow = BrowserWindow.fromWebContents(hostContents) || hostWindow;
+    } catch (_) {}
+    return {
+      action: 'allow',
+      overrideBrowserWindowOptions: {
+        parent: hostWindow || undefined,
+        width: 520,
+        height: 720,
+        minWidth: 420,
+        minHeight: 560,
+        autoHideMenuBar: true,
+        backgroundColor: '#111111',
+        webPreferences: {
+          contextIsolation: true,
+          nodeIntegration: false,
+          sandbox: true,
+          webSecurity: true
+        }
+      }
+    };
+  }
+
   updateSettings(newSettings) {
     this.settings = newSettings;
     if (this.virusTotalClient && this.firewall) {
@@ -802,6 +837,10 @@ class SecurityManager {
               const targetUrl = String(details?.url || '').trim();
               if (!targetUrl) return { action: 'deny' };
               if (targetUrl.startsWith('file:') || this.isDefensePageUrl(targetUrl)) return { action: 'allow' };
+              // OAuth sign-in popups need a real window; forcing them into tabs breaks the flow.
+              if (this.isTrustedAuthPopupUrl(targetUrl)) {
+                  return this.buildTrustedPopupAllowance(contents);
+              }
               if (!this.getPopupBlockerConfig().enabled) return { action: 'allow' };
 
               // Electron 33 may deny popup creation before the renderer webview sees a

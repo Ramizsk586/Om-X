@@ -1632,6 +1632,16 @@ document.addEventListener('DOMContentLoaded', async () => {
       'done'
     );
     return report;
+    } catch (err) {
+      console.error('[AI Data] Workflow failed:', err);
+      await setWorkflowStepState('report', 'error', 180);
+      setLiveStatus(
+        llmBackend === 'ollama' ? 'Ollama workflow failed' : 'AI workflow failed',
+        String(err?.message || err || 'Unknown workflow error'),
+        'error'
+      );
+      throw err;
+    }
   };
 
   const openViewer = (src) => {

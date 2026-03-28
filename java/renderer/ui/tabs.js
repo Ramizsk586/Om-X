@@ -11,6 +11,7 @@ export class TabManager {
     this.onTabContextMenu = onTabContextMenu;
     this.onTabClose = onTabClose;
     this.omChatOrigins = new Set();
+    this.sessionPopupOrigins = new Set();
     
     this.miniPlayer = document.getElementById('mini-player');
     this.sidebarControls = document.getElementById('sidebar-footer-controls');
@@ -116,12 +117,52 @@ export class TabManager {
     return decision === 'allow' || decision === 'deny' ? decision : '';
   }
 
+  getEffectiveSitePermission(url = '', permission = '') {
+    const origin = this.getSiteOrigin(url);
+    const key = String(permission || '').trim().toLowerCase();
+    if (origin && key === 'popups' && this.sessionPopupOrigins.has(origin)) return 'allow';
+    return this.getStoredSitePermission(url, key);
+  }
+
   getSitePermissionSnapshot(url = '') {
     const origin = this.getSiteOrigin(url);
     if (!origin) return {};
     const websitePermissions = this.settings?.websitePermissions;
     const stored = websitePermissions?.[origin];
-    return stored && typeof stored === 'object' ? { ...stored } : {};
+    const snapshot = stored && typeof stored === 'object' ? { ...stored } : {};
+    if (this.sessionPopupOrigins.has(origin)) snapshot.popups = 'allow';
+    return snapshot;
+  }
+
+  areSessionPopupsAllowed(url = '') {
+    return this.isWebsiteUrl(url) || this.getEffectiveSitePermission(url, 'popups') === 'allow';
+  }
+
+  updateWebviewPopupAllowance(webview, url = '') {
+    if (!webview?.setAttribute) return;
+    webview.setAttribute('allowpopups', this.areSessionPopupsAllowed(url) ? 'yes' : 'no');
+  }
+
+  setSessionPopupPermission(url = '', allowed = true) {
+    const origin = this.getSiteOrigin(url);
+    if (!origin) return false;
+    if (allowed) this.sessionPopupOrigins.add(origin);
+    else this.sessionPopupOrigins.delete(origin);
+
+    this.tabs.forEach((tab) => {
+      const runtimeUrl = (() => {
+        if (tab?.webview?.getURL) {
+          try { return tab.webview.getURL() || tab.url || ''; } catch (_) {}
+        }
+        return tab?.url || '';
+      })();
+      if (this.getSiteOrigin(runtimeUrl) !== origin) return;
+      if (tab.webview) {
+        this.updateWebviewPopupAllowance(tab.webview, runtimeUrl);
+        this.applySitePermissions(tab.webview, runtimeUrl).catch(() => {});
+      }
+    });
+    return true;
   }
 
   async applySitePermissions(webview, url = '') {
@@ -164,6 +205,8 @@ export class TabManager {
             }
           });
           window.__omxSiteSoundBlocked = mute;
+          window.__omxSitePermissions = permissions;
+          window.__omxPopupsAllowed = permissions.popups === 'allow';
 
           if (deny('fullscreen')) {
             try {
@@ -445,10 +488,27 @@ export class TabManager {
   }
 
   updateSettings(settings = {}) {
+    const previousAdBlockerEnabled = this.getAdBlockerSettings().enabled;
     this.settings = settings || {};
+    const nextAdBlockerEnabled = this.getAdBlockerSettings().enabled;
+
+    if (previousAdBlockerEnabled && !nextAdBlockerEnabled) {
+      [...this.tabs].forEach((tab) => {
+        const runtimeUrl = (() => {
+          if (tab?.webview?.getURL) {
+            try { return tab.webview.getURL() || tab.url || ''; } catch (_) {}
+          }
+          return tab?.url || '';
+        })();
+        if (this.isWebsiteUrl(runtimeUrl)) {
+          this.recreateTabWebview(tab.id);
+        }
+      });
+    }
+
     this.tabs.forEach((tab) => {
       if (!tab?.webview) return;
-      tab.webview.setAttribute('allowpopups', 'no');
+      this.updateWebviewPopupAllowance(tab.webview, tab.webview.getURL ? tab.webview.getURL() : tab.url);
       this.applySitePermissions(tab.webview, tab.webview.getURL ? tab.webview.getURL() : tab.url);
       if (!tab.domReady) return;
       this.applyGlobalWebsiteCss(tab.webview);
@@ -2782,6 +2842,7 @@ body[class*="overflow-hidden"]:not([data-legit]) {
       window.__omxOpenPatched = true;
       const _windowOpen = window.open.bind(window);
       window.open = function(url, target, features) {
+        if (window.__omxPopupsAllowed) return _windowOpen.apply(this, arguments);
         if (!url) return _windowOpen.apply(this, arguments);
         const s = String(url || '');
         // Block if it's an ad URL OR if opened as blank in a way that looks like a popunder
@@ -5459,8 +5520,8 @@ body[class*="overflow-hidden"]:not([data-legit]) {
     const trustedHostPage = this.isTrustedHostPageUrl(tabState.url);
     webview.preload = trustedHostPage ? this.PRELOAD_URL : this.WEBVIEW_PRELOAD_URL;
     webview.setAttribute('plugins', 'on');
-    webview.setAttribute('webpreferences', 'contextIsolation=yes, nodeIntegration=no, sandbox=yes, plugins=yes');
-    webview.setAttribute('allowpopups', 'no');
+    webview.setAttribute('webpreferences', 'contextIsolation=yes, nodeIntegration=no, sandbox=yes, plugins=yes, nativeWindowOpen=yes');
+    this.updateWebviewPopupAllowance(webview, tabState.url);
     this._attachWebviewListeners(webview, tabState);
     this.webviewContainer.appendChild(webview);
     webview.src = tabState.url;
@@ -5510,7 +5571,7 @@ body[class*="overflow-hidden"]:not([data-legit]) {
         }
 
         // Early injection for popup blocker
-        if (isWebsite && ab.blockPopups) {
+        if (isWebsite && ab.blockPopups && !this.areSessionPopupsAllowed(url)) {
           await webview.executeJavaScript(this.getPopupOnlyBlockerScript(), true);
         }
 
@@ -5855,8 +5916,25 @@ body[class*="overflow-hidden"]:not([data-legit]) {
       }
     });
     webview.addEventListener('new-window', (e) => {
+      const sourceUrl = (webview.getURL && webview.getURL()) || tabState.url || '';
+      const allowSessionPopup = this.areSessionPopupsAllowed(sourceUrl);
+      if (allowSessionPopup) {
+        if (this.isBlockedGuestNavigation(sourceUrl, e.url)) {
+          e.preventDefault();
+          const defenseUrl = this.createDefenseUrl('blocked-local-navigation', e.url, 'Websites cannot open local app files or local disk paths.');
+          this.createTab(defenseUrl);
+          return;
+        }
+        const safety = this.checkUrlSafety(e.url);
+        if (!safety.safe) {
+          e.preventDefault();
+          const defenseUrl = this.createDefenseUrl(safety.type, safety.originalUrl, safety.reason);
+          this.createTab(defenseUrl);
+        }
+        return;
+      }
       e.preventDefault();
-      if (this.isBlockedGuestNavigation((webview.getURL && webview.getURL()) || tabState.url || '', e.url)) {
+      if (this.isBlockedGuestNavigation(sourceUrl, e.url)) {
           const defenseUrl = this.createDefenseUrl('blocked-local-navigation', e.url, 'Websites cannot open local app files or local disk paths.');
           this.createTab(defenseUrl);
           return;
@@ -6148,6 +6226,23 @@ body[class*="overflow-hidden"]:not([data-legit]) {
       this.createWebviewForTab(tab);
   }
 
+  recreateTabWebview(id) {
+    const tab = this.tabs.find((entry) => entry.id === id);
+    if (!tab) return false;
+    this.cancelScheduledSuspension(tab);
+    if (tab.webview) {
+      try { tab.url = tab.webview.getURL() || tab.url; } catch (_) {}
+      try { tab.webview.blur(); } catch (_) {}
+      try { tab.webview.remove(); } catch (_) {}
+      tab.webview = null;
+    }
+    tab.suspended = false;
+    tab.domReady = false;
+    this.createWebviewForTab(tab);
+    if (this.activeTabId === id) this.setActiveTab(id);
+    return true;
+  }
+
   closeTab(id) {
     const index = this.tabs.findIndex(t => t.id === id);
     if (index === -1) return;
@@ -6159,7 +6254,13 @@ body[class*="overflow-hidden"]:not([data-legit]) {
     this.tabs.splice(index, 1);
     
     // Notify about tab closure for cleanup
-    if (this.onTabClose) this.onTabClose(id);
+    if (this.onTabClose) {
+      this.onTabClose(id, {
+        url: tab.url,
+        isScraberPage: tab.isScraberPage === true,
+        isOpenWebUiPage: tab.isOpenWebUiPage === true
+      });
+    }
     
     if (this.activeTabId === id) {
       if (this.tabs.length > 0) {
