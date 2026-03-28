@@ -6,7 +6,6 @@ const {
   getChannelMessages,
   getDmById,
   getDmMessages,
-  hasPermission,
   isAdmin,
   isAdminOrOp,
   isMemberMuted,

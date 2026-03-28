@@ -13,17 +13,24 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let todos = [];
     let currentFilter = 'all';
+    const TODO_STORAGE_KEY = 'omx_todo_tasks';
+    const LEGACY_TODO_STORAGE_KEY = 'omni_tasks';
 
     const loadTodos = () => {
-        const saved = localStorage.getItem('omni_tasks');
+        const saved = localStorage.getItem(TODO_STORAGE_KEY) || localStorage.getItem(LEGACY_TODO_STORAGE_KEY);
         if (saved) {
             todos = JSON.parse(saved);
+            if (!localStorage.getItem(TODO_STORAGE_KEY)) {
+                localStorage.setItem(TODO_STORAGE_KEY, saved);
+            }
             render();
         }
     };
 
     const saveTodos = () => {
-        localStorage.setItem('omni_tasks', JSON.stringify(todos));
+        const serialized = JSON.stringify(todos);
+        localStorage.setItem(TODO_STORAGE_KEY, serialized);
+        localStorage.removeItem(LEGACY_TODO_STORAGE_KEY);
         updateStats();
     };
 

@@ -3,8 +3,6 @@
  * OMNI SEARCH SYSTEM
  * Isolated module for overlay management, engine dispatch, and suggestions.
  */
-import { isBlocked } from './block.js';
-
 const GOOGLE_SUGGEST_URL = 'https://suggestqueries.google.com/complete/search?client=firefox&q=%s';
 const SUGGESTION_TIMEOUT_MS = 4000;
 const SUGGESTION_CACHE_SIZE = 50;

@@ -331,6 +331,7 @@
       
       let selectedAvatarFile = 'wK.png';
       let selectedFolder = 'pieces';
+      const defaultAvatarUrl = '../assets/pieces/wK.png';
 
       // Live Previews
       nameInput.addEventListener('input', () => previewName.textContent = nameInput.value || 'Guest');
@@ -368,14 +369,21 @@
                   const div = document.createElement('div');
                   div.className = 'avatar-opt';
                   if (item.filename === selectedAvatarFile) div.classList.add('selected');
-                  
-                  div.innerHTML = `<img src="../assets/${item.folder}/${item.filename}" onerror="this.style.display='none'">`;
+
+                  const img = document.createElement('img');
+                  img.src = item.url || `../assets/${item.folder}/${item.filename}`;
+                  img.alt = item.filename;
+                  img.onerror = () => {
+                      img.src = defaultAvatarUrl;
+                      img.onerror = null;
+                  };
+                  div.appendChild(img);
                   div.title = item.filename;
                   
                   div.onclick = () => {
                       document.querySelectorAll('.avatar-opt').forEach(el => el.classList.remove('selected'));
                       div.classList.add('selected');
-                      updatePreview(item.filename, item.folder);
+                      updatePreview(item.filename, item.folder, item.url);
                   };
                   avatarGrid.appendChild(div);
               });
@@ -389,7 +397,7 @@
           if (prefs?.boardTheme) document.documentElement.setAttribute('data-theme', prefs.boardTheme);
       }
       
-      function updatePreview(filename, folder = 'pieces') {
+      function updatePreview(filename, folder = 'pieces', explicitUrl = '') {
           selectedAvatarFile = filename; 
           selectedFolder = folder;
           
@@ -397,25 +405,27 @@
           currentAvatar.style.opacity = "0";
           
           setTimeout(() => {
-              // Robust path handling
-              currentAvatar.src = `../assets/${folder}/${filename}`;
-              
+              const nextSrc = explicitUrl || `../assets/${folder}/${filename}`;
               currentAvatar.onload = () => {
                   currentAvatar.style.transform = "scale(1)";
                   currentAvatar.style.opacity = "1";
               };
               currentAvatar.onerror = () => {
-                  // Fallback if file missing - try pieces first
                   if (folder !== 'pieces') {
                       currentAvatar.src = `../assets/pieces/${filename}`;
-                      // If that fails, user will see broken image or we can fallback to default
-                      currentAvatar.onerror = () => { currentAvatar.src = '../assets/pieces/wK.png'; };
+                      currentAvatar.onerror = () => {
+                          currentAvatar.src = defaultAvatarUrl;
+                          currentAvatar.onerror = null;
+                      };
                   } else {
-                      currentAvatar.src = '../assets/pieces/wK.png';
+                      currentAvatar.src = defaultAvatarUrl;
+                      currentAvatar.onerror = null;
                   }
                   currentAvatar.style.opacity = "1";
                   currentAvatar.style.transform = "scale(1)";
               };
+              
+              currentAvatar.src = nextSrc;
           }, 150);
       }
       

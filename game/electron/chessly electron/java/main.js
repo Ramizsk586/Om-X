@@ -12,11 +12,14 @@ const {
 const path = require("path");
 const fs = require("fs");
 const { fileURLToPath } = require("url");
+const { pathToFileURL } = require("url");
 const { spawn } = require("child_process");
 const Groq = require("groq-sdk");
 const LanServer = require('./lanServer');
 const chessDB = require('./chess_db'); 
 const MatchReviewer = require('./match_reviewer');
+const REPO_ENV_PATH = path.resolve(__dirname, "../../../../.env");
+const VISUAL_SCAN_OPENROUTER_MODEL = "nvidia/nemotron-nano-12b-v2-vl:free";
 
 let GoogleGenAIClass = null;
 async function getGoogleGenAI() {
@@ -37,7 +40,6 @@ const TRUSTED_RENDERER_PROTOCOLS = new Set(["file:"]);
 
 // Data
 let engines = [];
-let currentPlayEngineId = null;  
 let currentEvalEngineId = null;  
 let lastGameData = { fen: null, moves: [] };
 
@@ -126,8 +128,6 @@ function initApp({ embedded = false } = {}) {
     const evalDefault = engines.find(e => e.isDefaultEval);
     const playDefault = engines.find(e => e.isDefaultPlay);
     currentEvalEngineId = evalDefault ? evalDefault.id : engines[0].id;
-    currentPlayEngineId = playDefault ? playDefault.id : engines[0].id;
-    
     matchReviewer = new MatchReviewer(engines[0].path);
   } else {
       matchReviewer = new MatchReviewer(null);
@@ -403,14 +403,8 @@ function setupIPC() {
       }
   });
 
-  ipcMain.on("open-report-window", () => navigateToView('report')); 
-  ipcMain.on("open-moves-window", () => navigateToView('moves'));
-  ipcMain.on("open-ai-match-window", () => navigateToView('ai-match'));
-  ipcMain.on("open-scan-window", () => navigateToView('scan'));
   ipcMain.on("open-engines-manager", () => navigateToView('engines'));
   ipcMain.on("open-new-game", () => navigateToView('newgame'));
-  ipcMain.on("open-sounds-manager", () => navigateToView('sounds'));
-  ipcMain.on("open-threats-window", () => navigateToView('threats'));
   ipcMain.on("open-mad-arena", () => navigateToView('mad-arena'));
   ipcMain.on("open-mad-settings", () => navigateToView('mad-settings'));
   ipcMain.on("open-lan-window", () => navigateToView('lan-chess'));
@@ -418,10 +412,6 @@ function setupIPC() {
 
   ipcMain.on("open-mad-report", (_event, data) => { if (mainWindow) mainWindow.webContents.send('navigate', 'mad-report', data); });
   ipcMain.on("open-analysis-board", () => navigateToView('review'));
-  ipcMain.on("show-console", () => {
-      if (!app.isPackaged && mainWindow) mainWindow.webContents.openDevTools({ mode: "detach" });
-  });
-
   ipcMain.on("set-eval-window", (_event, enabled) => {
     userPreferences.showEvalBar = enabled;
     savePreferences(userPreferences);
@@ -478,7 +468,6 @@ function setupIPC() {
 
   ipcMain.on("new-game-selected", (_event, payload) => {
     navigateToView('home');
-    if (payload && payload.engineId) currentPlayEngineId = payload.engineId;
     if (mainWindow) {
       let engineInfo = null;
       if(payload.engineId) engineInfo = engines.find(e => e.id === payload.engineId);
@@ -491,9 +480,6 @@ function setupIPC() {
       mainWindow.webContents.send("new-game-start", gameStartData);
     }
   });
-
-  ipcMain.on("turn-changed", () => {});
-  ipcMain.on("stop-match", () => { if(mainWindow) mainWindow.webContents.send('timer-stop'); });
 
   // AI / Engine
     if (!ipcMain._invokeHandlers || !ipcMain._invokeHandlers.has("ai-verify-list")) {
@@ -538,7 +524,7 @@ function setupIPC() {
     }
   
   safeHandle("ai-generate-move", async (event, payload) => await generateLLMMove(payload));
-  safeHandle("analyze-image-fen", async (event, { imageBase64 }) => { return { success: false, error: "Vision Model required" }; });
+  safeHandle("analyze-image-fen", async (_event, { imageBase64 }) => await analyzeImageToFenWithOpenRouter(imageBase64));
 
   safeHandle("request-engine-move-promise", async (event, payload) => {
       const { fen, engineId, moveTime } = payload;
@@ -666,8 +652,6 @@ function setupIPC() {
     } catch (e) { event.sender.send("analysis-result", {}); }
   });
 
-  ipcMain.on("start-threat-scan", (event) => event.sender.send("scan-complete"));
-
   safeHandle("sounds-get-all", () => customSounds);
   safeHandle("sounds-save-all", (_event, data) => { customSounds = data || {}; saveSounds(customSounds); return customSounds; });
   safeHandle("sounds-browse", async () => { const res = await dialog.showOpenDialog({ filters: [{name: "Audio", extensions: ["mp3", "wav", "ogg"]}]}); return (!res.canceled && res.filePaths.length) ? res.filePaths[0] : null; });
@@ -730,7 +714,11 @@ function setupIPC() {
               try {
                   const files = fs.readdirSync(dir);
                   const images = files.filter(f => f.match(/\.(png|jpg|jpeg|svg|webp)$/i));
-                  allFiles = allFiles.concat(images.map(f => ({ filename: f, folder: folder })));
+                  allFiles = allFiles.concat(images.map(f => ({
+                      filename: f,
+                      folder: folder,
+                      url: pathToFileURL(path.join(dir, f)).href
+                  })));
               } catch (e) {}
           }
       }
@@ -825,6 +813,97 @@ function parseJsonFromText(text) {
         try { return JSON.parse(match[0]); } catch (_) {}
     }
     return null;
+}
+
+function loadRepoEnv() {
+    try {
+        if (!fs.existsSync(REPO_ENV_PATH)) return {};
+        const lines = fs.readFileSync(REPO_ENV_PATH, "utf8").split(/\r?\n/);
+        const env = {};
+        for (const rawLine of lines) {
+            const line = String(rawLine || "").trim();
+            if (!line || line.startsWith("#")) continue;
+            const idx = line.indexOf("=");
+            if (idx <= 0) continue;
+            const key = line.slice(0, idx).trim();
+            let value = line.slice(idx + 1).trim();
+            if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+                value = value.slice(1, -1);
+            }
+            env[key] = value;
+        }
+        return env;
+    } catch (_) {
+        return {};
+    }
+}
+
+function extractFenFromText(text) {
+    if (!text) return null;
+    const json = parseJsonFromText(text);
+    const jsonFen = json?.fen || json?.FEN || json?.position;
+    if (typeof jsonFen === "string" && jsonFen.trim()) return jsonFen.trim();
+
+    const fenMatch = String(text).match(/\b(?:[prnbqkPRNBQK1-8]+\/){7}[prnbqkPRNBQK1-8]+\s+[wb]\s+(?:K?Q?k?q?|[-])\s+(?:[a-h][36]|-)\s+\d+\s+\d+\b/);
+    return fenMatch ? fenMatch[0].trim() : null;
+}
+
+async function analyzeImageToFenWithOpenRouter(imageBase64) {
+    const repoEnv = loadRepoEnv();
+    const apiKey = process.env.OPENROUTER_API_KEY || repoEnv.OPENROUTER_API_KEY;
+    if (!apiKey) return { success: false, error: "OpenRouter API key missing in .env" };
+    if (!imageBase64 || typeof imageBase64 !== "string") return { success: false, error: "No image provided" };
+
+    const prompt = [
+        "You are a chess position extractor.",
+        "Analyze the provided chessboard image and reconstruct the exact position.",
+        "Return only strict JSON with this schema:",
+        '{"fen":"full_fen_string"}',
+        "Rules:",
+        "- Detect all pieces accurately.",
+        "- Infer side to move when possible; if unclear, default to white to move.",
+        "- Use full standard FEN fields.",
+        "- Do not include markdown or commentary."
+    ].join("\n");
+
+    try {
+        const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${apiKey}`,
+                "HTTP-Referer": "https://om-x.app",
+                "X-Title": "Om-X Chessly Visual Scanner"
+            },
+            body: JSON.stringify({
+                model: VISUAL_SCAN_OPENROUTER_MODEL,
+                messages: [
+                    {
+                        role: "user",
+                        content: [
+                            { type: "text", text: prompt },
+                            { type: "image_url", image_url: { url: imageBase64 } }
+                        ]
+                    }
+                ],
+                temperature: 0
+            })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+            return { success: false, error: data?.error?.message || data?.message || "OpenRouter vision request failed" };
+        }
+
+        const text = data?.choices?.[0]?.message?.content || "";
+        const fen = extractFenFromText(text);
+        if (!fen) {
+            return { success: false, error: "Could not reconstruct FEN from model response" };
+        }
+        return { success: true, fen, raw: text };
+    } catch (error) {
+        logSystemError(error, "VISUAL_SCAN_OPENROUTER");
+        return { success: false, error: error.message || "Visual scan failed" };
+    }
 }
 
 async function generateLLMMove(payload) {

@@ -531,11 +531,13 @@
       
       // Timer & Engine Vars
       let gameActive = false;
+      let isPaused = false;
       let activeEngineId = null;
       let userColor = 'w'; // Default user plays White
       let timerInterval = null;
       let timeLeft = { w: 600, b: 600 }; // seconds (10 mins default)
       let isEngineThinking = false;
+      let pendingEngineMove = null;
 
       function toggleLauncher() { launcher.classList.toggle('open'); }
       function launchApp(appName) { navigateTo(appName); launcher.classList.remove('open'); }
@@ -549,13 +551,38 @@
           return `${m}:${s}`;
       }
 
+      function syncPauseUI() {
+          document.getElementById('paused-overlay').classList.toggle('hidden', !isPaused);
+          document.getElementById('pauseBtn').textContent = isPaused ? 'Resume Game' : '❚❚ Pause Game';
+      }
+
+      function applyEngineMoveResult(result) {
+          if (!(result && result.move)) return;
+          game.applyMove(result.move);
+          window.electronAPI.gamePositionUpdated({fen: game.boardToFen(), moves: game.history});
+          window.electronAPI.requestAnalysis(game.boardToFen());
+          renderBoard();
+          updateClocks();
+          checkGameStatus();
+      }
+
+      function setPaused(nextPaused) {
+          if (!gameActive) return;
+          isPaused = nextPaused;
+          syncPauseUI();
+
+          if (!isPaused && pendingEngineMove && gameActive) {
+              const moveToApply = pendingEngineMove;
+              pendingEngineMove = null;
+              isEngineThinking = false;
+              applyEngineMoveResult(moveToApply);
+          }
+      }
+
       function startTimer() {
           if(timerInterval) clearInterval(timerInterval);
           timerInterval = setInterval(() => {
-              if (!gameActive || isEngineThinking && game.turn !== userColor) {
-                  // Don't decrement time while engine is thinking if we want to be fair
-                  // Or decrement normally. Let's decrement normally.
-              }
+              if (!gameActive || isPaused) return;
               
               // Whose turn?
               const turn = game.turn; // 'w' or 'b'
@@ -627,6 +654,7 @@
       // --- MOVE LOGIC ---
       async function handleSquareClick(r, c) {
           if (!gameActive) return;
+          if (isPaused) return;
           if (isEngineThinking) return;
           
           // In Engine Mode, restrict turn. In Human Mode, allow both (Pass & Play)
@@ -680,10 +708,10 @@
       }
       
       async function triggerEngineMove() {
+          if (isPaused) return;
           isEngineThinking = true;
           updateClocks(); // Updates active turn visual
           
-          const engineTurn = game.turn;
           const fen = game.boardToFen();
           
           // Get Engine Info
@@ -699,25 +727,32 @@
               });
               
               if (result && result.move) {
-                  game.applyMove(result.move);
-                  window.electronAPI.gamePositionUpdated({fen: game.boardToFen(), moves: game.history});
-                  window.electronAPI.requestAnalysis(game.boardToFen());
+                  if (isPaused) {
+                      pendingEngineMove = result;
+                      return;
+                  }
+                  applyEngineMoveResult(result);
               }
           } catch(e) {
               console.error("Engine Move Failed", e);
           }
           
           isEngineThinking = false;
-          renderBoard();
-          updateClocks();
-          checkGameStatus();
+          if (!isPaused) {
+              renderBoard();
+              updateClocks();
+              checkGameStatus();
+          }
       }
       
       function checkGameStatus() {
           const moves = game.getLegalMoves();
           if (moves.length === 0) {
               gameActive = false;
+              isPaused = false;
+              pendingEngineMove = null;
               clearInterval(timerInterval);
+              syncPauseUI();
               // Checkmate or Stalemate?
               // Simple check: is king attacked?
               const kingPos = game.rules.findKing(game.board, game.turn);
@@ -730,6 +765,11 @@
       }
       
       function handleGameOver(winner, reason) {
+          gameActive = false;
+          isPaused = false;
+          pendingEngineMove = null;
+          clearInterval(timerInterval);
+          syncPauseUI();
           // Setup Modal content
           const title = winner === "Draw" ? "DRAW" : `${winner.toUpperCase()} WINS`;
           document.getElementById('go-winner').textContent = title;
@@ -798,8 +838,8 @@
       document.getElementById('flipBoard').onclick = () => { isFlipped = !isFlipped; renderBoard(); };
       document.getElementById('startNewGame').onclick = () => window.electronAPI?.openNewGame?.();
       document.getElementById('pauseBtn').onclick = () => {
-          // Simple pause visual, doesn't actually stop timer interval in this simplified version logic
-          document.getElementById('paused-overlay').classList.toggle('hidden');
+          if (!gameActive) return;
+          setPaused(!isPaused);
       };
 
       // Init
@@ -907,6 +947,9 @@
       window.electronAPI?.onNewGameStart?.((data) => {
           game.reset();
           gameActive = true;
+          isPaused = false;
+          pendingEngineMove = null;
+          syncPauseUI();
           document.getElementById('game-over-modal').style.display = 'none';
           
           // Only set engine ID if mode explicitly requests it

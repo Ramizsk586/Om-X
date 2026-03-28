@@ -15,6 +15,7 @@ body {
   color: rgba(255, 255, 255, 0.94);
   background: #1c1d21;
   overflow-x: hidden;
+  color-scheme: dark;
 }
 
 /* ── Header ────────────────────────────────────────────── */
@@ -212,6 +213,29 @@ body {
   background: rgba(16, 185, 129, 0.12);
   color: #10b981;
   border: 1px solid rgba(16, 185, 129, 0.2);
+}
+
+.session-lock-indicator {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  border: 1px solid transparent;
+}
+
+.session-lock-indicator.locked {
+  background: rgba(16, 185, 129, 0.12);
+  color: #10b981;
+  border-color: rgba(16, 185, 129, 0.2);
+}
+
+.session-lock-indicator.unlocked {
+  background: rgba(245, 158, 11, 0.12);
+  color: #fbbf24;
+  border-color: rgba(245, 158, 11, 0.2);
 }
 
 /* ── Domain List ───────────────────────────────────────── */
@@ -419,13 +443,50 @@ body {
 /* Settings select */
 .setting-row select {
   padding: 8px 12px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  min-width: 138px;
+  padding-right: 34px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.04);
-  color: #fff;
+  background-color: rgba(20, 24, 32, 0.96);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M2 4.5 6 8.5l4-4' fill='none' stroke='%23e5e7eb' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: calc(100% - 12px) 50%;
+  background-size: 12px 12px;
+  color: #f8fafc;
   font-size: 12px;
   cursor: pointer;
   outline: none;
+  appearance: none;
+  -webkit-appearance: none;
+  color-scheme: dark;
+}
+
+.setting-row select option {
+  background: #171b23;
+  color: #f8fafc;
+}
+
+.setting-row select:focus {
+  border-color: rgba(16, 185, 129, 0.48);
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.14);
+}
+
+.setting-row select:disabled,
+.omx-embedded input:disabled,
+.omx-embedded button:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.embedded-note {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(59, 130, 246, 0.08);
+  border: 1px solid rgba(96, 165, 250, 0.18);
+  color: #bfdbfe;
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 /* ── Empty State ───────────────────────────────────────── */

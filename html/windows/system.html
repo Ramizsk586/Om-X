@@ -273,6 +273,62 @@
       flex-direction: column;
       gap: 8px;
     }
+    .env-actions-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 14px 16px;
+      margin-top: 14px;
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.025);
+      border: 1px solid rgba(255, 255, 255, 0.07);
+    }
+    .env-actions-copy {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      min-width: 0;
+    }
+    .env-actions-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: #f4f4f5;
+    }
+    .env-actions-desc {
+      font-size: 12px;
+      line-height: 1.5;
+      color: #8b8b95;
+    }
+    .env-replace-btn {
+      width: 42px;
+      height: 42px;
+      flex-shrink: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 12px;
+      border: 1px solid rgba(99, 102, 241, 0.35);
+      background: linear-gradient(135deg, rgba(99, 102, 241, 0.28), rgba(79, 70, 229, 0.18));
+      color: #eef2ff;
+      cursor: pointer;
+      transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+    }
+    .env-replace-btn:hover {
+      transform: translateY(-1px);
+      border-color: rgba(129, 140, 248, 0.55);
+      box-shadow: 0 10px 20px rgba(79, 70, 229, 0.22);
+    }
+    .env-replace-btn:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+      transform: none;
+      box-shadow: none;
+    }
+    .env-replace-btn svg {
+      width: 18px;
+      height: 18px;
+    }
   </style>
   <script type="importmap">
   {
@@ -312,14 +368,6 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07" stroke-width="1.5"/></svg>
           Ad Blocker
         </button>
-        <button class="sys-nav-item" data-target="panel-block">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
-          Blocklist
-        </button>
-        <button class="sys-nav-item" data-target="panel-whitelist">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-          Whitelist
-        </button>
         <button class="sys-nav-item" data-target="panel-shortcuts">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2" ry="2"/><path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M6 12h.01M10 12h.01M14 12h.01M18 12h.01M7 16h10"/></svg>
           Keyboard
@@ -350,7 +398,7 @@
           <div class="toggle-row">
             <div class="toggle-info">
               <span class="toggle-title">VirusTotal Cloud Scan</span>
-              <span class="toggle-desc">Use the VirusTotal API key from <code>.env</code> (<code>VIRUSTOTAL_API_KEY</code>) to scan executable installs and untrusted URL apps before loading.</span>
+              <span class="toggle-desc">Use the VirusTotal API key from <code>.env</code> (<code>VIRUSTOTAL_API_KEY</code>) only for website safety checks in the browser.</span>
             </div>
             <label class="switch"><input type="checkbox" id="feat-virustotal"><span class="slider"></span></label>
           </div>
@@ -434,6 +482,19 @@
                 <span class="llm-operator-copy">Native Sarvam route</span>
               </button>
             </div>
+            <div class="env-actions-row">
+              <div class="env-actions-copy">
+                <span class="env-actions-title">Replace env</span>
+                <span class="env-actions-desc">Import another `.env` file and replace the current one Om-X is using.</span>
+              </div>
+              <button id="btn-replace-env-file" class="env-replace-btn" type="button" title="Replace current .env file" aria-label="Replace current .env file">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                  <path d="M7 10l5 5 5-5"/>
+                  <path d="M12 15V3"/>
+                </svg>
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -441,58 +502,6 @@
       <!-- Section: Search Matrix -->
       <div id="panel-search-matrix" class="settings-panel">
         <!-- Content dynamically loaded from matrix-search.html -->
-      </div>
-
-      <!-- Section: Block List -->
-      <div id="panel-block" class="settings-panel">
-        <div class="panel-header">
-          <h2>Blocklist</h2>
-          <p>Manage websites and threats automatically blocked during browsing.</p>
-        </div>
-        <div class="settings-section-card">
-          <div style="margin-bottom: 20px;">
-            <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #fff;">Add Website to Blocklist</label>
-            <div style="display: flex; gap: 8px;">
-              <input type="text" id="block-input-domain" placeholder="example.com or https://example.com" style="flex: 1; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 12px; color: #fff; outline: none;">
-              <button id="btn-add-block" style="background: var(--accent-color); color: white; border: none; padding: 12px 24px; border-radius: 10px; cursor: pointer; font-weight: 600; transition: all 0.2s;">Add</button>
-            </div>
-          </div>
-          
-          <label style="display: block; margin-bottom: 12px; font-weight: 600; color: #fff;">Blocked Entries</label>
-          <div id="block-list-container" style="background: rgba(0,0,0,0.3); border-radius: 12px; max-height: 400px; overflow-y: auto; border: 1px solid rgba(255,255,255,0.05);">
-            <div style="padding: 24px; text-align: center; color: #71717a;">No blocked sites yet. Websites will appear here as they are blocked.</div>
-          </div>
-          
-          <div style="margin-top: 12px; padding: 12px; background: rgba(255,200,0,0.1); border-left: 3px solid #fbbf24; border-radius: 8px;">
-            <p style="color: #fbbf24; font-size: 13px; margin: 0;"><strong>Note:</strong> Only sites in this block list are restricted. Add domains to block them completely.</p>
-          </div>
-        </div>
-      </div>
-
-      <!-- Section: Whitelist -->
-      <div id="panel-whitelist" class="settings-panel">
-        <div class="panel-header">
-          <h2>Whitelist</h2>
-          <p>Sites where ad blocker power is reduced by 90%. Only popup ads will be blocked on whitelisted sites.</p>
-        </div>
-        <div class="settings-section-card">
-          <div style="margin-bottom: 20px;">
-            <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #fff;">Add Website to Whitelist</label>
-            <div style="display: flex; gap: 8px;">
-              <input type="text" id="whitelist-input-domain" placeholder="example.com or https://example.com" style="flex: 1; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 12px; color: #fff; outline: none;">
-              <button id="btn-add-whitelist" style="background: var(--accent-color); color: white; border: none; padding: 12px 24px; border-radius: 10px; cursor: pointer; font-weight: 600; transition: all 0.2s;">Add</button>
-            </div>
-          </div>
-          
-          <label style="display: block; margin-bottom: 12px; font-weight: 600; color: #fff;">Whitelisted Entries</label>
-          <div id="whitelist-container" style="background: rgba(0,0,0,0.3); border-radius: 12px; max-height: 400px; overflow-y: auto; border: 1px solid rgba(255,255,255,0.05);">
-            <div style="padding: 24px; text-align: center; color: #71717a;">No whitelisted sites yet. Add domains to reduce ad blocking on them.</div>
-          </div>
-          
-          <div style="margin-top: 12px; padding: 12px; background: rgba(16,185,129,0.1); border-left: 3px solid #10b981; border-radius: 8px;">
-            <p style="color: #10b981; font-size: 13px; margin: 0;"><strong>Note:</strong> Ad blocker will only block popup ads on whitelisted sites. No CSS changes, no image blurring, no floating detection.</p>
-          </div>
-        </div>
       </div>
 
       <!-- Section: Ad Blocker -->

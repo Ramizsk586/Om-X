@@ -1,8 +1,8 @@
-const { app, BrowserWindow, BrowserView, ipcMain, Menu, screen, dialog, session, shell, webContents, crashReporter, protocol, nativeImage, nativeTheme } = require('electron');
+const { app, BrowserWindow, ipcMain, Menu, screen, dialog, session, shell, webContents, protocol, nativeImage, nativeTheme } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
-const { spawn, exec, execFile } = require('child_process');
+const { spawn, execFile } = require('child_process');
 const https = require('https');
 const net = require('net');
 const os = require('os');
@@ -11,8 +11,8 @@ const { pathToFileURL, fileURLToPath } = require('url');
 const dotenv = require('dotenv');
 const { applyMongoDnsOverrides } = require('../utils/mongoDns');
 
-function loadOmxEnvFiles() {
-  const candidates = [
+function getBundledOmxEnvCandidates() {
+  return [
     path.resolve(__dirname, '../../.env'),
     path.resolve(__dirname, '../../Om-chat/.env'),
     path.join(process.cwd(), '.env'),
@@ -22,6 +22,113 @@ function loadOmxEnvFiles() {
     process.resourcesPath ? path.join(process.resourcesPath, '.env') : '',
     process.resourcesPath ? path.join(process.resourcesPath, 'Om-chat', '.env') : ''
   ];
+}
+
+function getWritableOmxEnvPath() {
+  try {
+    return path.join(app.getPath('userData'), '.env');
+  } catch (_) {
+    return path.join(process.cwd(), '.omx-user.env');
+  }
+}
+
+function shouldUseWritableOmxEnvMirror() {
+  return Boolean(app?.isPackaged);
+}
+
+function ensureWritableOmxEnvMirror() {
+  if (!shouldUseWritableOmxEnvMirror()) return '';
+  const writablePath = path.resolve(getWritableOmxEnvPath());
+  try {
+    if (fs.existsSync(writablePath)) return writablePath;
+  } catch (_) {}
+
+  for (const candidate of getBundledOmxEnvCandidates()) {
+    const sourcePath = String(candidate || '').trim();
+    if (!sourcePath) continue;
+    try {
+      if (!fs.existsSync(sourcePath)) continue;
+      fs.mkdirSync(path.dirname(writablePath), { recursive: true });
+      fs.copyFileSync(sourcePath, writablePath);
+      return writablePath;
+    } catch (_) {}
+  }
+
+  return writablePath;
+}
+
+function getOmxEnvCandidates() {
+  const bundled = getBundledOmxEnvCandidates();
+  const writable = ensureWritableOmxEnvMirror();
+  return writable ? [writable, ...bundled] : bundled;
+}
+
+function resolvePrimaryOmxEnvPath() {
+  const writable = ensureWritableOmxEnvMirror();
+  if (writable) return path.resolve(writable);
+  const candidates = getOmxEnvCandidates();
+  for (const candidate of candidates) {
+    const target = String(candidate || '').trim();
+    if (!target) continue;
+    try {
+      if (fs.existsSync(target)) return path.resolve(target);
+    } catch (_) {}
+  }
+  return path.resolve(__dirname, '../../.env');
+}
+
+let primaryOmxEnvPath = resolvePrimaryOmxEnvPath();
+let primaryOmxEnvKeys = new Set();
+const REQUIRED_ENV_TEMPLATE_KEYS = Object.freeze(['SESSION_SECRET', 'MONGODB_URI']);
+
+function parseEnvText(raw = '') {
+  try {
+    return dotenv.parse(String(raw || ''));
+  } catch (_) {
+    return {};
+  }
+}
+
+function validateImportedEnvContent(raw = '') {
+  const parsed = parseEnvText(raw);
+  const missingKeys = REQUIRED_ENV_TEMPLATE_KEYS.filter((key) => !String(parsed[key] || '').trim());
+  if (!missingKeys.length) {
+    return { valid: true, parsed, missingKeys: [] };
+  }
+  return {
+    valid: false,
+    parsed,
+    missingKeys,
+    error: `Missing required env values: ${missingKeys.join(', ')}`
+  };
+}
+
+function reloadPrimaryOmxEnvFile() {
+  const target = resolvePrimaryOmxEnvPath();
+  primaryOmxEnvPath = target;
+  let parsed = {};
+  try {
+    const raw = fs.existsSync(target) ? fs.readFileSync(target, 'utf8') : '';
+    parsed = parseEnvText(raw);
+  } catch (_) {
+    parsed = {};
+  }
+
+  if (primaryOmxEnvKeys.size) {
+    for (const key of primaryOmxEnvKeys) {
+      delete process.env[key];
+    }
+  }
+
+  primaryOmxEnvKeys = new Set(Object.keys(parsed));
+  for (const [key, value] of Object.entries(parsed)) {
+    process.env[key] = value;
+  }
+  return { path: target, keys: [...primaryOmxEnvKeys] };
+}
+
+function loadOmxEnvFiles() {
+  const candidates = getOmxEnvCandidates();
 
   const seen = new Set();
   for (const candidate of candidates) {
@@ -33,6 +140,31 @@ function loadOmxEnvFiles() {
 }
 
 loadOmxEnvFiles();
+reloadPrimaryOmxEnvFile();
+
+function loadSessionGuardMasterKey() {
+  try {
+    const keyPath = path.join(app.getPath('userData'), 'sessionguard.key');
+    fs.mkdirSync(path.dirname(keyPath), { recursive: true });
+    let secret = '';
+    if (fs.existsSync(keyPath)) {
+      secret = String(fs.readFileSync(keyPath, 'utf8') || '').trim();
+    }
+    if (!secret) {
+      secret = crypto.randomBytes(32).toString('hex');
+      fs.writeFileSync(keyPath, secret, { encoding: 'utf8', mode: 0o600 });
+    }
+    process.env.OMX_SESSIONGUARD_MASTER_KEY = secret;
+    return secret;
+  } catch (error) {
+    const fallback = crypto.randomBytes(32).toString('hex');
+    process.env.OMX_SESSIONGUARD_MASTER_KEY = fallback;
+    console.warn('[SessionGuard] Falling back to ephemeral master key:', error?.message || error);
+    return fallback;
+  }
+}
+
+loadSessionGuardMasterKey();
 
 function isAdultContentBlockEnabledFromEnv() {
   const raw = String(process.env.Adult_Content || process.env.ADULT_CONTENT || '').trim().toLowerCase();
@@ -186,8 +318,6 @@ function isTrustedRendererFileUrl(urlObj) {
   }
 }
 
-const BUILTIN_EXTENSION_POLICIES = Object.freeze({});
-
 function getIpcSenderUrl(event) {
   try {
     const frameUrl = event?.senderFrame?.url;
@@ -287,6 +417,7 @@ const PDF_VIEWER_REDIRECT_TTL_MS = 15000;
 const SERVER_STATUS_CACHE_TTL_MS = 1200;
 const GPU_INFO_CACHE_TTL_MS = 10000;
 const SAFE_DOWNLOAD_PROTOCOLS = new Set(['http:', 'https:']);
+const EXTENDED_DOWNLOAD_PROTOCOLS = new Set(['http:', 'https:', 'data:', 'blob:']);
 const BLOCKED_OPEN_PATH_EXTENSIONS = new Set([
     '.appx', '.apk', '.bat', '.cmd', '.com', '.cpl', '.dll', '.exe', '.hta',
     '.jar', '.js', '.jse', '.lnk', '.mjs', '.msi', '.msp', '.ps1', '.psm1',
@@ -560,6 +691,9 @@ const goApp = !isStandaloneLaunch ? require('../../game/electron/go electron/jav
 let llamaServerProcess = null;
 let llamaNgrokProcess = null;
 let llamaServerStartInProgress = false;
+let scraperOllamaServeProcess = null;
+let scraperOllamaServerStartInProgress = false;
+let scraperOllamaStartedByApp = false;
 let llamaMemoryGuardInterval = null;
 const LLAMA_GUARD_DEFAULTS = Object.freeze({
   enabled: true,
@@ -592,6 +726,9 @@ const OPEN_WEBUI_ENV_NAME = 'omx-open-webui';
 const OPEN_WEBUI_PYTHON_VERSION = '3.10';
 const OPEN_WEBUI_HOST = '127.0.0.1';
 const OPEN_WEBUI_PORT = 8081;
+const OPEN_WEBUI_START_TIMEOUT_MS = 3 * 60 * 1000;
+const OPEN_WEBUI_START_IDLE_GRACE_MS = 45 * 1000;
+const OPEN_WEBUI_START_MAX_TIMEOUT_MS = 10 * 60 * 1000;
 const serverLogs = {
   llama: [],
   lan: [],
@@ -685,6 +822,269 @@ function execFileAsync(command, args = [], options = {}) {
       });
     });
   });
+}
+
+function getScraperOllamaExecutableFromEnv() {
+  return String(
+    process.env.OMX_OLLAMA_EXECUTABLE
+    || process.env.SCRAPER_OLLAMA_EXECUTABLE
+    || process.env.OLLAMA_EXECUTABLE
+    || 'ollama'
+  ).trim();
+}
+
+function getScraperOllamaHostFromEnv() {
+  return String(
+    process.env.OMX_SCRAPER_OLLAMA_HOST
+    || process.env.SCRAPER_OLLAMA_HOST
+    || process.env.OLLAMA_HOST
+    || '127.0.0.1'
+  ).trim() || '127.0.0.1';
+}
+
+function getScraperOllamaPortFromEnv() {
+  const raw = Number(
+    process.env.OMX_SCRAPER_OLLAMA_PORT
+    || process.env.SCRAPER_OLLAMA_PORT
+    || process.env.OLLAMA_PORT
+    || 11434
+  );
+  return Number.isFinite(raw) && raw > 0 ? Math.round(raw) : 11434;
+}
+
+function getScraperOllamaModelFromEnv() {
+  return String(
+    process.env.OMX_SCRAPER_OLLAMA_MODEL
+    || process.env.SCRAPER_OLLAMA_MODEL
+    || process.env.OMX_SCRAPER_LLM_MODEL
+    || process.env.SCRAPER_LLM_MODEL
+    || process.env.OLLAMA_MODEL
+    || ''
+  ).trim();
+}
+
+function getScraperOllamaApiBaseUrl() {
+  return `http://${getScraperOllamaHostFromEnv()}:${getScraperOllamaPortFromEnv()}`;
+}
+
+async function isScraperOllamaReady() {
+  try {
+    const response = await fetch(`${getScraperOllamaApiBaseUrl()}/api/tags`, {
+      signal: AbortSignal.timeout(4000)
+    });
+    return response.ok;
+  } catch (_) {
+    return false;
+  }
+}
+
+async function verifyScraperOllamaModel(modelName) {
+  const normalized = String(modelName || '').trim();
+  if (!normalized) {
+    return { ok: false, error: 'SCRAPER_OLLAMA_MODEL is not set in .env.' };
+  }
+
+  try {
+    const response = await fetch(`${getScraperOllamaApiBaseUrl()}/api/tags`, {
+      signal: AbortSignal.timeout(8000)
+    });
+    if (!response.ok) {
+      const detail = await response.text().catch(() => '');
+      return {
+        ok: false,
+        error: `Ollama model check failed: ${response.status}${detail ? ` ${detail}` : ''}`
+      };
+    }
+
+    const payload = await response.json().catch(() => ({}));
+    const models = Array.isArray(payload?.models) ? payload.models : [];
+    const wanted = normalized.toLowerCase();
+    const match = models.some((entry) => {
+      const name = String(entry?.name || '').trim().toLowerCase();
+      const model = String(entry?.model || '').trim().toLowerCase();
+      return name === wanted || model === wanted;
+    });
+
+    if (!match) {
+      return {
+        ok: false,
+        error: `Ollama model "${normalized}" is not installed. Run "ollama pull ${normalized}" first.`
+      };
+    }
+
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: error?.message || 'Failed to verify Ollama model.' };
+  }
+}
+
+async function ensureScraperOllamaServeRunning() {
+  const executable = getScraperOllamaExecutableFromEnv();
+  const host = getScraperOllamaHostFromEnv();
+  const port = getScraperOllamaPortFromEnv();
+  const model = getScraperOllamaModelFromEnv();
+
+  if (!model) {
+    return { success: false, error: 'SCRAPER_OLLAMA_MODEL is not configured in .env.' };
+  }
+
+  if (await isScraperOllamaReady()) {
+    const modelCheck = await verifyScraperOllamaModel(model);
+    if (!modelCheck.ok) return { success: false, error: modelCheck.error };
+    scraperOllamaStartedByApp = false;
+    return {
+      success: true,
+      alreadyRunning: true,
+      startedByApp: false,
+      executable,
+      host,
+      port,
+      model,
+      baseUrl: getScraperOllamaApiBaseUrl()
+    };
+  }
+
+  if (isServerProcessActive(scraperOllamaServeProcess)) {
+    const modelCheck = await verifyScraperOllamaModel(model);
+    if (!modelCheck.ok) return { success: false, error: modelCheck.error };
+    return {
+      success: true,
+      alreadyRunning: true,
+      startedByApp: scraperOllamaStartedByApp,
+      executable,
+      host,
+      port,
+      model,
+      baseUrl: getScraperOllamaApiBaseUrl()
+    };
+  }
+
+  if (scraperOllamaServerStartInProgress) {
+    return { success: false, error: 'Scraper Ollama server is already starting.' };
+  }
+
+  scraperOllamaServerStartInProgress = true;
+  try {
+    scraperOllamaServeProcess = spawn(executable, ['serve'], {
+      windowsHide: true,
+      stdio: 'ignore',
+      env: {
+        ...process.env,
+        OLLAMA_HOST: `${host}:${port}`
+      }
+    });
+
+    const spawnedProcess = scraperOllamaServeProcess;
+    scraperOllamaStartedByApp = true;
+
+    const startupState = await Promise.race([
+      new Promise((resolve) => {
+        spawnedProcess.once('error', (error) => {
+          resolve({ ok: false, error: error?.message || 'Failed to launch Ollama.' });
+        });
+        spawnedProcess.once('exit', (code, signal) => {
+          resolve({ ok: false, error: `Ollama exited early (code: ${code ?? 'null'}, signal: ${signal ?? 'none'}).` });
+        });
+      }),
+      wait(1200).then(() => ({ ok: isServerProcessActive(spawnedProcess) }))
+    ]);
+
+    if (!startupState?.ok) {
+      scraperOllamaServeProcess = null;
+      scraperOllamaStartedByApp = false;
+      return { success: false, error: startupState?.error || 'Ollama failed to stay running.' };
+    }
+
+    const ready = await waitForServerReady({
+      host,
+      port,
+      proc: spawnedProcess,
+      timeoutMs: 30000
+    });
+
+    if (!ready) {
+      await terminateManagedChildProcess(spawnedProcess);
+      if (scraperOllamaServeProcess === spawnedProcess) {
+        scraperOllamaServeProcess = null;
+      }
+      scraperOllamaStartedByApp = false;
+      return { success: false, error: `Ollama did not open http://${host}:${port} within 30 seconds.` };
+    }
+
+    spawnedProcess.once('exit', () => {
+      if (scraperOllamaServeProcess === spawnedProcess) {
+        scraperOllamaServeProcess = null;
+      }
+      scraperOllamaStartedByApp = false;
+    });
+
+    const modelCheck = await verifyScraperOllamaModel(model);
+    if (!modelCheck.ok) {
+      await terminateManagedChildProcess(spawnedProcess);
+      if (scraperOllamaServeProcess === spawnedProcess) {
+        scraperOllamaServeProcess = null;
+      }
+      scraperOllamaStartedByApp = false;
+      return { success: false, error: modelCheck.error };
+    }
+
+    return {
+      success: true,
+      startedByApp: true,
+      executable,
+      host,
+      port,
+      model,
+      baseUrl: getScraperOllamaApiBaseUrl()
+    };
+  } catch (error) {
+    scraperOllamaServeProcess = null;
+    scraperOllamaStartedByApp = false;
+    return { success: false, error: error?.message || 'Failed to start Ollama.' };
+  } finally {
+    scraperOllamaServerStartInProgress = false;
+  }
+}
+
+async function callScraperOllamaGenerate({ prompt, systemInstruction = '', temperature, maxTokens }) {
+  const startup = await ensureScraperOllamaServeRunning();
+  if (!startup?.success) {
+    throw new Error(startup?.error || 'Ollama is unavailable.');
+  }
+
+  const response = await fetch(`${startup.baseUrl}/api/generate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: startup.model,
+      prompt: String(prompt || ''),
+      system: String(systemInstruction || ''),
+      stream: false,
+      options: {
+        temperature: Number.isFinite(Number(temperature)) ? Number(temperature) : 0.3,
+        num_predict: Number.isFinite(Number(maxTokens)) ? Math.max(96, Math.min(4096, Math.round(Number(maxTokens)))) : 700
+      }
+    }),
+    signal: AbortSignal.timeout(120000)
+  });
+
+  if (!response.ok) {
+    const detail = await response.text().catch(() => '');
+    throw new Error(`Ollama generate failed: ${response.status}${detail ? ` ${detail}` : ''}`);
+  }
+
+  const payload = await response.json().catch(() => ({}));
+  const text = String(payload?.response || '').trim();
+  if (!text) {
+    throw new Error('Ollama returned an empty response.');
+  }
+
+  return {
+    text,
+    provider: 'ollama',
+    model: startup.model,
+    baseUrl: startup.baseUrl
+  };
 }
 
 function getOpenWebUiLocalUrl() {
@@ -790,6 +1190,24 @@ function resolveFfmpegExecutable() {
   return '';
 }
 
+function resolveHuggingFaceToken() {
+  const candidates = [
+    process.env.OMX_HF_TOKEN,
+    process.env.HF_TOKEN,
+    process.env.HUGGINGFACEHUB_API_TOKEN,
+    process.env.HUGGINGFACE_HUB_TOKEN,
+    process.env.HUGGING_FACE_HUB_TOKEN,
+    process.env.HUGGINGFACE_TOKEN
+  ];
+
+  for (const candidate of candidates) {
+    const token = String(candidate || '').trim();
+    if (token) return token;
+  }
+
+  return '';
+}
+
 function buildOpenWebUiChildEnv(localUrl) {
   const ffmpegPath = resolveFfmpegExecutable();
   const ffmpegDir = ffmpegPath ? path.dirname(ffmpegPath) : '';
@@ -799,6 +1217,7 @@ function buildOpenWebUiChildEnv(localUrl) {
   const cmdExePath = path.join(system32Dir, 'cmd.exe');
   const powerShellExePath = path.join(powerShellDir, 'powershell.exe');
   const secretKey = getOrCreateOpenWebUiSecretKey();
+  const hfToken = resolveHuggingFaceToken();
   const childEnv = {
     ...process.env,
     PYTHONIOENCODING: 'utf-8',
@@ -819,6 +1238,17 @@ function buildOpenWebUiChildEnv(localUrl) {
     childEnv.POWERSHELL_EXE = powerShellExePath;
   }
 
+  if (!String(childEnv.HF_HUB_DISABLE_SYMLINKS_WARNING || '').trim()) {
+    childEnv.HF_HUB_DISABLE_SYMLINKS_WARNING = '1';
+  }
+
+  if (hfToken) {
+    childEnv.HF_TOKEN = hfToken;
+    childEnv.HUGGINGFACEHUB_API_TOKEN = hfToken;
+    childEnv.HUGGINGFACE_HUB_TOKEN = hfToken;
+    childEnv.HUGGING_FACE_HUB_TOKEN = hfToken;
+  }
+
   if (ffmpegPath) {
     childEnv.FFMPEG_BINARY = ffmpegPath;
     childEnv.FFMPEG_PATH = ffmpegPath;
@@ -832,7 +1262,7 @@ function buildOpenWebUiChildEnv(localUrl) {
     ].filter(Boolean).join(',');
   }
 
-  return { childEnv, ffmpegPath };
+  return { childEnv, ffmpegPath, hfTokenConfigured: Boolean(hfToken) };
 }
 
 function unwrapWrappedQuotes(value = '') {
@@ -849,13 +1279,64 @@ function unwrapWrappedQuotes(value = '') {
 async function terminateManagedChildProcess(child) {
   if (!child) return;
   const pid = Number(child.pid);
-  if (process.platform === 'win32' && Number.isInteger(pid) && pid > 0) {
-    await execFileAsync('taskkill', ['/pid', String(pid), '/T', '/F'], { timeout: 15000 });
+  const hasExitListener = typeof child.once === 'function';
+  const isPidAlive = () => {
+    if (!Number.isInteger(pid) || pid <= 0) return false;
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  };
+  const alive = () => isServerProcessActive(child) || isPidAlive();
+  const waitForExit = (timeoutMs = 4000) => new Promise((resolve) => {
+    if (!alive()) {
+      resolve(true);
+      return;
+    }
+
+    let settled = false;
+    let pollTimer = null;
+    let timeoutTimer = null;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      if (pollTimer) clearInterval(pollTimer);
+      if (timeoutTimer) clearTimeout(timeoutTimer);
+      resolve(value);
+    };
+
+    if (hasExitListener) {
+      child.once('exit', () => finish(true));
+    } else {
+      pollTimer = setInterval(() => {
+        if (!alive()) finish(true);
+      }, 200);
+    }
+
+    timeoutTimer = setTimeout(() => finish(!alive()), timeoutMs);
+  });
+
+  if (process.platform === 'win32') {
+    if (Number.isInteger(pid) && pid > 0) {
+      await execFileAsync('taskkill', ['/pid', String(pid), '/T', '/F'], { timeout: 15000 });
+    } else {
+      try { child.kill(); } catch (_) {}
+    }
     return;
   }
-  try {
-    child.kill();
-  } catch (_) {}
+
+  if (!alive()) return;
+
+  try { process.kill(pid, 'SIGTERM'); } catch (_) {}
+
+  const exitedCleanly = await waitForExit(4000);
+  if (exitedCleanly || !alive()) return;
+
+  console.warn(`[ProcessKill] PID ${pid} did not exit after SIGTERM; sending SIGKILL`);
+  try { process.kill(pid, 'SIGKILL'); } catch (_) {}
+  await waitForExit(2000);
 }
 
 async function terminateProcessListeningOnPort(port) {
@@ -865,49 +1346,118 @@ async function terminateProcessListeningOnPort(port) {
   if (process.platform === 'win32') {
     const script = [
       `$port = ${normalizedPort}`,
-      "$connections = Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue",
-      "if (-not $connections) { exit 0 }",
-      "$pids = $connections | Select-Object -ExpandProperty OwningProcess -Unique",
-      "foreach ($pid in $pids) {",
-      "  if ($pid -and $pid -ne $PID) {",
-      "    try { Stop-Process -Id $pid -Force -ErrorAction Stop } catch {}",
-      "  }",
-      "}"
+      '$conns = Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue',
+      'if (-not $conns) { exit 0 }',
+      '$pids = $conns | Select-Object -ExpandProperty OwningProcess -Unique',
+      'foreach ($p in $pids) {',
+      '  if ($p -and $p -ne $PID) {',
+      '    try { Stop-Process -Id $p -Force -ErrorAction Stop } catch {}',
+      '  }',
+      '}',
+      'exit 0'
     ].join('; ');
     const result = await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script], { timeout: 15000 });
     return result.ok;
   }
 
-  return false;
+  if (process.platform === 'darwin') {
+    const lsof = await execFileAsync('lsof', ['-ti', `tcp:${normalizedPort}`, '-sTCP:LISTEN'], { timeout: 15000 });
+    if (!lsof.ok || !lsof.stdout.trim()) return false;
+
+    const victims = lsof.stdout
+      .split(/\s+/)
+      .map(Number)
+      .filter((victimPid) => Number.isInteger(victimPid) && victimPid > 0 && victimPid !== process.pid);
+
+    for (const victimPid of victims) {
+      try { process.kill(victimPid, 'SIGTERM'); } catch (_) {}
+      await new Promise((resolve) => setTimeout(resolve, 800));
+      try { process.kill(victimPid, 'SIGKILL'); } catch (_) {}
+    }
+
+    return victims.length > 0;
+  }
+
+  const ss = await execFileAsync('ss', ['-tlnpH', `sport = :${normalizedPort}`], { timeout: 15000 });
+  let pids = [];
+
+  if (ss.ok && ss.stdout.trim()) {
+    const pidMatches = ss.stdout.matchAll(/pid=(\d+)/g);
+    for (const match of pidMatches) {
+      const victimPid = Number(match[1]);
+      if (Number.isInteger(victimPid) && victimPid > 0 && victimPid !== process.pid) {
+        pids.push(victimPid);
+      }
+    }
+  }
+
+  if (pids.length === 0) {
+    const lsof = await execFileAsync('lsof', ['-ti', `tcp:${normalizedPort}`, '-sTCP:LISTEN'], { timeout: 15000 });
+    if (lsof.ok && lsof.stdout.trim()) {
+      pids = lsof.stdout
+        .split(/\s+/)
+        .map(Number)
+        .filter((victimPid) => Number.isInteger(victimPid) && victimPid > 0 && victimPid !== process.pid);
+    }
+  }
+
+  for (const victimPid of pids) {
+    try { process.kill(victimPid, 'SIGTERM'); } catch (_) {}
+    await new Promise((resolve) => setTimeout(resolve, 800));
+    try { process.kill(victimPid, 'SIGKILL'); } catch (_) {}
+  }
+
+  return pids.length > 0;
 }
 
 async function terminateOpenWebUiProcesses() {
-  if (process.platform !== 'win32') return false;
+  if (process.platform === 'win32') {
+    const script = [
+      "$patterns = @(",
+      `  '${OPEN_WEBUI_ENV_NAME}'.ToLowerInvariant(),`,
+      "  'open-webui serve',",
+      "  'open_webui'",
+      ")",
+      "$self = $PID",
+      "$procs = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {",
+      "  $cmd = [string]($_.CommandLine)",
+      "  if ([string]::IsNullOrWhiteSpace($cmd)) { return $false }",
+      "  $lower = $cmd.ToLowerInvariant()",
+      "  return ($patterns | Where-Object { $lower.Contains($_) }).Count -gt 0",
+      "}",
+      "foreach ($proc in $procs) {",
+      "  $pid = [int]$proc.ProcessId",
+      "  if ($pid -and $pid -ne $self) {",
+      "    try { Stop-Process -Id $pid -Force -ErrorAction Stop } catch {}",
+      "  }",
+      "}",
+      "exit 0"
+    ].join('; ');
 
-  const script = [
-    "$patterns = @(",
-    `  '${OPEN_WEBUI_ENV_NAME}'.ToLowerInvariant(),`,
-    "  'open-webui serve',",
-    "  'open_webui'",
-    ")",
-    "$self = $PID",
-    "$procs = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {",
-    "  $cmd = [string]($_.CommandLine)",
-    "  if ([string]::IsNullOrWhiteSpace($cmd)) { return $false }",
-    "  $lower = $cmd.ToLowerInvariant()",
-    "  return ($patterns | Where-Object { $lower.Contains($_) }).Count -gt 0",
-    "}",
-    "foreach ($proc in $procs) {",
-    "  $pid = [int]$proc.ProcessId",
-    "  if ($pid -and $pid -ne $self) {",
-    "    try { Stop-Process -Id $pid -Force -ErrorAction Stop } catch {}",
-    "  }",
-    "}",
-    "exit 0"
-  ].join('; ');
+    const result = await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script], { timeout: 15000 });
+    return result.ok;
+  }
 
-  const result = await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script], { timeout: 15000 });
-  return result.ok;
+  const patterns = [
+    OPEN_WEBUI_ENV_NAME,
+    'open-webui serve',
+    'open_webui'
+  ];
+
+  let anyKilled = false;
+  for (const pattern of patterns) {
+    const termResult = await execFileAsync('pkill', ['-TERM', '-f', pattern], { timeout: 15000 });
+    if (termResult.ok) anyKilled = true;
+  }
+
+  if (anyKilled) {
+    await new Promise((resolve) => setTimeout(resolve, 4000));
+    for (const pattern of patterns) {
+      await execFileAsync('pkill', ['-KILL', '-f', pattern], { timeout: 15000 });
+    }
+  }
+
+  return anyKilled;
 }
 
 async function resolveCondaExecutable() {
@@ -1048,33 +1598,36 @@ async function getOpenWebUiSetupState() {
 
 async function stopOpenWebUiInternal() {
   const hadManagedProcess = isServerProcessActive(openWebUiProcess);
-  if (!hadManagedProcess) {
-    openWebUiProcess = null;
-    openWebUiStartInProgress = false;
-    serverStarts.openwebui = null;
-    serverConfigs.openwebui = null;
-    if (await checkTcpPort(OPEN_WEBUI_HOST, OPEN_WEBUI_PORT)) {
-      await terminateProcessListeningOnPort(OPEN_WEBUI_PORT);
-    }
-    await terminateOpenWebUiProcesses();
-    return;
-  }
   const child = openWebUiProcess;
   openWebUiProcess = null;
   openWebUiStartInProgress = false;
   openWebUiManualStop = true;
   serverStarts.openwebui = null;
   serverConfigs.openwebui = null;
-  await terminateManagedChildProcess(child);
-  if (await checkTcpPort(OPEN_WEBUI_HOST, OPEN_WEBUI_PORT)) {
-    await terminateProcessListeningOnPort(OPEN_WEBUI_PORT);
+
+  const tasks = [];
+
+  if (hadManagedProcess && child) {
+    tasks.push(terminateManagedChildProcess(child));
   }
-  await terminateOpenWebUiProcesses();
+
+  tasks.push(
+    checkTcpPort(OPEN_WEBUI_HOST, OPEN_WEBUI_PORT).then((inUse) =>
+      inUse ? terminateProcessListeningOnPort(OPEN_WEBUI_PORT) : Promise.resolve(false)
+    )
+  );
+
+  tasks.push(terminateOpenWebUiProcesses());
+
+  await Promise.race([
+    Promise.allSettled(tasks),
+    new Promise((resolve) => setTimeout(resolve, 7000))
+  ]);
 }
 
 function pushServerLog(name, type, data) {
   if (!serverLogs[name]) return;
-  const lines = String(data || '').split(/\r?\n/).filter(Boolean);
+  const lines = String(data || '').split(/\r?\n|\r/).filter(Boolean);
   if (lines.length === 0) return;
   const now = Date.now();
   lines.forEach((line) => {
@@ -1896,7 +2449,7 @@ async function stopMcpBackground() {
         process.kill(pid, 'SIGTERM');
       } catch (_) {
         if (process.platform === 'win32') {
-          try { exec(`taskkill /pid ${pid} /T /F`); } catch (_) {}
+          await execFileAsync('taskkill', ['/pid', String(pid), '/T', '/F'], { timeout: 15000 });
         }
       }
     }
@@ -2759,14 +3312,32 @@ function checkTcpPort(host, port, timeoutMs = 800) {
   });
 }
 
-async function waitForServerReady({ host, port, proc, timeoutMs = 10000 }) {
+async function waitForServerReady({
+  host,
+  port,
+  proc,
+  timeoutMs = 10000,
+  getLastActivityTime = null,
+  idleGraceMs = 0,
+  maxTimeoutMs = timeoutMs
+}) {
   const startedAt = Date.now();
-  while ((Date.now() - startedAt) < timeoutMs) {
+  while (true) {
     if (!isServerProcessActive(proc)) return false;
     if (await checkTcpPort(host, port)) return true;
+    const now = Date.now();
+    if ((now - startedAt) >= maxTimeoutMs) return false;
+    if ((now - startedAt) >= timeoutMs) {
+      const lastActivityTime = typeof getLastActivityTime === 'function'
+        ? Number(getLastActivityTime())
+        : Number.NaN;
+      const idleForMs = Number.isFinite(lastActivityTime)
+        ? (now - lastActivityTime)
+        : Number.POSITIVE_INFINITY;
+      if (!idleGraceMs || idleForMs >= idleGraceMs) return false;
+    }
     await wait(200);
   }
-  return false;
 }
 
 function clearLlamaMemoryGuard() {
@@ -2781,7 +3352,7 @@ function clearLlamaMemoryGuard() {
   invalidateServerStatusCache('llama');
 }
 
-function forceStopLlamaServer(reason = 'Llama server stopped.') {
+async function forceStopLlamaServer(reason = 'Llama server stopped.') {
   if (!isServerProcessActive(llamaServerProcess)) return;
   pushServerLog('llama', 'error', reason);
   mainWindow?.webContents?.send('llama-server-output', { type: 'error', data: `${reason}\n` });
@@ -2790,15 +3361,8 @@ function forceStopLlamaServer(reason = 'Llama server stopped.') {
   llamaMemoryGuardState.lastTriggeredAt = Date.now();
   invalidateServerStatusCache('llama');
   clearLlamaMemoryGuard();
-  try {
-    llamaServerProcess.kill();
-  } catch (e) {
-    try {
-      if (llamaServerProcess.pid && process.platform === 'win32') {
-        exec(`taskkill /pid ${llamaServerProcess.pid} /T /F`);
-      }
-    } catch (_) {}
-  }
+  const proc = llamaServerProcess;
+  await terminateManagedChildProcess(proc);
 }
 
 function clampNumber(value, fallback, min, max) {
@@ -2918,62 +3482,67 @@ async function shutdownManagedServers() {
   if (hasCompletedServerShutdown) return;
   if (isServerShutdownInProgress) return;
   isServerShutdownInProgress = true;
+  const masterDeadline = new Promise((resolve) => setTimeout(resolve, 12000));
 
   try {
+    const shutdownTasks = [];
+
     if (isServerProcessActive(llamaServerProcess)) {
       pushServerLog('llama', 'info', 'Om-X is closing. Stopping llama server.');
       clearLlamaMemoryGuard();
-      try {
-        llamaServerProcess.kill();
-      } catch (_) {
-        try {
-          if (llamaServerProcess?.pid && process.platform === 'win32') {
-            exec(`taskkill /pid ${llamaServerProcess.pid} /T /F`);
-          }
-        } catch (_) {}
-      }
+      const llamaChild = llamaServerProcess;
+      llamaServerProcess = null;
       serverStarts.llama = null;
       serverConfigs.llama = null;
+      shutdownTasks.push(
+        terminateManagedChildProcess(llamaChild)
+          .catch((e) => console.warn('[Shutdown] Llama kill error:', e?.message))
+          .then(() => stopLlamaNgrokTunnelInternal().catch(() => {}))
+      );
+    } else {
+      shutdownTasks.push(stopLlamaNgrokTunnelInternal().catch(() => {}));
     }
-    await stopLlamaNgrokTunnelInternal().catch(() => {});
 
     if (mcpServerProcess && mcpServerProcess.killed !== true) {
       const alwaysOnMcp = Boolean(cachedSettings?.mcp?.alwaysOn);
       if (alwaysOnMcp) {
         pushServerLog('mcp', 'info', 'Om-X is closing. Always On enabled - keeping MCP server running in background.');
         const currentMcpConfig = serverConfigs.mcp || {};
-        try {
-          const moduleRef = await loadMcpModule();
-          await moduleRef.stopServer();
-        } catch (_) {}
-        try { mcpServerProcess.kill(); } catch (_) {}
-        mcpServerProcess = null;
-        serverStarts.mcp = null;
-        serverConfigs.mcp = {
-          host: String(currentMcpConfig.host || '127.0.0.1').trim() || '127.0.0.1',
-          port: Number(currentMcpConfig.port || 3000) || 3000,
-          enabledTools: (currentMcpConfig.enabledTools && typeof currentMcpConfig.enabledTools === 'object') ? currentMcpConfig.enabledTools : {},
-          llm: (currentMcpConfig.llm && typeof currentMcpConfig.llm === 'object') ? currentMcpConfig.llm : {}
-        };
-        const bgResult = await startMcpBackground(serverConfigs.mcp);
-        if (bgResult?.success) {
-          pushServerLog('mcp', 'success', `MCP background server running at http://${serverConfigs.mcp.host}:${serverConfigs.mcp.port}/mcp`);
-        } else {
-          pushServerLog('mcp', 'error', bgResult?.error || 'Failed to keep MCP running in background.');
-          serverConfigs.mcp = null;
-        }
+        shutdownTasks.push((async () => {
+          try {
+            const moduleRef = await loadMcpModule();
+            await moduleRef.stopServer();
+          } catch (_) {}
+          try { mcpServerProcess.kill(); } catch (_) {}
+          mcpServerProcess = null;
+          serverStarts.mcp = null;
+          serverConfigs.mcp = {
+            host: String(currentMcpConfig.host || '127.0.0.1').trim() || '127.0.0.1',
+            port: Number(currentMcpConfig.port || 3000) || 3000,
+            enabledTools: (currentMcpConfig.enabledTools && typeof currentMcpConfig.enabledTools === 'object') ? currentMcpConfig.enabledTools : {},
+            llm: (currentMcpConfig.llm && typeof currentMcpConfig.llm === 'object') ? currentMcpConfig.llm : {}
+          };
+          const bgResult = await startMcpBackground(serverConfigs.mcp);
+          if (bgResult?.success) {
+            pushServerLog('mcp', 'success', `MCP background server running at http://${serverConfigs.mcp.host}:${serverConfigs.mcp.port}/mcp`);
+          } else {
+            pushServerLog('mcp', 'error', bgResult?.error || 'Failed to keep MCP running in background.');
+            serverConfigs.mcp = null;
+          }
+        })().catch((e) => console.warn('[Shutdown] MCP handoff error:', e?.message)));
       } else {
         pushServerLog('mcp', 'info', 'Om-X is closing. Stopping MCP server.');
-        try {
-          const moduleRef = await loadMcpModule();
-          await moduleRef.stopServer();
-        } catch (_) {}
-        try {
-          mcpServerProcess.kill();
-        } catch (_) {}
-        mcpServerProcess = null;
-        serverStarts.mcp = null;
-        serverConfigs.mcp = null;
+        shutdownTasks.push((async () => {
+          try {
+            const moduleRef = await loadMcpModule();
+            await moduleRef.stopServer();
+          } catch (_) {}
+          const mcpChild = mcpServerProcess;
+          mcpServerProcess = null;
+          serverStarts.mcp = null;
+          serverConfigs.mcp = null;
+          await terminateManagedChildProcess(mcpChild).catch(() => {});
+        })().catch((e) => console.warn('[Shutdown] MCP stop error:', e?.message)));
       }
     }
 
@@ -3035,8 +3604,16 @@ async function shutdownManagedServers() {
 
     if (isServerProcessActive(openWebUiProcess) || await checkTcpPort(OPEN_WEBUI_HOST, OPEN_WEBUI_PORT)) {
       pushServerLog('openwebui', 'info', 'Om-X is closing. Stopping Open WebUI.');
-      await stopOpenWebUiInternal();
+      shutdownTasks.push(
+        stopOpenWebUiInternal()
+          .catch((e) => console.warn('[Shutdown] OpenWebUI kill error:', e?.message))
+      );
     }
+
+    await Promise.race([
+      Promise.allSettled(shutdownTasks),
+      masterDeadline
+    ]);
   } finally {
     hasCompletedServerShutdown = true;
     isServerShutdownInProgress = false;
@@ -3194,7 +3771,6 @@ function getFilePathFromArgs(args) {
 if (!isStandaloneLikeLaunch) {
     const gotTheLock = app.requestSingleInstanceLock();
     if (!gotTheLock) { 
-        console.log('[Om-X] Another instance is already running. Quitting...');
         app.quit(); 
         process.exit(0); 
     } else {
@@ -3281,13 +3857,6 @@ if (process.platform === 'win32') {
   app.setAppUserModelId('com.omx.browser');
 }
 
-const APP_ICON_PATH = path.resolve(__dirname, '../../assets/icons/app.png');
-const APP_ICO_PATH = path.resolve(__dirname, '../../assets/icons/app.ico');
-const HAS_ICON = fs.existsSync(APP_ICON_PATH) || fs.existsSync(APP_ICO_PATH);
-const DISPLAY_ICON = process.platform === 'win32'
-  ? (fs.existsSync(APP_ICO_PATH) ? APP_ICO_PATH : APP_ICON_PATH)
-  : (fs.existsSync(APP_ICON_PATH) ? APP_ICON_PATH : APP_ICO_PATH);
-const SHORTCUT_ICON = fs.existsSync(APP_ICO_PATH) ? APP_ICO_PATH : (fs.existsSync(APP_ICON_PATH) ? APP_ICON_PATH : undefined);
 const ICONS_DIR = path.resolve(__dirname, '../../assets/icons');
 
 function resolveWindowIcon(...baseNames) {
@@ -3301,23 +3870,20 @@ function resolveWindowIcon(...baseNames) {
     const icnsPath = path.join(ICONS_DIR, `${normalized}.icns`);
     if (fs.existsSync(icnsPath)) return icnsPath;
   }
-  return HAS_ICON ? DISPLAY_ICON : undefined;
+  return undefined;
 }
 
 const WINDOW_ICON = resolveWindowIcon('app');
-
-const MINECRAFT_WINDOW_ICON = (() => {
-  const minecraftIconPath = ['ico', 'png', 'icns']
-    .map((ext) => path.join(ICONS_DIR, `minecraft.${ext}`))
-    .find((p) => fs.existsSync(p));
-  if (minecraftIconPath) return minecraftIconPath;
+const WINDOW_ICON_IMAGE = (() => {
+  if (!WINDOW_ICON) return null;
   try {
-    const dataUrl = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='4' fill='%235d8c38'/%3E%3Cpath d='M4 4h16v16H4V4zm2 2v12h12V6H6zm2 2h4v4H8V8zm6 0h2v2h-2V8zm0 4h2v2h-2v-2zM8 14h4v2H8v-2z' fill='%23f7faf7'/%3E%3C/svg%3E";
-    const icon = nativeImage.createFromDataURL(dataUrl);
-    if (icon && !icon.isEmpty()) return icon;
-  } catch (_) {}
-  return HAS_ICON ? DISPLAY_ICON : undefined;
+    const icon = nativeImage.createFromPath(WINDOW_ICON);
+    return icon && !icon.isEmpty() ? icon : null;
+  } catch (_) {
+    return null;
+  }
 })();
+const BROWSER_WINDOW_ICON = WINDOW_ICON_IMAGE || WINDOW_ICON;
 let pendingAppLaunch = null;
 
 function parseLaunchArgs(args) {
@@ -3371,10 +3937,9 @@ function createDesktopShortcut(appId) {
     const shortcutPath = path.join(app.getPath('desktop'), `${name}.lnk`);
     const target = process.execPath;
     const args = `--omx-app=${appId}`;
-    const icon = SHORTCUT_ICON;
     const description = `Launch ${name} in Om-X`;
     const options = { target, args, description };
-    if (icon) options.icon = icon;
+    if (WINDOW_ICON) options.icon = WINDOW_ICON;
     if (typeof app.getAppUserModelId === 'function') {
         const id = app.getAppUserModelId();
         if (id) options.appUserModelId = id;
@@ -3410,12 +3975,7 @@ const DEFAULT_SETTINGS = {
     showLoadingAnimation: false
   },
   security: {
-    virusTotal: {
-      apiKey: '',
-      scanUrls: true,
-      scanExecutables: true,
-      blockOnSuspicious: true
-    },
+    virusTotal: {},
     popupBlocker: {
       enabled: true
     },
@@ -3425,7 +3985,6 @@ const DEFAULT_SETTINGS = {
       blockThirdPartyResponseCookies: true
     }
   },
-  blocklist: [],
   screenshot: {
     delaySeconds: 0
   },
@@ -3444,7 +4003,7 @@ const DEFAULT_SETTINGS = {
     model: 'gemini-3-flash-preview'
   },
   aiChat: {
-    duckAiHideSidebar: false
+    duckAiHideSidebar: true
   },
   youtubeAddon: {
     enabled: true,
@@ -3479,6 +4038,7 @@ const DEFAULT_SETTINGS = {
   mcp: {
     alwaysOn: false
   },
+  websiteUiPreferences: {},
   websitePermissions: {}
 };
 
@@ -3501,39 +4061,14 @@ function normalizeYouTubeAddonSettings(youtubeAddon = {}) {
   };
 }
 
-function normalizeBuiltInExtensionSettings(extensions = {}) {
-  const nextExtensions = { ...(extensions || {}) };
-  delete nextExtensions['shorts hide'];
-  const availableExtensions = new Set();
-  try {
-    const extensionsBaseDir = getExtensionsBaseDir();
-    if (extensionsBaseDir && fs.existsSync(extensionsBaseDir)) {
-      const entries = fs.readdirSync(extensionsBaseDir, { withFileTypes: true });
-      entries.forEach((entry) => {
-        if (entry.isDirectory()) availableExtensions.add(entry.name);
-      });
-    }
-  } catch (_) {}
-
-  return Object.fromEntries(
-    Object.entries({
-      ...DEFAULT_SETTINGS.extensions,
-      ...nextExtensions
-    }).filter(([name]) => availableExtensions.has(name))
-  );
-}
-
-function normalizeBlocklistEntries(entries = []) {
-  if (!Array.isArray(entries)) return [];
-
-  const normalized = entries
-    .map((entry) => String(entry || '').trim().toLowerCase())
-    .map((entry) => entry.replace(/^https?:\/\//, ''))
-    .map((entry) => entry.replace(/^www\./, ''))
-    .map((entry) => entry.replace(/\/.*$/, ''))
-    .filter(Boolean);
-
-  return Array.from(new Set(normalized));
+function normalizeAiChatSettings(aiChat = {}) {
+  const nextAiChat = aiChat && typeof aiChat === 'object' ? aiChat : {};
+  return {
+    ...DEFAULT_SETTINGS.aiChat,
+    ...nextAiChat,
+    // Duck AI cleanup is now always-on and not user-toggleable.
+    duckAiHideSidebar: true
+  };
 }
 
 function normalizeSearchEngineName(value, fallback = '') {
@@ -3681,6 +4216,21 @@ function normalizeWebsitePermissions(value = {}) {
       const safeDecision = decision === 'allow' ? 'allow' : (decision === 'deny' ? 'deny' : '');
       if (!safePermission || !safeDecision) continue;
       next[safePermission] = safeDecision;
+    }
+    if (Object.keys(next).length) normalized[safeOrigin] = next;
+  }
+  return normalized;
+}
+
+function normalizeWebsiteUiPreferences(value = {}) {
+  const source = value && typeof value === 'object' ? value : {};
+  const normalized = {};
+  for (const [origin, preferences] of Object.entries(source)) {
+    const safeOrigin = getSiteOriginFromUrl(origin);
+    if (!safeOrigin || !preferences || typeof preferences !== 'object') continue;
+    const next = {};
+    if (preferences.hideWindowControls === true) {
+      next.hideWindowControls = true;
     }
     if (Object.keys(next).length) normalized[safeOrigin] = next;
   }
@@ -4115,8 +4665,7 @@ async function saveSettings(nextSettings = cachedSettings) {
       virusTotal: normalizeVirusTotalSettings(nextSettings?.security?.virusTotal)
     },
     aiChat: {
-      ...DEFAULT_SETTINGS.aiChat,
-      ...(nextSettings?.aiChat || {})
+      ...normalizeAiChatSettings(nextSettings?.aiChat)
     },
     youtubeAddon: normalizeYouTubeAddonSettings(nextSettings?.youtubeAddon),
     shortcuts: {
@@ -4124,10 +4673,8 @@ async function saveSettings(nextSettings = cachedSettings) {
       ...(nextSettings?.shortcuts || {})
     },
     llm: normalizeSharedLlmSettings(nextSettings?.llm),
-    extensions: normalizeBuiltInExtensionSettings(nextSettings?.extensions),
     searchEngines: normalizedSearchEngines,
     defaultSearchEngineId: normalizeDefaultSearchEngineId(nextSettings?.defaultSearchEngineId, normalizedSearchEngines),
-    blocklist: normalizeBlocklistEntries(nextSettings?.blocklist),
     omchat: {
       ...DEFAULT_SETTINGS.omchat,
       ...(nextSettings?.omchat || {})
@@ -4136,6 +4683,7 @@ async function saveSettings(nextSettings = cachedSettings) {
       ...DEFAULT_SETTINGS.mcp,
       ...(nextSettings?.mcp || {})
     },
+    websiteUiPreferences: normalizeWebsiteUiPreferences(nextSettings?.websiteUiPreferences),
     websitePermissions: normalizeWebsitePermissions(nextSettings?.websitePermissions)
   });
   normalizedSettings.aiConfig = normalizePersistedAiConfig(normalizedSettings.aiConfig);
@@ -4155,6 +4703,24 @@ const downloadsStore = createCachedJsonListStore(downloadsPath, 100);
 const getStoredHistory = () => historyStore.get();
 const getStoredBookmarks = () => bookmarksStore.get();
 const getStoredDownloads = () => downloadsStore.get();
+
+function upsertStoredDownload(downloadData) {
+  const normalized = downloadData && typeof downloadData === 'object'
+    ? { ...downloadData }
+    : null;
+  if (!normalized?.id) return;
+  const targetId = String(normalized.id).trim();
+  const list = getStoredDownloads().filter((item) => String(item?.id || '').trim() !== targetId);
+  list.unshift(normalized);
+  downloadsStore.set(list);
+  downloadsStore.scheduleFlush();
+}
+
+function persistAndBroadcastDownload(downloadData) {
+  if (!downloadData?.id) return;
+  upsertStoredDownload(downloadData);
+  broadcast('download-update', { ...downloadData });
+}
 
 function normalizeSiteSafetyUrl(rawUrl = '') {
   try {
@@ -4522,16 +5088,12 @@ async function ensureSiteSafetyStatus(rawUrl, options = {}) {
   }
 
   const vtEnabled = cachedSettings?.features?.enableVirusTotal ?? false;
-  const vtUrlScanEnabled = cachedSettings?.security?.virusTotal?.scanUrls ?? true;
   if (!virusTotalClient) virusTotalClient = new VirusTotalClient(cachedSettings);
   else virusTotalClient.updateSettings(cachedSettings);
   const apiKey = String(options.apiKey || getVirusTotalApiKeyFromEnv() || virusTotalClient.getApiKey() || '').trim();
 
   if (!vtEnabled) {
     return buildSiteSafetyError(siteKey, 'VirusTotal disabled', { code: 'vt_disabled' });
-  }
-  if (!vtUrlScanEnabled) {
-    return buildSiteSafetyError(siteKey, 'URL scanning disabled', { code: 'vt_url_scan_disabled' });
   }
   if (!apiKey) {
     return buildSiteSafetyError(siteKey, 'VirusTotal key missing', { code: 'vt_key_missing' });
@@ -4869,7 +5431,7 @@ const getStoredDownloadById = (id) => {
 
 const resolveDownloadPath = (id) => {
   const active = activeDownloadItems.get(String(id || '').trim());
-  const activePath = active && typeof active.getSavePath === 'function' ? active.getSavePath() : null;
+  const activePath = active?.resolveSavePath?.() || (active?.item && typeof active.item.getSavePath === 'function' ? active.item.getSavePath() : null);
   const stored = getStoredDownloadById(id);
   return activePath || stored?.savePath || stored?.path || '';
 };
@@ -4916,26 +5478,70 @@ ipcMain.handle('downloads-show-in-folder', async (_event, id) => {
 });
 
 ipcMain.handle('downloads-pause', async (_event, id) => {
-  const item = activeDownloadItems.get(String(id || '').trim());
-  if (!item) return false;
-  try { item.pause(); return true; } catch (_) { return false; }
+  const entry = activeDownloadItems.get(String(id || '').trim());
+  if (!entry?.item || entry.cancelRequested) return false;
+  try { entry.item.pause(); return true; } catch (_) { return false; }
 });
 
 ipcMain.handle('downloads-resume', async (_event, id) => {
-  const item = activeDownloadItems.get(String(id || '').trim());
-  if (!item) return false;
-  try { item.resume(); return true; } catch (_) { return false; }
+  const entry = activeDownloadItems.get(String(id || '').trim());
+  if (!entry?.item || entry.cancelRequested) return false;
+  try { entry.item.resume(); return true; } catch (_) { return false; }
 });
 
 ipcMain.handle('downloads-cancel', async (_event, id) => {
-  const item = activeDownloadItems.get(String(id || '').trim());
-  if (!item) return false;
-  try { item.cancel(); return true; } catch (_) { return false; }
+  const targetId = String(id || '').trim();
+  const entry = activeDownloadItems.get(targetId);
+  if (!entry?.item || !entry.data) return false;
+  if (entry.cancelRequested || ['cancelled', 'completed', 'blocked', 'interrupted'].includes(String(entry.data.state || '').toLowerCase())) {
+    return true;
+  }
+
+  entry.cancelRequested = true;
+  entry.data.state = 'cancelled';
+  entry.data.reason = 'Cancelled by user';
+
+  try { entry.data.receivedBytes = entry.item.getReceivedBytes(); } catch (_) {}
+  try { entry.data.totalBytes = entry.item.getTotalBytes(); } catch (_) {}
+
+  const resolvedPath = entry.resolveSavePath?.() || '';
+  entry.data.savePath = resolvedPath || entry.data.savePath || '';
+  entry.data.saveDir = entry.data.savePath ? path.dirname(entry.data.savePath) : (entry.data.saveDir || '');
+
+  activeDownloadItems.delete(targetId);
+  persistAndBroadcastDownload(entry.data);
+
+  try {
+    entry.item.cancel();
+    return true;
+  } catch (_) {
+    return false;
+  }
+});
+
+ipcMain.on('notification-show', (_event, payload = {}) => {
+  const title = String(payload?.title || '').trim() || 'Notification';
+  const message = String(payload?.message ?? payload?.body ?? '').trim();
+  const source = String(payload?.source || '').trim();
+  const type = String(payload?.type || '').trim().toLowerCase() || 'info';
+  const url = String(payload?.url || '').trim();
+  const tabId = payload?.tabId ?? null;
+
+  broadcast('notification', {
+    title,
+    message,
+    source,
+    type,
+    url,
+    tabId,
+    icon: String(payload?.icon || '').trim(),
+    timestamp: Date.now()
+  });
 });
 
 ipcMain.handle('downloads-start', async (event, url, options = {}) => {
   try {
-    const targetUrl = normalizeNetworkUrl(url);
+    const targetUrl = normalizeNetworkUrl(url, EXTENDED_DOWNLOAD_PROTOCOLS);
 
     const opts = (options && typeof options === 'object') ? options : {};
     if (opts.saveAs || opts.filename) {
@@ -5228,10 +5834,15 @@ ipcMain.handle('openwebui:start', withAuthorizedRendererPages(AUTHORIZED_RENDERE
     const cmdExe = process.env.ComSpec || 'C:\\Windows\\System32\\cmd.exe';
     const normalizedCondaActivateScript = unwrapWrappedQuotes(condaActivateScript);
     const command = `call ${normalizedCondaActivateScript} activate ${OPEN_WEBUI_ENV_NAME} && open-webui serve --host ${OPEN_WEBUI_HOST} --port ${OPEN_WEBUI_PORT}`;
-    const { childEnv, ffmpegPath } = buildOpenWebUiChildEnv(localUrl);
+    const { childEnv, ffmpegPath, hfTokenConfigured } = buildOpenWebUiChildEnv(localUrl);
+    let openWebUiLastActivityAt = Date.now();
     pushServerLog('openwebui', 'info', 'Launching Open WebUI with local auth disabled so the UI opens directly.');
     pushServerLog('openwebui', 'info', `Using CORS_ALLOW_ORIGIN=${localUrl}`);
     pushServerLog('openwebui', 'info', ffmpegPath ? `Using ffmpeg from ${ffmpegPath}` : 'ffmpeg was not found on PATH. Suppressing the pydub warning; audio transcoding may stay unavailable until ffmpeg is installed.');
+    pushServerLog('openwebui', 'info', hfTokenConfigured
+      ? 'Using Hugging Face token from the Om-X environment for Open WebUI downloads.'
+      : 'HF_TOKEN is not set. First launch may take longer while Open WebUI downloads Hugging Face assets anonymously.');
+    pushServerLog('openwebui', 'info', 'First launch can take a few minutes while Open WebUI applies migrations and downloads required models.');
     openWebUiProcess = spawn(cmdExe, ['/d', '/c', `"${command}"`], {
       cwd: workingDir,
       stdio: 'pipe',
@@ -5251,11 +5862,13 @@ ipcMain.handle('openwebui:start', withAuthorizedRendererPages(AUTHORIZED_RENDERE
 
     openWebUiProcess.stdout.on('data', (data) => {
       const text = data.toString();
+      openWebUiLastActivityAt = Date.now();
       pushServerLog('openwebui', 'info', text);
       mainWindow?.webContents?.send('openwebui-output', { type: 'info', data: text });
     });
     openWebUiProcess.stderr.on('data', (data) => {
       const text = data.toString();
+      openWebUiLastActivityAt = Date.now();
       pushServerLog('openwebui', 'warn', text);
       mainWindow?.webContents?.send('openwebui-output', { type: 'warn', data: text });
     });
@@ -5281,14 +5894,20 @@ ipcMain.handle('openwebui:start', withAuthorizedRendererPages(AUTHORIZED_RENDERE
       host: OPEN_WEBUI_HOST,
       port: OPEN_WEBUI_PORT,
       proc: spawnedProcess,
-      timeoutMs: 90000
+      timeoutMs: OPEN_WEBUI_START_TIMEOUT_MS,
+      getLastActivityTime: () => openWebUiLastActivityAt,
+      idleGraceMs: OPEN_WEBUI_START_IDLE_GRACE_MS,
+      maxTimeoutMs: OPEN_WEBUI_START_MAX_TIMEOUT_MS
     });
 
     if (!ready) {
       const processExited = !isServerProcessActive(spawnedProcess);
+      const slowStartHint = hfTokenConfigured
+        ? 'The local service stayed up but never opened its port after several minutes.'
+        : 'The local service stayed up but never opened its port after several minutes. Adding HF_TOKEN to .env and restarting Om-X can help first-run downloads finish faster.';
       const error = processExited
         ? 'Open WebUI exited before it became available.'
-        : `Open WebUI did not open ${localUrl} within 90 seconds.`;
+        : `Open WebUI did not open ${localUrl}. ${slowStartHint}`;
       pushServerLog('openwebui', 'error', error);
       openWebUiManualStop = true;
       await terminateManagedChildProcess(spawnedProcess);
@@ -5532,15 +6151,7 @@ ipcMain.handle('llama:start-server', withAuthorizedRendererPages(AUTHORIZED_REND
       pushServerLog('llama', 'error', error);
       mainWindow?.webContents?.send('llama-server-output', { type: 'error', data: `${error}\n` });
       clearLlamaMemoryGuard();
-      try {
-        spawnedProcess.kill();
-      } catch (_) {
-        try {
-          if (spawnedProcess.pid && process.platform === 'win32') {
-            exec(`taskkill /pid ${spawnedProcess.pid} /T /F`);
-          }
-        } catch (_) {}
-      }
+      await terminateManagedChildProcess(spawnedProcess);
       if (llamaServerProcess === spawnedProcess) {
         llamaServerProcess = null;
       }
@@ -5575,15 +6186,7 @@ ipcMain.handle('llama:start-server', withAuthorizedRendererPages(AUTHORIZED_REND
         const tunnelError = error?.message || 'Failed to start llama ngrok tunnel.';
         pushServerLog('llama', 'error', tunnelError);
         clearLlamaMemoryGuard();
-        try {
-          spawnedProcess.kill();
-        } catch (_) {
-          try {
-            if (spawnedProcess.pid && process.platform === 'win32') {
-              exec(`taskkill /pid ${spawnedProcess.pid} /T /F`);
-            }
-          } catch (_) {}
-        }
+        await terminateManagedChildProcess(spawnedProcess);
         if (llamaServerProcess === spawnedProcess) {
           llamaServerProcess = null;
         }
@@ -5632,15 +6235,7 @@ ipcMain.handle('llama:stop-server', withAuthorizedRendererPages(AUTHORIZED_RENDE
 
   clearLlamaMemoryGuard();
   if (wasRunning) {
-    try {
-      llamaServerProcess.kill();
-    } catch (e) {
-      try {
-        if (llamaServerProcess.pid && process.platform === 'win32') {
-          exec(`taskkill /pid ${llamaServerProcess.pid} /T /F`);
-        }
-      } catch (_) {}
-    }
+    await terminateManagedChildProcess(llamaServerProcess);
   }
 
   await stopLlamaNgrokTunnelInternal().catch(() => {});
@@ -5898,11 +6493,7 @@ function normalizeVirusTotalSettings(settings = {}) {
   const source = settings && typeof settings === 'object' ? settings : {};
   return {
     ...DEFAULT_SETTINGS.security.virusTotal,
-    ...source,
-    apiKey: '',
-    scanUrls: true,
-    scanExecutables: true,
-    blockOnSuspicious: true
+    ...source
   };
 }
 
@@ -5962,8 +6553,7 @@ try {
         virusTotal: normalizeVirusTotalSettings(saved?.security?.virusTotal)
       },
       aiChat: {
-        ...DEFAULT_SETTINGS.aiChat,
-        ...(saved?.aiChat || {})
+        ...normalizeAiChatSettings(saved?.aiChat)
       },
       youtubeAddon: normalizedYouTubeAddon,
       shortcuts: {
@@ -5971,26 +6561,25 @@ try {
         ...(saved?.shortcuts || {})
       },
       llm: normalizeSharedLlmSettings(saved?.llm),
-      extensions: normalizeBuiltInExtensionSettings(saved?.extensions),
       searchEngines: normalizedSearchEngines,
       defaultSearchEngineId: normalizeDefaultSearchEngineId(saved?.defaultSearchEngineId, normalizedSearchEngines),
-      blocklist: normalizeBlocklistEntries(saved?.blocklist),
+      websiteUiPreferences: normalizeWebsiteUiPreferences(saved?.websiteUiPreferences),
       websitePermissions: normalizeWebsitePermissions(saved?.websitePermissions)
     });
   }
   cachedSettings.llm = normalizeSharedLlmSettings(cachedSettings?.llm);
   cachedSettings.aiConfig = normalizePersistedAiConfig(cachedSettings?.aiConfig);
+  cachedSettings.websiteUiPreferences = normalizeWebsiteUiPreferences(cachedSettings?.websiteUiPreferences);
   cachedSettings.websitePermissions = normalizeWebsitePermissions(cachedSettings?.websitePermissions);
   cachedSettings = normalizeLockedSecuritySettings(cachedSettings);
 
   applyPreferredWebTheme();
-  // Built-in extensions must be loaded after Electron's ready event.
+  // Built-in CSS customizations must be ready after Electron's ready event.
   initialExtensionsPromise = (async () => {
     await app.whenReady();
-    await applyExtensions(cachedSettings);
     await syncShortsHideForAllWebContents(cachedSettings);
   })().catch(e => {
-    console.warn('[Extensions] initial load failed', e);
+    console.warn('[Built-in CSS] initial load failed', e);
   });
 } catch (e) { console.error('Error loading settings:', e); }
 
@@ -6070,416 +6659,6 @@ async function fileExists(targetPath) {
         return false;
     }
 }
-
-function pickManifestIcon(manifest = {}) {
-    const preferredSizes = ['128', '96', '64', '48', '32', '24', '16'];
-    const candidates = [];
-
-    if (manifest && typeof manifest.icons === 'object' && manifest.icons) {
-        candidates.push(manifest.icons);
-    }
-
-    const actionIcon = manifest?.action?.default_icon || manifest?.browser_action?.default_icon;
-    if (actionIcon && typeof actionIcon === 'object') {
-        candidates.push(actionIcon);
-    } else if (typeof actionIcon === 'string' && actionIcon.trim()) {
-        return actionIcon.trim();
-    }
-
-    for (const iconMap of candidates) {
-        for (const size of preferredSizes) {
-            if (iconMap[size]) return String(iconMap[size]).trim();
-        }
-        const fallback = Object.values(iconMap).find((value) => typeof value === 'string' && value.trim());
-        if (fallback) return String(fallback).trim();
-    }
-
-    return '';
-}
-
-async function findExtensionIconFallback(extensionRootDir) {
-    const candidates = [
-        'icons/icon_128.png', 'icons/icon128.png', 'icons/icon-128.png',
-        'icons/icon_64.png', 'icons/icon64.png', 'icons/icon-64.png',
-        'icons/icon_48.png', 'icons/icon48.png', 'icons/icon-48.png',
-        'icons/icon_32.png', 'icons/icon32.png', 'icons/icon-32.png',
-        'icons/icon_16.png', 'icons/icon16.png', 'icons/icon-16.png',
-        'img/icon_128.png', 'img/icon_64.png', 'img/icon_48.png',
-        'img/icon_32.png', 'img/icon_16.png', 'img/icon.png',
-        'assets/icon_128.png', 'assets/icon.png',
-        'icon_128.png', 'icon128.png', 'icon-128.png',
-        'icon_64.png', 'icon64.png', 'icon-64.png',
-        'icon_48.png', 'icon48.png', 'icon-48.png',
-        'icon_32.png', 'icon32.png', 'icon-32.png',
-        'icon_16.png', 'icon16.png', 'icon-16.png',
-        'logo.png', 'logo.svg', 'icon.png', 'icon.svg'
-    ];
-
-    for (const rel of candidates) {
-        const candidatePath = path.join(extensionRootDir, rel);
-        if (await fileExists(candidatePath)) {
-            return pathToFileURL(candidatePath).href;
-        }
-    }
-    return '';
-}
-
-async function resolveManifestMessageToken(rawValue, extensionRootDir, manifest = {}) {
-    const value = String(rawValue || '').trim();
-    const tokenMatch = /^__MSG_(.+)__$/.exec(value);
-    if (!tokenMatch) return value;
-
-    const key = tokenMatch[1];
-    const locale = String(manifest?.default_locale || 'en').trim() || 'en';
-    const localeFile = path.join(extensionRootDir, '_locales', locale, 'messages.json');
-
-    try {
-        const messages = JSON.parse(await fs.promises.readFile(localeFile, 'utf8'));
-        const localized = messages?.[key]?.message;
-        return typeof localized === 'string' && localized.trim() ? localized.trim() : value;
-    } catch (_) {
-        return value;
-    }
-}
-
-async function readExtensionManifestMeta(extensionFolderPath) {
-    const manifestPath = path.join(extensionFolderPath, 'manifest.json');
-    try {
-        const manifestRaw = await fs.promises.readFile(manifestPath, 'utf8');
-        const manifest = JSON.parse(manifestRaw);
-        const iconPath = pickManifestIcon(manifest);
-        let icon = '';
-        if (iconPath) {
-            if (/^(https?:|data:|file:)/i.test(iconPath)) {
-                icon = iconPath;
-            } else {
-                const normalizedIconPath = iconPath.replace(/^[/\\]+/, '');
-                icon = pathToFileURL(path.join(extensionFolderPath, normalizedIconPath)).href;
-            }
-        }
-        if (!icon) {
-            icon = await findExtensionIconFallback(extensionFolderPath);
-        }
-
-        const displayName = await resolveManifestMessageToken(manifest?.name, extensionFolderPath, manifest);
-        const description = await resolveManifestMessageToken(manifest?.description, extensionFolderPath, manifest);
-
-        return {
-            folderPath: extensionFolderPath,
-            manifestPath,
-            manifest,
-            icon,
-            displayName: displayName || '',
-            description: description || '',
-            version: String(manifest?.version || '').trim(),
-            manifestVersion: Number(manifest?.manifest_version) || null
-        };
-    } catch (_) {
-        return null;
-    }
-}
-
-function getBuiltinExtensionPolicy(extensionName) {
-    return BUILTIN_EXTENSION_POLICIES[String(extensionName || '').trim()] || null;
-}
-
-function getSessionExtensionsApi(ses) {
-    if (!ses) return null;
-    return ses.extensions && typeof ses.extensions === 'object' ? ses.extensions : ses;
-}
-
-function getAllSessionExtensions(ses) {
-    const extApi = getSessionExtensionsApi(ses);
-    if (!extApi || typeof extApi.getAllExtensions !== 'function') return [];
-    try {
-        return extApi.getAllExtensions() || [];
-    } catch (_) {
-        return [];
-    }
-}
-
-async function loadSessionExtension(ses, extensionPath, options = {}) {
-    const extApi = getSessionExtensionsApi(ses);
-    if (!extApi || typeof extApi.loadExtension !== 'function') {
-        throw new Error('Electron session extension API is unavailable.');
-    }
-    return extApi.loadExtension(extensionPath, options);
-}
-
-function removeSessionExtension(ses, extensionId) {
-    const extApi = getSessionExtensionsApi(ses);
-    if (!extApi || typeof extApi.removeExtension !== 'function') return;
-    return extApi.removeExtension(extensionId);
-}
-
-async function ensureCleanDir(dirPath) {
-    try { await fs.promises.rm(dirPath, { recursive: true, force: true }); } catch (_) {}
-    await fs.promises.mkdir(dirPath, { recursive: true });
-}
-
-async function copyDirectoryRecursive(sourceDir, destinationDir, options = {}) {
-    const filter = typeof options.filter === 'function' ? options.filter : null;
-    await fs.promises.mkdir(destinationDir, { recursive: true });
-    const entries = await fs.promises.readdir(sourceDir, { withFileTypes: true });
-    for (const entry of entries) {
-        const srcPath = path.join(sourceDir, entry.name);
-        const dstPath = path.join(destinationDir, entry.name);
-        if (filter && !(await filter(srcPath, entry, dstPath))) {
-            continue;
-        }
-        if (entry.isDirectory()) {
-            await copyDirectoryRecursive(srcPath, dstPath, options);
-        } else if (entry.isFile()) {
-            await fs.promises.copyFile(srcPath, dstPath);
-        }
-    }
-}
-
-async function copyFileIfPresent(sourcePath, destinationPath) {
-    if (!(await fileExists(sourcePath))) return false;
-    await fs.promises.mkdir(path.dirname(destinationPath), { recursive: true });
-    await fs.promises.copyFile(sourcePath, destinationPath);
-    return true;
-}
-
-async function isManifestRuntimeUsable(manifestDir) {
-    try {
-        const manifestPath = path.join(manifestDir, 'manifest.json');
-        const raw = await fs.promises.readFile(manifestPath, 'utf8');
-        const manifest = JSON.parse(raw);
-
-        const normalizeRel = (value) => String(value || '').trim().replace(/^[/\\]+/, '');
-        const mustExist = async (value) => {
-            const rel = normalizeRel(value);
-            if (!rel) return true;
-            return fileExists(path.join(manifestDir, rel));
-        };
-
-        const bg = manifest?.background || {};
-        if (typeof bg.page === 'string' && !(await mustExist(bg.page))) return false;
-        if (typeof bg.service_worker === 'string' && !(await mustExist(bg.service_worker))) return false;
-        if (Array.isArray(bg.scripts)) {
-            for (const scriptPath of bg.scripts) {
-                if (!(await mustExist(scriptPath))) return false;
-            }
-        }
-
-        const popupPath = manifest?.action?.default_popup || manifest?.browser_action?.default_popup;
-        if (typeof popupPath === 'string' && !(await mustExist(popupPath))) return false;
-
-        return true;
-    } catch (_) {
-        return false;
-    }
-}
-
-async function resolvePreferredExtensionFolder(sourceDir, extensionName = '') {
-    return resolveExtensionFolder(sourceDir, { prepareBuild: false });
-}
-
-function isAllowedBuiltinRuntimePath(sourceDir, resolvedDir, policy) {
-    if (!policy || !Array.isArray(policy.runtimeCandidates) || policy.runtimeCandidates.length === 0) return true;
-    const sourceAbs = path.resolve(String(sourceDir || ''));
-    const resolvedAbs = path.resolve(String(resolvedDir || ''));
-    return policy.runtimeCandidates.some((relativePath) => {
-        const candidateAbs = path.resolve(sourceAbs, relativePath);
-        return resolvedAbs === candidateAbs;
-    });
-}
-
-function validateExtensionSafety(extensionName, sourceDir, resolvedDir, manifestMeta) {
-    if (!manifestMeta || !manifestMeta.manifest || !manifestMeta.manifestPath) {
-        return { safe: false, error: 'Invalid extension manifest.' };
-    }
-
-    const sourceAbs = path.resolve(String(sourceDir || ''));
-    const resolvedAbs = path.resolve(String(resolvedDir || ''));
-    if (!isSameOrSubFsPath(resolvedAbs, sourceAbs)) {
-        return { safe: false, error: 'Resolved extension path escapes source directory.' };
-    }
-
-    const manifestVersion = Number(manifestMeta.manifestVersion) || Number(manifestMeta.manifest?.manifest_version) || 0;
-    if (![2, 3].includes(manifestVersion)) {
-        return { safe: false, error: `Unsupported manifest_version: ${manifestVersion || 'unknown'}.` };
-    }
-
-    const manifest = manifestMeta.manifest || {};
-    const permissions = Array.isArray(manifest.permissions) ? manifest.permissions.map((p) => String(p || '').trim()).filter(Boolean) : [];
-    const hostPermissions = Array.isArray(manifest.host_permissions) ? manifest.host_permissions.map((p) => String(p || '').trim()).filter(Boolean) : [];
-
-    if (permissions.length > 80 || hostPermissions.length > 200) {
-        return { safe: false, error: 'Extension requests too many permissions.' };
-    }
-
-    const globallyBlockedPermissions = new Set(['nativeMessaging', 'proxy']);
-    for (const permission of permissions) {
-        if (globallyBlockedPermissions.has(permission)) {
-            return { safe: false, error: `Blocked permission requested: ${permission}` };
-        }
-    }
-
-    const policy = getBuiltinExtensionPolicy(extensionName);
-    if (!policy) return { safe: true };
-
-    if (!isAllowedBuiltinRuntimePath(sourceDir, resolvedDir, policy)) {
-        return { safe: false, error: 'Built-in extension resolved to a non-approved runtime path.' };
-    }
-
-    if (policy.allowedManifestVersions && !policy.allowedManifestVersions.has(manifestVersion)) {
-        return { safe: false, error: `Manifest version ${manifestVersion} is not allowed for built-in extension.` };
-    }
-
-    for (const permission of permissions) {
-        if (policy.blockedPermissions?.has(permission)) {
-            return { safe: false, error: `Built-in extension requested blocked permission: ${permission}` };
-        }
-    }
-
-    return { safe: true };
-}
-
-// attempt to prepare an extension directory before loading it
-async function resolveExtensionFolder(dir, options = {}) {
-    const shouldPrepareBuild = options.prepareBuild === true;
-    // if the directory itself contains a manifest, use it
-    const manifestPath = path.join(dir, 'manifest.json');
-    if (await fileExists(manifestPath)) return dir;
-
-    // if there's a package.json, run npm install and maybe build
-    const pkgPath = path.join(dir, 'package.json');
-    if (shouldPrepareBuild && await fileExists(pkgPath)) {
-        try {
-            const pkg = JSON.parse(await fs.promises.readFile(pkgPath, 'utf8'));
-            // install dependencies (production only)
-            await new Promise((resolve, reject) => {
-                const cmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-                const child = spawn(cmd, ['install', '--production'], { cwd: dir, stdio: 'ignore' });
-                child.on('error', reject);
-                child.on('exit', (code) => code === 0 ? resolve() : reject(new Error('npm install failed')));
-            });
-            if (pkg.scripts && pkg.scripts.build) {
-                await new Promise((resolve, reject) => {
-                    const cmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-                    const child = spawn(cmd, ['run', 'build'], { cwd: dir, stdio: 'inherit' });
-                    child.on('error', reject);
-                    child.on('exit', (code) => code === 0 ? resolve() : reject(new Error('npm run build failed')));
-                });
-            }
-        } catch (e) {
-            console.warn('[Extensions] prepare failed for', dir, e.message);
-        }
-    }
-
-    // look for common output directories
-    const candidates = [
-        path.join(dir, 'src'),
-        path.join(dir, 'dist'),
-        path.join(dir, 'dist', 'extension'),
-        path.join(dir, 'dist', 'chrome'),
-        path.join(dir, 'dist', 'chromium'),
-        path.join(dir, 'dist', 'chrome-mv3'),
-        path.join(dir, 'dist', 'mv3'),
-        path.join(dir, 'build'),
-        path.join(dir, 'build', 'chrome'),
-        path.join(dir, 'build', 'chromium'),
-        path.join(dir, 'build', 'extension'),
-        path.join(dir, 'out'),
-        path.join(dir, 'out', 'chrome'),
-        path.join(dir, 'out', 'chromium'),
-        path.join(dir, 'unpacked'),
-        path.join(dir, 'unpacked', 'chrome'),
-        path.join(dir, 'unpacked', 'chromium'),
-        path.join(dir, 'web_ext_build'),
-        path.join(dir, 'extension'),
-        path.join(dir, 'platform', 'chromium'),
-        path.join(dir, 'platform', 'mv3', 'chromium'),
-        path.join(dir, 'platform', 'mv3', 'extension')
-    ];
-    for (const cand of candidates) {
-        if (await fileExists(path.join(cand, 'manifest.json')) && await isManifestRuntimeUsable(cand)) return cand;
-    }
-
-    // final fallback: check one nested level for unpacked builds
-    try {
-        const entries = await fs.promises.readdir(dir, { withFileTypes: true });
-        for (const entry of entries) {
-            if (!entry.isDirectory()) continue;
-            const candidateDir = path.join(dir, entry.name);
-            if (await fileExists(path.join(candidateDir, 'manifest.json')) && await isManifestRuntimeUsable(candidateDir)) return candidateDir;
-            try {
-                const nestedEntries = await fs.promises.readdir(candidateDir, { withFileTypes: true });
-                for (const nestedEntry of nestedEntries) {
-                    if (!nestedEntry.isDirectory()) continue;
-                    const nestedCandidateDir = path.join(candidateDir, nestedEntry.name);
-                    if (await fileExists(path.join(nestedCandidateDir, 'manifest.json')) && await isManifestRuntimeUsable(nestedCandidateDir)) {
-                        return nestedCandidateDir;
-                    }
-                }
-            } catch (_) {}
-        }
-    } catch (_) {
-        // ignore and return null below
-    }
-
-    return null;
-}
-
-async function ensureExtensionLoaded(dir, extensionName = '') {
-    try {
-        if (!app.isReady()) {
-            await app.whenReady();
-        }
-        let realDir = null;
-        try {
-            realDir = await resolvePreferredExtensionFolder(dir, extensionName);
-        } catch (e) {
-            if (getBuiltinExtensionPolicy(extensionName)) {
-                return { success: false, error: e?.message || 'Built-in extension runtime preparation failed.' };
-            }
-            return { success: false, error: e?.message || 'Extension resolution failed.' };
-        }
-        if (!realDir) {
-            return { success: false, error: 'manifest.json not found (build the extension or place unpacked folder here)' };
-        }
-
-        const manifestMeta = await readExtensionManifestMeta(realDir);
-        const safety = validateExtensionSafety(extensionName, dir, realDir, manifestMeta);
-        if (!safety.safe) {
-            return { success: false, error: safety.error || 'Extension safety validation failed.' };
-        }
-
-        const ses = session.defaultSession;
-        const expectedName = String(extensionName || manifestMeta?.name || '').trim();
-        const normalizedRealDir = path.resolve(realDir).toLowerCase();
-        try {
-            const inventory = getAllSessionExtensions(ses);
-            for (const ext of inventory) {
-                const extName = String(ext?.name || '').trim();
-                const extPath = path.resolve(String(ext?.path || '')).toLowerCase();
-                if (!ext?.id) continue;
-                if (extPath === normalizedRealDir) {
-                    return {
-                        success: true,
-                        extension: { id: ext.id, name: ext.name, version: ext.version, path: ext.path },
-                        changed: false
-                    };
-                }
-                if (expectedName && extName === expectedName) {
-                    try { removeSessionExtension(ses, String(ext.id)); } catch (_) {}
-                }
-            }
-        } catch (_) {}
-        const ext = await loadSessionExtension(ses, realDir, { allowFileAccess: false });
-        return { success: true, extension: { id: ext.id, name: ext.name, version: ext.version, path: ext.path }, changed: true };
-    } catch (e) {
-        return { success: false, error: e.message };
-    }
-}
-
-// keep track of currently loaded extensions by folder name
-const loadedExtensions = {};
-// capture any load errors per extension
-const extensionErrors = {};
 
 function getExtensionsBaseDir() {
     const candidates = [];
@@ -6621,94 +6800,6 @@ async function syncShortsHideForAllWebContents(settings = cachedSettings) {
         attachShortsHideToContents(contents);
         await syncShortsHideForContents(contents, settings);
     }
-}
-
-async function applyExtensions(settings) {
-    if (!app.isReady()) {
-        await app.whenReady();
-    }
-    // extensions live alongside the main directory (../extension)
-    const extDir = getExtensionsBaseDir();
-    // ensure the folder exists so readdir won't error
-    try { await fs.promises.mkdir(extDir, { recursive: true }); } catch (e) {}
-    try {
-        let didChangeExtensionState = false;
-        const entries = await fs.promises.readdir(extDir, { withFileTypes: true });
-        for (const entry of entries) {
-            if (!entry.isDirectory()) continue;
-            const name = entry.name;
-            const dir = path.join(extDir, name);
-            const builtInPolicy = getBuiltinExtensionPolicy(name);
-            const shouldEnable = settings.extensions?.[name]?.enabled === true || (settings.extensions?.[name]?.enabled == null && builtInPolicy?.enabledByDefault === true);
-            const already = loadedExtensions[name];
-            if (shouldEnable && !already) {
-                const res = await ensureExtensionLoaded(dir, name);
-                if (res.success) {
-                    loadedExtensions[name] = res.extension;
-                    delete extensionErrors[name];
-                    if (res.changed !== false) didChangeExtensionState = true;
-                } else {
-                    extensionErrors[name] = res.error;
-                    console.warn('[Extensions] failed to load', name, res.error);
-                }
-            } else if (!shouldEnable && already) {
-                await unloadExtensionFromSession(name, already);
-                delete loadedExtensions[name];
-                delete extensionErrors[name];
-                didChangeExtensionState = true;
-            }
-        }
-        if (didChangeExtensionState) {
-            reloadAllBrowserWebContents();
-        }
-    } catch (e) {
-        console.warn('[Extensions] scan error:', e);
-    }
-}
-
-async function unloadExtensionFromSession(extensionName, trackedExtension = null) {
-    if (!app.isReady()) {
-        await app.whenReady();
-    }
-    const ses = session.defaultSession;
-    if (!ses) return;
-
-    const candidateIds = new Set();
-    if (trackedExtension?.id) candidateIds.add(String(trackedExtension.id));
-
-    try {
-        const inventory = getAllSessionExtensions(ses);
-        for (const ext of inventory) {
-            const extName = String(ext?.name || '').trim();
-            const extPath = String(ext?.path || '').trim().toLowerCase();
-            if (
-                extName === extensionName ||
-                extPath.endsWith(`\\${String(extensionName || '').trim().toLowerCase()}`) ||
-                extPath.includes(`\\${String(extensionName || '').trim().toLowerCase()}\\`)
-            ) {
-                if (ext?.id) candidateIds.add(String(ext.id));
-            }
-        }
-    } catch (_) {}
-
-    for (const extId of candidateIds) {
-        try {
-            removeSessionExtension(ses, extId);
-        } catch (_) {}
-    }
-}
-
-function reloadAllBrowserWebContents() {
-    const allContents = webContents.getAllWebContents();
-    allContents.forEach((contents) => {
-        try {
-            if (!contents || contents.isDestroyed?.() || contents.isCrashed?.()) return;
-            if (contents.getType?.() !== 'webview') return;
-            const currentUrl = String(contents.getURL?.() || '').trim();
-            if (!/^https?:/i.test(currentUrl)) return;
-            contents.reloadIgnoringCache?.();
-        } catch (_) {}
-    });
 }
 
 function configureSecurity(settings, win) {
@@ -6976,7 +7067,7 @@ function createMainWindow() {
     frame: false, 
     titleBarStyle: 'hidden', 
     show: false,
-    icon: WINDOW_ICON,
+    icon: BROWSER_WINDOW_ICON,
     backgroundColor: '#18181b',
     webPreferences: { 
       preload: path.join(__dirname, '../preload.js'), 
@@ -6990,8 +7081,8 @@ function createMainWindow() {
     }
   });
   attachInternalWindowNavigationGuards(mainWindow, 'main window');
-  if (WINDOW_ICON && typeof mainWindow.setIcon === 'function') {
-    try { mainWindow.setIcon(WINDOW_ICON); } catch (_) {}
+  if (BROWSER_WINDOW_ICON && typeof mainWindow.setIcon === 'function') {
+    try { mainWindow.setIcon(BROWSER_WINDOW_ICON); } catch (_) {}
   }
   attachLanHostWindow(mainWindow);
   configureSitePermissions(mainWindow.webContents.session);
@@ -7118,7 +7209,6 @@ function createMainWindow() {
           catch (e) { return savePath; }
       };
 
-      activeDownloadItems.set(id, item);
       const data = {
           id,
           filename,
@@ -7131,24 +7221,29 @@ function createMainWindow() {
           savePath: resolveSavePath(),
           saveDir: path.dirname(resolveSavePath())
       };
+      const downloadEntry = {
+          item,
+          data,
+          resolveSavePath,
+          cancelRequested: false
+      };
+      activeDownloadItems.set(id, downloadEntry);
       broadcast('download-update', data);
 
       const blockCurrentDownload = (reason, quarantinePath = '') => {
           data.state = 'blocked';
           data.reason = reason || 'Blocked by security policy';
           if (quarantinePath) data.quarantinePath = quarantinePath;
+          downloadEntry.cancelRequested = true;
           try { item.cancel(); } catch (_) {}
           activeDownloadItems.delete(id);
-          const list = getStoredDownloads();
-          list.unshift(data);
-          downloadsStore.set(list);
-          downloadsStore.scheduleFlush();
-          broadcast('download-update', data);
+          persistAndBroadcastDownload(data);
       };
 
       const runThreatGate = async () => {
           if (!shouldThreatScan) return;
-          if (!antivirusEngine && !virusTotalClient) return;
+          if (!antivirusEngine) return;
+          if (downloadEntry.cancelRequested) return;
           data.state = 'scanning';
           data.reason = 'Running security scan...';
           broadcast('download-update', data);
@@ -7157,6 +7252,7 @@ function createMainWindow() {
 
           try {
               if (antivirusEngine) {
+                  if (downloadEntry.cancelRequested) return;
                   const localPre = await antivirusEngine.scanDownload(item);
                   if (localPre?.safe === false) {
                       blockCurrentDownload(localPre.reason || 'Blocked by local antivirus scan.');
@@ -7168,21 +7264,11 @@ function createMainWindow() {
                   }
               }
 
-              const vtEnabled = cachedSettings?.features?.enableVirusTotal ?? false;
-              const vtScanExecutables = cachedSettings?.security?.virusTotal?.scanExecutables ?? true;
-
-              if (vtEnabled && vtScanExecutables && virusTotalClient?.isConfigured?.()) {
-                  const urlScan = await virusTotalClient.scanUrl(url, { timeoutMs: 6500 });
-                  if (urlScan?.blocked) {
-                      blockCurrentDownload(urlScan.reason || 'Blocked by VirusTotal URL scan.');
-                      return;
-                  }
-              }
           } catch (error) {
               console.warn('[Security] Download pre-scan failed (open fail):', error?.message || error);
           }
 
-          if (data.state !== 'blocked') {
+          if (!downloadEntry.cancelRequested && data.state !== 'blocked') {
               data.state = 'progressing';
               delete data.reason;
               broadcast('download-update', data);
@@ -7195,6 +7281,7 @@ function createMainWindow() {
       }
 
       item.on('updated', (e, state) => {
+          if (downloadEntry.cancelRequested) return;
           if (data.state === 'blocked') return;
           data.state = item.isPaused() ? 'paused' : state;
           data.receivedBytes = item.getReceivedBytes();
@@ -7207,14 +7294,14 @@ function createMainWindow() {
       item.on('done', async (e, state) => {
           if (data.state === 'blocked') return;
 
-          data.state = state;
+          data.state = downloadEntry.cancelRequested && state !== 'completed' ? 'cancelled' : state;
           data.receivedBytes = item.getReceivedBytes();
           data.totalBytes = item.getTotalBytes();
           data.savePath = resolveSavePath();
           data.saveDir = path.dirname(data.savePath || savePath);
           activeDownloadItems.delete(id);
 
-          if (state === 'completed' && shouldThreatScan) {
+          if (data.state === 'completed' && shouldThreatScan) {
               try {
                   if (antivirusEngine) {
                       const localPost = await antivirusEngine.postDownloadScan(data.savePath);
@@ -7230,31 +7317,12 @@ function createMainWindow() {
                       }
                   }
 
-                  const vtEnabled = cachedSettings?.features?.enableVirusTotal ?? false;
-                  const vtScanExecutables = cachedSettings?.security?.virusTotal?.scanExecutables ?? true;
-
-                  if (data.state !== 'blocked' && vtEnabled && vtScanExecutables && virusTotalClient?.isConfigured?.()) {
-                      const fileScan = await virusTotalClient.scanFileByPath(data.savePath, { timeoutMs: 6500 });
-                      if (fileScan?.blocked) {
-                          const quarantinePath = antivirusEngine?.quarantineFile?.(data.savePath) || '';
-                          data.state = 'blocked';
-                          data.reason = fileScan.reason || 'Blocked by VirusTotal file scan.';
-                          if (quarantinePath) {
-                              data.quarantinePath = quarantinePath;
-                              data.savePath = quarantinePath;
-                              data.saveDir = path.dirname(quarantinePath);
-                          }
-                      }
-                  }
               } catch (scanError) {
                   console.warn('[Security] Download post-scan failed (open fail):', scanError?.message || scanError);
               }
           }
 
-          const list = getStoredDownloads(); list.unshift(data);
-          downloadsStore.set(list);
-          downloadsStore.scheduleFlush();
-          broadcast('download-update', data);
+          persistAndBroadcastDownload(data);
       });
   });
 }
@@ -7267,7 +7335,7 @@ function createPreviewWindow(url) {
     }
     previewWindow = new BrowserWindow({
         width: 860, height: 640, frame: false, transparent: true, alwaysToTop: true, parent: mainWindow, show: false,
-        icon: WINDOW_ICON,
+        icon: BROWSER_WINDOW_ICON,
         webPreferences: { preload: path.join(__dirname, '../preload.js'), webviewTag: true, contextIsolation: true, nodeIntegration: false, webSecurity: true, sandbox: true, devTools: false }
     });
     attachInternalWindowNavigationGuards(previewWindow, 'preview window');
@@ -7526,7 +7594,7 @@ ipcMain.handle('electron-game:launch', async (event, gameConfig) => {
             title: windowConfig.title || name,
             resizable: windowConfig.resizable !== false,
             backgroundColor: windowConfig.backgroundColor || '#1a1a2e',
-            icon: WINDOW_ICON,
+            icon: BROWSER_WINDOW_ICON,
             webPreferences: {
                 preload: fullPreloadPath || undefined,
                 contextIsolation: true,
@@ -7614,10 +7682,6 @@ ipcMain.handle('electron-game:launch-standalone', async (event, gameConfig) => {
             allowedExtensions: OMX_ALLOWED_SCRIPT_ENTRY_EXTENSIONS
         });
         
-        console.log(`[Main] Launching standalone game: ${name}`);
-        console.log(`[Main] Game main file: ${gameMainFile}`);
-        console.log(`[Main] Using root node_modules: ${rootNodeModules}`);
-        
         // Spawn Electron with the game's main.js, using root node_modules
         const gameProcess = require('child_process').spawn(
             process.execPath,
@@ -7625,19 +7689,14 @@ ipcMain.handle('electron-game:launch-standalone', async (event, gameConfig) => {
             {
                 cwd: appDir, // Use Om-X working directory for node_modules
                 detached: true,
-                stdio: 'pipe',
+                stdio: ['ignore', 'ignore', 'pipe'],
                 env: {
                     ...process.env,
                     NODE_PATH: rootNodeModules
                 }
             }
         );
-        
-        // Handle process output
-        gameProcess.stdout?.on('data', (data) => {
-            console.log(`[${name}] ${data.toString().trim()}`);
-        });
-        
+
         gameProcess.stderr?.on('data', (data) => {
             console.error(`[${name}] ${data.toString().trim()}`);
         });
@@ -7648,9 +7707,7 @@ ipcMain.handle('electron-game:launch-standalone', async (event, gameConfig) => {
         // Track the process
         if (!global.standaloneGames) global.standaloneGames = {};
         global.standaloneGames[id] = gameProcess;
-        
-        console.log(`[Main] Launched standalone game: ${name} (PID: ${gameProcess.pid})`);
-        
+
         return { success: true, pid: gameProcess.pid };
     } catch (error) {
         console.error('[Main] Failed to launch standalone game:', error);
@@ -7707,9 +7764,6 @@ function redactSensitiveSettings(settings) {
   const redacted = cloneSettings(settings);
   if (redacted?.llm) {
     redacted.llm.key = '';
-  }
-  if (redacted?.security?.virusTotal) {
-    redacted.security.virusTotal.apiKey = '';
   }
   if (redacted?.aiConfig?.keys && typeof redacted.aiConfig.keys === 'object') {
     for (const key of Object.keys(redacted.aiConfig.keys)) {
@@ -7801,6 +7855,60 @@ ipcMain.handle('settings-get', (event) => (
   isPrivilegedSettingsSender(event) ? cloneSettings(cachedSettings) : redactSensitiveSettings(cachedSettings)
 ));
 
+ipcMain.handle('env:get-info', withAuthorizedRendererPages(AUTHORIZED_RENDERER_PAGES.system, 'env:get-info', async () => {
+  const target = resolvePrimaryOmxEnvPath();
+  return {
+    success: true,
+    path: target,
+    exists: fs.existsSync(target)
+  };
+}));
+
+ipcMain.handle('env:replace-file', withAuthorizedRendererPages(AUTHORIZED_RENDERER_PAGES.system, 'env:replace-file', async (event) => {
+  const senderWindow = BrowserWindow.fromWebContents(event.sender) || BrowserWindow.getFocusedWindow() || null;
+  const selection = await dialog.showOpenDialog(senderWindow, {
+    title: 'Select replacement .env file',
+    properties: ['openFile'],
+    filters: [
+      { name: 'Environment files', extensions: ['env', 'txt'] },
+      { name: 'All files', extensions: ['*'] }
+    ]
+  });
+  if (selection.canceled || !selection.filePaths?.length) {
+    return { success: false, canceled: true };
+  }
+
+  const sourcePath = path.resolve(selection.filePaths[0]);
+  const targetPath = resolvePrimaryOmxEnvPath();
+  try {
+    const nextContent = fs.readFileSync(sourcePath, 'utf8');
+    const validation = validateImportedEnvContent(nextContent);
+    if (!validation.valid) {
+      return {
+        success: false,
+        error: `${validation.error}. Use a real env file, not the empty template.`
+      };
+    }
+    fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+    if (fs.existsSync(targetPath)) {
+      fs.copyFileSync(targetPath, `${targetPath}.backup`);
+    }
+    fs.writeFileSync(targetPath, nextContent, 'utf8');
+    const reload = reloadPrimaryOmxEnvFile();
+    return {
+      success: true,
+      sourcePath,
+      targetPath,
+      keyCount: reload.keys.length
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error?.message || 'Failed to replace .env file.'
+    };
+  }
+}));
+
 
 ipcMain.handle('settings-save', async (e, s) => {
   const incoming = s || {};
@@ -7820,10 +7928,7 @@ ipcMain.handle('settings-save', async (e, s) => {
       ...DEFAULT_SETTINGS.security,
       ...(cachedSettings?.security || {}),
       ...(incoming?.security || {}),
-      virusTotal: normalizeVirusTotalSettings({
-        ...(cachedSettings?.security?.virusTotal || {}),
-        ...(incoming?.security?.virusTotal || {})
-      }),
+      virusTotal: normalizeVirusTotalSettings(incoming?.security?.virusTotal),
       popupBlocker: {
         ...DEFAULT_SETTINGS.security.popupBlocker,
         ...(cachedSettings?.security?.popupBlocker || {}),
@@ -7836,9 +7941,10 @@ ipcMain.handle('settings-save', async (e, s) => {
       }
     },
     aiChat: {
-      ...DEFAULT_SETTINGS.aiChat,
-      ...(cachedSettings?.aiChat || {}),
-      ...(incoming?.aiChat || {})
+      ...normalizeAiChatSettings({
+        ...(cachedSettings?.aiChat || {}),
+        ...(incoming?.aiChat || {})
+      })
     },
     youtubeAddon: normalizedYouTubeAddon,
     shortcuts: {
@@ -7846,17 +7952,12 @@ ipcMain.handle('settings-save', async (e, s) => {
       ...(cachedSettings?.shortcuts || {}),
       ...(incoming?.shortcuts || {})
     },
-    extensions: normalizeBuiltInExtensionSettings({
-      ...(cachedSettings?.extensions || {}),
-      ...(incoming?.extensions || {})
-    }),
     searchEngines: normalizedSearchEngines,
     defaultSearchEngineId: normalizeDefaultSearchEngineId(
       incoming?.defaultSearchEngineId ?? cachedSettings?.defaultSearchEngineId ?? DEFAULT_SETTINGS.defaultSearchEngineId,
       normalizedSearchEngines
     ),
     llm: normalizeSharedLlmSettings(incoming?.llm ?? cachedSettings?.llm),
-    blocklist: normalizeBlocklistEntries(incoming?.blocklist ?? cachedSettings?.blocklist),
     omchat: {
       ...DEFAULT_SETTINGS.omchat,
       ...(cachedSettings?.omchat || {}),
@@ -7872,6 +7973,7 @@ ipcMain.handle('settings-save', async (e, s) => {
       ...(incoming?.mcp || {}),
       alwaysOn: Boolean(incoming?.mcp?.alwaysOn ?? cachedSettings?.mcp?.alwaysOn ?? DEFAULT_SETTINGS.mcp.alwaysOn)
     },
+    websiteUiPreferences: normalizeWebsiteUiPreferences(incoming?.websiteUiPreferences ?? cachedSettings?.websiteUiPreferences),
     websitePermissions: normalizeWebsitePermissions(incoming?.websitePermissions ?? cachedSettings?.websitePermissions)
   });
   normalizedSettings.aiConfig = normalizePersistedAiConfig(normalizedSettings.aiConfig);
@@ -7883,8 +7985,6 @@ ipcMain.handle('settings-save', async (e, s) => {
   if (success) {
     applyPreferredWebTheme();
     configureSecurity(secureNormalizedSettings, mainWindow);
-    // extension state may have changed
-    await applyExtensions(secureNormalizedSettings);
     await syncShortsHideForAllWebContents(secureNormalizedSettings);
     broadcast('settings-updated', secureNormalizedSettings);
   }
@@ -8034,7 +8134,6 @@ Electron: ${process.versions.electron}
 --- END OF REPORT ---`;
 
         await fs.promises.writeFile(reportPath, reportContent, 'utf8');
-        console.log(`[Omni Diagnostics] Failure report generated: ${reportPath}`);
         
         broadcast('notification', {
             title: 'AI Pipeline Failure',
@@ -8162,6 +8261,22 @@ const performAITask = async (event, params) => {
 ipcMain.handle('ai-perform-task', (e, p) => performAITask(e, p));
 ipcMain.handle('translator-perform', (e, p) => performAITask(e, { ...p, context: 'translator' }));
 ipcMain.handle('writer-perform', (e, p) => performAITask(e, { ...p, context: 'writer' }));
+
+ipcMain.handle('scraper:get-ollama-config', withAuthorizedRendererPages(AUTHORIZED_RENDERER_PAGES.scraper, 'scraper:get-ollama-config', async () => ({
+    executable: getScraperOllamaExecutableFromEnv(),
+    host: getScraperOllamaHostFromEnv(),
+    port: getScraperOllamaPortFromEnv(),
+    model: getScraperOllamaModelFromEnv(),
+    baseUrl: getScraperOllamaApiBaseUrl()
+})));
+
+ipcMain.handle('scraper:ollama:generate', withAuthorizedRendererPages(AUTHORIZED_RENDERER_PAGES.scraper, 'scraper:ollama:generate', async (_event, payload = {}) => {
+    try {
+        return await callScraperOllamaGenerate(payload || {});
+    } catch (error) {
+        return { error: error?.message || 'Scraper Ollama request failed.' };
+    }
+}));
 
 ipcMain.handle('ai-generate-speech', async (_event, payload = {}) => {
     try {

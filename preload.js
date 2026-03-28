@@ -151,6 +151,8 @@ contextBridge.exposeInMainWorld('browserAPI', {
     performTask: (params) => ipcRenderer.invoke('ai-perform-task', params),
     verifyAndListModels: (params) => ipcRenderer.invoke('ai-verify-and-list-models', params),
     generateSpeech: (params) => ipcRenderer.invoke('ai-generate-speech', params),
+    getScraperOllamaConfig: () => ipcRenderer.invoke('scraper:get-ollama-config'),
+    scraperGenerateWithOllama: (params) => ipcRenderer.invoke('scraper:ollama:generate', params),
     getScraperUsageStats: () => ipcRenderer.invoke('scraper:get-usage-stats'),
     webSearch: (query) => ipcRenderer.invoke('ai:web-search', query),
     webSearchDdg: (query) => ipcRenderer.invoke('ai:web-search-ddg', query),
@@ -160,10 +162,6 @@ contextBridge.exposeInMainWorld('browserAPI', {
     getDesktopScrapes: () => ipcRenderer.invoke('ai:get-desktop-scrapes')
   },
   security: {
-      getBlockedSites: () => ipcRenderer.invoke('security:get-blocked-sites'),
-      clearBlockedSites: () => ipcRenderer.invoke('security:clear-blocked-sites'),
-      verifyVirusTotalKey: (apiKey) => ipcRenderer.invoke('security:virustotal-verify-key', apiKey),
-      scanVirusTotalUrl: (payload) => ipcRenderer.invoke('security:virustotal-scan-url', payload)
   },
   settings: {
     get: () => ipcRenderer.invoke('settings-get'),

@@ -5,7 +5,7 @@ const Member = require('../models/Member.model');
 const Invite = require('../models/Invite.model');
 const Ban = require('../models/Ban.model');
 const { createLogger } = require('../utils/logger');
-const { getModel, isLocalMode } = require('./getModel');
+const { getModel } = require('./getModel');
 
 const logger = createLogger('server-repo');
 

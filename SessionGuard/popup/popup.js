@@ -12,11 +12,13 @@
 let cachedSettings = null;
 let cachedSessions = null;
 let cachedDomains = null;
+const OMX_READ_ONLY_TEXT = 'Managed by OM-X in embedded mode';
 
 // Detect if running in OM-X iframe context
 const isOmXContext = window !== window.parent && !window.chrome?.runtime;
 
 document.addEventListener('DOMContentLoaded', () => {
+  if (isOmXContext) applyOmXEmbeddedMode();
   initTabs();
   loadAllData();
   setupEventListeners();
@@ -30,6 +32,39 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 });
+
+function injectPanelNotice(panelId, message) {
+  const panel = document.getElementById(panelId);
+  if (!panel) return;
+  let note = panel.querySelector('.embedded-note');
+  if (!note) {
+    note = document.createElement('div');
+    note.className = 'embedded-note';
+    panel.insertBefore(note, panel.firstChild);
+  }
+  note.textContent = message;
+}
+
+function applyOmXEmbeddedMode() {
+  document.body.classList.add('omx-embedded');
+  injectPanelNotice('sessionsPanel', 'Live protection stats are available here. Advanced controls stay read-only inside OM-X.');
+  injectPanelNotice('domainsPanel', 'Protected domain management is available in SessionGuard extension mode.');
+  injectPanelNotice('logPanel', 'Audit log details are available in SessionGuard extension mode.');
+  injectPanelNotice('settingsPanel', 'SessionGuard settings are managed by OM-X in the embedded view.');
+
+  const domainInput = document.getElementById('domainInput');
+  const addDomain = document.getElementById('addDomain');
+  const enableProtection = document.getElementById('enableProtection');
+  const strictMode = document.getElementById('strictMode');
+  const lockTimeout = document.getElementById('lockTimeout');
+  const clearLog = document.getElementById('clearLog');
+
+  [domainInput, addDomain, enableProtection, strictMode, lockTimeout, clearLog].forEach((node) => {
+    if (!node) return;
+    node.disabled = true;
+    node.setAttribute('title', OMX_READ_ONLY_TEXT);
+  });
+}
 
 // ── OM-X Embedded Mode: Get data from parent window ─────────────────────
 async function getOmXData() {
@@ -59,17 +94,29 @@ async function loadAllData() {
         blockedAttempts: data.threatsBlocked || 0,
         alertCount: 0
       });
-      document.getElementById('sessionCount').textContent = data.tabsCount || 0;
+      const currentDomain = String(data.domain || '').trim();
+      const currentSessions = currentDomain
+        ? {
+            [currentDomain]: {
+              tabId: 'OM-X',
+              createdAt: Date.now(),
+              locked: data.enabled !== false
+            }
+          }
+        : {};
+      renderSessions(currentSessions, { readOnly: true });
+      document.getElementById('sessionCount').textContent = currentDomain ? 1 : 0;
       document.getElementById('statusBadge').textContent = data.enabled ? 'Active' : 'Disabled';
       
       // Show current domain info
-      if (data.domain) {
-        renderDomains([data.domain + ' (current)']);
-      }
+      renderDomains(currentDomain ? [currentDomain + ' (current)'] : [], { readOnly: true });
     } else {
       // Fallback: show basic info
       applySettings({ settings: { enabled: true }, blockedAttempts: 0, alertCount: 0 });
+      renderSessions({}, { readOnly: true });
+      renderDomains([], { readOnly: true });
     }
+    document.getElementById('logList').innerHTML = '<div class="empty-state">Audit log is available in extension mode.</div>';
     return;
   }
 
@@ -134,7 +181,7 @@ function updateStatusBadge(enabled) {
 }
 
 // ── Render Sessions (efficient DOM update) ──────────────────────────────
-function renderSessions(sessions) {
+function renderSessions(sessions, { readOnly = false } = {}) {
   const list = document.getElementById('sessionList');
   const count = Object.keys(sessions).length;
   document.getElementById('sessionCount').textContent = count;
@@ -147,8 +194,16 @@ function renderSessions(sessions) {
   // Build HTML string (faster than individual DOM insertions)
   let html = '';
   for (const [domain, session] of Object.entries(sessions)) {
-    const age = Math.floor((Date.now() - session.createdAt) / 1000);
-    const ageStr = age < 60 ? `${age}s ago` : `${Math.floor(age / 60)}m ago`;
+    const createdAt = Number(session?.createdAt || 0);
+    const age = createdAt ? Math.floor((Date.now() - createdAt) / 1000) : 0;
+    const ageStr = createdAt
+      ? (age < 60 ? `${age}s ago` : `${Math.floor(age / 60)}m ago`)
+      : 'Current protected site';
+    const lockMarkup = readOnly
+      ? `<span class="session-lock-indicator ${session.locked ? 'locked' : 'unlocked'}">${session.locked ? 'Protected' : 'Visible'}</span>`
+      : `<button class="session-lock ${session.locked ? 'locked' : 'unlocked'}" data-domain="${domain}" data-tab="${session.tabId}">
+            ${session.locked ? '🔒 Locked' : '🔓 Unlocked'}
+          </button>`;
 
     html += `
       <div class="session-item" data-domain="${domain}">
@@ -157,18 +212,18 @@ function renderSessions(sessions) {
           <div class="session-info">Tab ${session.tabId} · ${ageStr}</div>
         </div>
         <div class="session-status">
-          <button class="session-lock ${session.locked ? 'locked' : 'unlocked'}" data-domain="${domain}" data-tab="${session.tabId}">
-            ${session.locked ? '🔒 Locked' : '🔓 Unlocked'}
-          </button>
+          ${lockMarkup}
         </div>
       </div>`;
   }
   list.innerHTML = html;
 
   // Attach event delegation (single listener instead of N)
-  list.querySelectorAll('.session-lock').forEach(btn => {
-    btn.addEventListener('click', handleLockToggle);
-  });
+  if (!readOnly) {
+    list.querySelectorAll('.session-lock').forEach(btn => {
+      btn.addEventListener('click', handleLockToggle);
+    });
+  }
 }
 
 function handleLockToggle(e) {
@@ -189,7 +244,7 @@ function handleLockToggle(e) {
 }
 
 // ── Render Domains ──────────────────────────────────────────────────────
-function renderDomains(domains) {
+function renderDomains(domains, { readOnly = false } = {}) {
   const list = document.getElementById('domainList');
   
   let html = '';
@@ -197,12 +252,13 @@ function renderDomains(domains) {
     html += `
       <div class="domain-item" data-domain="${domain}">
         <span class="domain-name">${domain}</span>
-        <button class="btn-remove" data-domain="${domain}" title="Remove">×</button>
+        ${readOnly ? '' : `<button class="btn-remove" data-domain="${domain}" title="Remove">×</button>`}
       </div>`;
   }
   list.innerHTML = html;
 
   // Event delegation for remove buttons
+  if (readOnly) return;
   list.querySelectorAll('.btn-remove').forEach(btn => {
     btn.addEventListener('click', () => {
       const domain = btn.dataset.domain;
@@ -217,6 +273,10 @@ function renderDomains(domains) {
 
 // ── Load Audit Log ──────────────────────────────────────────────────────
 function loadAuditLog() {
+  if (isOmXContext) {
+    document.getElementById('logList').innerHTML = '<div class="empty-state">Audit log is available in extension mode.</div>';
+    return;
+  }
   chrome.runtime.sendMessage({ type: 'GET_AUDIT_LOG' }, (response) => {
     if (!response?.log) return;
     renderAuditLog(response.log);
@@ -271,10 +331,14 @@ function setupEventListeners() {
   const addBtn = document.getElementById('addDomain');
   const input = document.getElementById('domainInput');
 
-  addBtn.addEventListener('click', () => addDomain(input));
-  input.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') addDomain(input);
-  });
+  if (isOmXContext) {
+    document.getElementById('refreshSessions')?.addEventListener('click', () => loadAllData());
+  } else {
+    addBtn.addEventListener('click', () => addDomain(input));
+    input.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') addDomain(input);
+    });
+  }
 
   // Settings - skip in OM-X context (settings managed by OM-X)
   if (!isOmXContext) {

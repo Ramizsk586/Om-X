@@ -331,12 +331,18 @@
       const waitingOverlay = document.getElementById('waitingOverlay');
       const clientAvatarImg = document.getElementById('clientAvatarImg');
       const hostAvatarImg = document.getElementById('hostAvatarImg');
+      const remoteJoinKey = 'chesslyLanRemoteJoinUrl';
+      const remoteJoinUrl = localStorage.getItem(remoteJoinKey) || '';
       
       let isFlipped = false;
       let opponentConnected = false;
       let myHostAvatar = 'wK.png';
       let searchInterval = null;
       let gameActive = true;
+      let lanMode = remoteJoinUrl ? 'client' : 'host';
+      let remoteSocket = null;
+      let remoteJoinInfo = null;
+      let myProfile = { name: 'Guest', avatar: 'bK.png', avatarFolder: 'pieces' };
       
       const game = new ArenaBrain();
       let selectedSquare = null;
@@ -353,20 +359,208 @@
           return `../assets/${folder || 'pieces'}/${path}`;
       }
 
+      function resolveRemoteAsset(path) {
+          if (!path || !remoteJoinInfo?.origin) return '../assets/pieces/bK.png';
+          if (/^https?:\/\//i.test(path)) return path;
+          if (path.startsWith('/')) return remoteJoinInfo.origin + path;
+          return `${remoteJoinInfo.origin}/${path.replace(/^\.?\//, '')}`;
+      }
+
+      function getPlayerColor() {
+          return lanMode === 'client' ? 'b' : 'w';
+      }
+
+      function getOpponentColor() {
+          return getPlayerColor() === 'w' ? 'b' : 'w';
+      }
+
+      function setWaitingState(message, subtext) {
+          waitingOverlay.querySelector('h2').textContent = message;
+          waitingOverlay.querySelector('p').textContent = subtext;
+          waitingOverlay.classList.remove('hidden');
+      }
+
+      function clearRemoteJoinLink() {
+          localStorage.removeItem(remoteJoinKey);
+      }
+
+      function enterClientModeUI() {
+          hostNameEl.textContent = 'Remote Host';
+          opponentName.textContent = myProfile.name || 'You';
+          hostAvatarImg.src = '../assets/pieces/wK.png';
+          clientAvatarImg.src = resolveAvatar(myProfile.avatar, myProfile.avatarFolder);
+          connStatus.textContent = 'Client Mode';
+          connStatus.style.background = 'rgba(74, 222, 128, 0.2)';
+          connStatus.style.color = '#4ade80';
+          hostCard.style.opacity = '1';
+          clientCard.style.opacity = '1';
+          isFlipped = true;
+          document.querySelector('.controls .btn-primary').textContent = 'Remote Match Settings';
+      }
+
+      function attachRemoteSocketListeners(socket) {
+          socket.on('connect', () => {
+              opponentConnected = true;
+              statusText.textContent = 'Connected to Host';
+              statusText.style.color = '#4ade80';
+              waitingOverlay.classList.add('hidden');
+              socket.emit('client-join', {
+                  name: myProfile.name || 'Guest',
+                  avatar: myProfile.avatar || 'bK.png',
+                  token: remoteJoinInfo.token
+              });
+          });
+
+          socket.on('disconnect', () => {
+              opponentConnected = false;
+              statusText.textContent = 'Remote Host Offline';
+              statusText.style.color = '#ef4444';
+              setWaitingState('Disconnected', 'Check the host link or wait for reconnect');
+          });
+
+          socket.on('connect_error', () => {
+              opponentConnected = false;
+              statusText.textContent = 'Connection Failed';
+              statusText.style.color = '#ef4444';
+              setWaitingState('Join Failed', 'Unable to reach the remote LAN host');
+          });
+
+          socket.on('host-info', (info) => {
+              if (!info) return;
+              hostNameEl.textContent = info.name || 'Remote Host';
+              if (info.avatar) hostAvatarImg.src = resolveRemoteAsset(`/assets/pieces/${info.avatar}`);
+          });
+
+          socket.on('game-state', (state) => {
+              if (!state?.fen) return;
+              game.reset();
+              const parts = state.fen.split(' ');
+              const rows = parts[0].split('/');
+              const nextBoard = [];
+              for (let r = 0; r < 8; r++) {
+                  const rowArr = [];
+                  for (const char of rows[r]) {
+                      if (!isNaN(char)) {
+                          for (let i = 0; i < parseInt(char, 10); i++) rowArr.push('');
+                      } else {
+                          const color = char === char.toUpperCase() ? 'w' : 'b';
+                          rowArr.push(color + char.toUpperCase());
+                      }
+                  }
+                  nextBoard.push(rowArr);
+              }
+              game.board = nextBoard;
+              game.turn = parts[1] || 'w';
+              game.history = (state.history || []).map((move) => ({
+                  uci: (move.from || '') + (move.to || '') + (move.promo || ''),
+                  from: move.from,
+                  to: move.to,
+                  san: (move.from || '') + (move.to || '')
+              }));
+              selectedSquare = null;
+              legalMoves = [];
+              gameActive = true;
+              renderBoard();
+              updateTurnUI();
+          });
+
+          socket.on('server-move', (data) => {
+              if (!gameActive || !data?.move) return;
+              const move = data.move.promo ? data.move.from + data.move.to + data.move.promo : data.move.from + data.move.to;
+              game.applyMove(move);
+              renderBoard();
+              updateTurnUI();
+              checkGameStatus(false);
+          });
+
+          socket.on('game-reset', () => {
+              game.reset();
+              gameActive = true;
+              gameOverModal.style.display = 'none';
+              selectedSquare = null;
+              legalMoves = [];
+              renderBoard();
+              updateTurnUI();
+          });
+
+          socket.on('game-over', (data) => {
+              gameActive = false;
+              document.getElementById('goTitle').textContent = data?.winner === 'DRAW' ? 'DRAW' : `${data?.winner || 'GAME'} WINS`;
+              document.getElementById('goReason').textContent = data?.result || 'Match Ended';
+              document.getElementById('lan-loader').style.display = 'none';
+              document.getElementById('lan-analysis').style.display = 'none';
+              gameOverModal.style.display = 'flex';
+          });
+      }
+
+      async function initClientConnection() {
+          try {
+              remoteJoinInfo = new URL(remoteJoinUrl);
+          } catch (_) {
+              clearRemoteJoinLink();
+              lanMode = 'host';
+              return false;
+          }
+
+          const token = remoteJoinInfo.searchParams.get('token') || '';
+          if (!token) {
+              clearRemoteJoinLink();
+              lanMode = 'host';
+              return false;
+          }
+
+          remoteJoinInfo = {
+              origin: remoteJoinInfo.origin,
+              token
+          };
+          enterClientModeUI();
+          setWaitingState('Connecting to Host...', remoteJoinInfo.origin);
+
+          await new Promise((resolve, reject) => {
+              const script = document.createElement('script');
+              script.src = `${remoteJoinInfo.origin}/socket.io/socket.io.js`;
+              script.onload = resolve;
+              script.onerror = reject;
+              document.head.appendChild(script);
+          });
+
+          remoteSocket = window.io(remoteJoinInfo.origin, { transports: ['websocket', 'polling'] });
+          attachRemoteSocketListeners(remoteSocket);
+          return true;
+      }
+
       (async () => {
           const prefs = await window.electronAPI.getPreferences();
           if (prefs.boardTheme) document.documentElement.setAttribute('data-theme', prefs.boardTheme);
-          const status = await window.electronAPI.getLanStatus();
-          updateStatusUI(status);
           const profile = await window.electronAPI.getProfile();
           if(profile) {
+              myProfile = profile;
               hostNameEl.textContent = profile.name || "Host (You)";
+              opponentName.textContent = profile.name || "You";
               if(profile.avatar) {
                   myHostAvatar = profile.avatar;
                   hostAvatarImg.src = resolveAvatar(profile.avatar, profile.avatarFolder);
-                  window.electronAPI.broadcastLanHostInfo({ name: profile.name, avatar: myHostAvatar });
+                  if (lanMode === 'host') {
+                      window.electronAPI.broadcastLanHostInfo({ name: profile.name, avatar: myHostAvatar });
+                  }
+                  clientAvatarImg.src = resolveAvatar(profile.avatar, profile.avatarFolder);
               }
           }
+
+          if (lanMode === 'client') {
+              const connected = await initClientConnection().catch(() => false);
+              if (!connected) {
+                  statusText.textContent = 'Join Link Invalid';
+                  statusText.style.color = '#ef4444';
+                  setWaitingState('Client Mode Failed', 'Go back to LAN settings and paste a valid link');
+              }
+              renderBoard();
+              updateTurnUI();
+              return;
+          }
+
+          const status = await window.electronAPI.getLanStatus();
+          updateStatusUI(status);
       })();
 
       function startSearchingAnimation() {
@@ -437,6 +631,16 @@
       document.getElementById('resetBtn').onclick = resetMatch;
       
       function resetMatch() {
+          if (lanMode === 'client') {
+              game.reset();
+              gameActive = true;
+              gameOverModal.style.display = 'none';
+              selectedSquare = null;
+              legalMoves = [];
+              renderBoard();
+              updateTurnUI();
+              return;
+          }
           game.reset();
           gameActive = true;
           gameOverModal.style.display = 'none';
@@ -454,6 +658,11 @@
       };
 
       function updateTurnUI() {
+          if (lanMode === 'client') {
+              hostCard.classList.toggle('active-turn', game.turn === 'w');
+              clientCard.classList.toggle('active-turn', game.turn === 'b');
+              return;
+          }
           hostCard.classList.toggle('active-turn', game.turn === 'w');
           clientCard.classList.toggle('active-turn', game.turn === 'b');
       }
@@ -496,7 +705,8 @@
       }
       
       function handleSquareClick(r, c) {
-          if(!opponentConnected || game.turn !== 'w' || !gameActive) return;
+          const playerColor = getPlayerColor();
+          if(!opponentConnected || game.turn !== playerColor || !gameActive) return;
           
           const move = legalMoves.find(m => {
               const t = parseSq(m.substring(2,4));
@@ -513,14 +723,18 @@
               
               const fromSq = move.substring(0,2);
               const toSq = move.substring(2,4);
-              window.electronAPI.broadcastLanMove({ from: fromSq, to: toSq, promo }, game.boardToFen());
+              if (lanMode === 'client' && remoteSocket) {
+                  remoteSocket.emit('client-move', { from: fromSq, to: toSq, promo });
+              } else {
+                  window.electronAPI.broadcastLanMove({ from: fromSq, to: toSq, promo }, game.boardToFen());
+              }
               window.electronAPI.requestAnalysis(game.boardToFen());
-              checkGameStatus();
+              checkGameStatus(lanMode !== 'client');
               return;
           }
           
           const p = game.board[r][c];
-          if(p && p[0] === 'w') {
+          if(p && p[0] === playerColor) {
               if(selectedSquare && selectedSquare.r===r && selectedSquare.c===c) {
                   selectedSquare = null;
                   legalMoves = [];
@@ -538,7 +752,7 @@
           }
       }
       
-      function checkGameStatus() {
+      function checkGameStatus(shouldBroadcast = true) {
           const moves = game.getLegalMoves();
           if(moves.length === 0) {
               gameActive = false;
@@ -547,7 +761,9 @@
               const winner = isCheck ? (game.turn === 'w' ? "BLACK" : "WHITE") : "DRAW";
               const result = isCheck ? "CHECKMATE" : "STALEMATE";
               
-              window.electronAPI.broadcastLanGameOver({ result: result, winner: winner });
+              if (shouldBroadcast && lanMode !== 'client') {
+                  window.electronAPI.broadcastLanGameOver({ result: result, winner: winner });
+              }
               
               document.getElementById('goTitle').textContent = winner === 'DRAW' ? "DRAW" : winner + " WINS";
               document.getElementById('goReason').textContent = result;
@@ -563,7 +779,7 @@
               // LAN Analysis
               window.electronAPI.analyzeMatchAndUpdateElo({
                   gameData: { fen: game.boardToFen(), moves: game.history, result, winner },
-                  playerColor: 'w',
+                  playerColor: getPlayerColor(),
                   opponentElo: 1500
               }).then(res => {
                   loader.style.display = 'none';

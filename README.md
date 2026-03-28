@@ -353,12 +353,6 @@ A powerful quick-launch panel with customizable search engines and keyboard shor
 - Configurable via settings
 - Exception list for trusted sites
 
-#### Custom Blocklist
-- Add domains to block manually
-- Real-time blocking of custom domains
-- Remove blocked domains from the list
-- Import/export blocklist
-
 #### Adult Content Blocker
 A multi-layered content filtering system that blocks adult/pornographic websites across search results, images, and direct browsing.
 
@@ -997,7 +991,6 @@ Storm-flight survival mini game.
 - **Third-Party Cookie Blocking**: Prevents cross-site tracking
 - **HTTPS Enforcement**: Default to secure connections
 - **Cookie Shield**: Strips cookies from third-party requests
-- **Custom Blocklists**: Domain and keyword-based blocking
 
 ### VirusTotal Integration
 - **URL Scanning**: Real-time security checks before visiting sites

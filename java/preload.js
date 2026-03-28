@@ -204,6 +204,8 @@ contextBridge.exposeInMainWorld('browserAPI', {
   ai: {
     performTask: (params) => ipcRenderer.invoke('ai-perform-task', params),
     generateSpeech: (params) => ipcRenderer.invoke('ai-generate-speech', params),
+    getScraperOllamaConfig: () => ipcRenderer.invoke('scraper:get-ollama-config'),
+    scraperGenerateWithOllama: (params) => ipcRenderer.invoke('scraper:ollama:generate', params),
     getScraperUsageStats: () => ipcRenderer.invoke('scraper:get-usage-stats'),
     getScraperGroqKeys: () => ipcRenderer.invoke('scraper:get-groq-keys'),
     getScraperGroqModel: () => ipcRenderer.invoke('scraper:get-groq-model'),
@@ -216,8 +218,6 @@ contextBridge.exposeInMainWorld('browserAPI', {
     getDesktopScrapes: () => ipcRenderer.invoke('ai:get-desktop-scrapes')
   },
   security: {
-      getBlockedSites: () => ipcRenderer.invoke('security:get-blocked-sites'),
-      clearBlockedSites: () => ipcRenderer.invoke('security:clear-blocked-sites'),
       getSiteSafetyStatus: (payload) => ipcRenderer.invoke('security:get-site-safety-status', payload),
       primeSiteSafetyScan: (payload) => ipcRenderer.invoke('security:prime-site-safety-scan', payload),
       getSiteSettings: (payload) => ipcRenderer.invoke('security:get-site-settings', payload),
@@ -228,6 +228,10 @@ contextBridge.exposeInMainWorld('browserAPI', {
   settings: {
     get: () => ipcRenderer.invoke('settings-get'),
     save: (data) => ipcRenderer.invoke('settings-save', data)
+  },
+  envFile: {
+    getInfo: () => ipcRenderer.invoke('env:get-info'),
+    replace: () => ipcRenderer.invoke('env:replace-file')
   },
   app: {
     restart: () => ipcRenderer.invoke('app-restart')
@@ -283,6 +287,10 @@ contextBridge.exposeInMainWorld('browserAPI', {
     resume: (id) => ipcRenderer.invoke('downloads-resume', id),
     cancel: (id) => ipcRenderer.invoke('downloads-cancel', id),
     start: (url, options) => ipcRenderer.invoke('downloads-start', url, options)
+  },
+  notifications: {
+    show: (payload) => ipcRenderer.send('notification-show', payload),
+    onReceive: (callback) => ipcRenderer.on('notification', (_event, payload) => callback(payload))
   },
   shortcuts: {
     createAppShortcut: (appId) => ipcRenderer.invoke('app-shortcut:create', { appId })

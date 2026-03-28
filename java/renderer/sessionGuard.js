@@ -37,6 +37,7 @@
   // Stats
   let threatsBlocked = 0;
   let tokensProtected = [];
+  const vaultStats = window.__omxSessionVaultStats || null;
 
   // ── 1. Cookie Proxy (Enforce SameSite=Strict on tokens) ─────────────────
   const origCookieDesc = Object.getOwnPropertyDescriptor(Document.prototype, 'cookie') ||
@@ -157,6 +158,10 @@
   window.__omxSessionGuardStats = {
     getThreatsBlocked: () => threatsBlocked,
     getTokensProtected: () => tokensProtected,
+    isVaultEnabled: () => Boolean(vaultStats?.isEnabled?.()),
+    getVaultMode: () => String(vaultStats?.getMode?.() || 'preload-only'),
+    getEncryptedWrites: () => Number(vaultStats?.getEncryptedWrites?.() || 0),
+    getDecryptedReads: () => Number(vaultStats?.getDecryptedReads?.() || 0),
     isProtected: () => true,
     domain: currentHost
   };

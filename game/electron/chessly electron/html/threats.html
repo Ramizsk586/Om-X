@@ -255,7 +255,8 @@
   <script src="../java/arena_brain.js"></script>
   <script>
     // --- Logic ---
-    let gameData = null;
+    const START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+    let gameData = { fen: START_FEN, moves: [] };
     let isScanning = false;
     let threats = [];
     let currentThreatIndex = -1;
@@ -276,8 +277,9 @@
 
     // --- Board Utils ---
     function renderBoard(fen, highlightMove) {
+        const safeFen = typeof fen === 'string' && fen.trim() ? fen : START_FEN;
         boardEl.innerHTML = "";
-        const parts = fen.split(' ');
+        const parts = safeFen.split(' ');
         const rows = parts[0].split('/');
         
         for(let r=0; r<8; r++) {
@@ -475,6 +477,11 @@
 
     btnScan.onclick = async () => {
         if(isScanning || !gameData) return;
+        if(!Array.isArray(gameData.moves) || gameData.moves.length === 0) {
+            statusLabel.textContent = "No completed game found to scan";
+            renderBoard(gameData.fen || START_FEN);
+            return;
+        }
         
         isScanning = true;
         btnScan.disabled = true;
@@ -604,12 +611,15 @@
     (async () => {
         const prefs = await window.electronAPI.getPreferences();
         if(prefs?.boardTheme) document.documentElement.setAttribute('data-theme', prefs.boardTheme);
+        renderBoard(START_FEN);
         window.electronAPI.requestLastGame(); 
     })();
     
     window.electronAPI.onLastGame((data) => {
-        gameData = data;
-        if(data && data.fen) renderBoard(data.fen); 
+        gameData = data && typeof data === 'object'
+            ? { fen: data.fen || START_FEN, moves: Array.isArray(data.moves) ? data.moves : [] }
+            : { fen: START_FEN, moves: [] };
+        renderBoard(gameData.fen);
     });
 
   </script>

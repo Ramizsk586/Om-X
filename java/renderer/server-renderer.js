@@ -103,39 +103,6 @@ function updateMcpRuntimeStatus(statusElementId, status) {
     }
 }
 
-class MinecraftRenderer {
-    constructor() {
-        this.initialized = false;
-    }
-
-    async init() {
-        this.initialized = true;
-        
-        // Wait for DOM to be fully ready
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', () => this.setupEventListeners());
-        } else {
-            this.setupEventListeners();
-        }
-        
-    }
-
-    setupEventListeners() {
-        const panelFromQuery = new URLSearchParams(window.location.search).get('panel');
-        const requestedPanel = String(panelFromQuery || '').trim();
-        const hasRequestedPanel = requestedPanel
-            && document.querySelector(`.panel#panel-${CSS.escape(requestedPanel)}`);
-        this.switchPanel(hasRequestedPanel ? requestedPanel : 'llama');
-    }
-
-    switchPanel(panelName) {
-        // Update panels
-        document.querySelectorAll('.panel').forEach(panel => {
-            panel.classList.toggle('active', panel.id === `panel-${panelName}`);
-        });
-    }
-}
-
 class LlamaServerRenderer {
     constructor() {
         this.isRunning = false;
@@ -2617,13 +2584,6 @@ class PocketTTSRenderer {
 }
 
 function initMinecraft() {
-    try {
-        window.minecraftRenderer = new MinecraftRenderer();
-        window.minecraftRenderer.init();
-    } catch (err) {
-        console.error('[Minecraft] Initialization error:', err);
-    }
-
     try {
         window.llamaServerRenderer = new LlamaServerRenderer();
         window.llamaServerRenderer.init();

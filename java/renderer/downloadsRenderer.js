@@ -30,7 +30,8 @@ function statusText(item, percent) {
   if (item.state === 'paused') return `Paused ${percent}%`;
   if (item.state === 'completed') return `Completed${sizeLabel ? ` - ${sizeLabel}` : ''}`;
   if (item.state === 'blocked') return `Blocked${item.reason ? ` - ${item.reason}` : ''}`;
-  if (item.state === 'cancelled' || item.state === 'interrupted') return 'Interrupted';
+  if (item.state === 'cancelled') return item.reason ? `Cancelled - ${item.reason}` : 'Cancelled';
+  if (item.state === 'interrupted') return 'Interrupted';
   return 'Pending';
 }
 
@@ -60,6 +61,21 @@ function getMergedItems() {
   return merged;
 }
 
+function applyLocalDownloadUpdate(id, patch = {}) {
+  const targetId = String(id || '').trim();
+  if (!targetId) return;
+
+  if (store.active.has(targetId)) {
+    store.active.set(targetId, { ...store.active.get(targetId), ...patch, id: targetId });
+    return;
+  }
+
+  const index = (store.history || []).findIndex((item) => String(item?.id || '').trim() === targetId);
+  if (index >= 0) {
+    store.history[index] = { ...store.history[index], ...patch, id: targetId };
+  }
+}
+
 async function refreshHistory() {
   try {
     store.history = await window.browserAPI.downloads.get() || [];
@@ -81,7 +97,11 @@ async function performAction(action, id) {
     else if (action === 'folder') await window.browserAPI.downloads.showInFolder(id);
     else if (action === 'pause') await window.browserAPI.downloads.pause(id);
     else if (action === 'resume') await window.browserAPI.downloads.resume(id);
-    else if (action === 'cancel') await window.browserAPI.downloads.cancel(id);
+    else if (action === 'cancel') {
+      applyLocalDownloadUpdate(id, { state: 'cancelled', reason: 'Cancelled by user' });
+      renderList();
+      await window.browserAPI.downloads.cancel(id);
+    }
   } catch (_) {}
 }
 

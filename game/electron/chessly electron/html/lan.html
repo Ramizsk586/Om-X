@@ -39,6 +39,53 @@
           display: flex; flex-direction: column; gap: 8px;
           margin-top: 16px;
       }
+
+      .join-input {
+          width: 100%;
+          background: rgba(0,0,0,0.3);
+          border: 1px solid rgba(255,255,255,0.12);
+          color: #fff;
+          border-radius: 12px;
+          padding: 14px 16px;
+          font-family: 'JetBrains Mono', monospace;
+          font-size: 12px;
+          margin-top: 14px;
+      }
+
+      .join-input:focus {
+          border-color: var(--primary-accent);
+          box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+      }
+
+      .join-actions {
+          display: flex;
+          gap: 12px;
+          margin-top: 14px;
+      }
+
+      .btn-primary-inline,
+      .btn-secondary-inline {
+          border-radius: 10px;
+          height: 44px;
+          padding: 0 16px;
+          cursor: pointer;
+          font-weight: 800;
+          text-transform: uppercase;
+          letter-spacing: 1px;
+      }
+
+      .btn-primary-inline {
+          background: var(--primary-accent);
+          color: #fff;
+          border: none;
+          flex: 1;
+      }
+
+      .btn-secondary-inline {
+          background: rgba(255,255,255,0.05);
+          color: #fff;
+          border: 1px solid rgba(255,255,255,0.12);
+      }
       
       .player-item {
           display: flex; justify-content: space-between; align-items: center;
@@ -112,6 +159,16 @@
   </div>
 
   <div class="config-card">
+      <div class="section-title">Join Remote Match</div>
+      <div class="row-desc">Paste the opponent host link here to open the Chessly LAN arena in client mode.</div>
+      <input id="remoteJoinUrl" class="join-input" type="text" placeholder="http://192.168.x.x:3001/mobile?token=..." autocomplete="off">
+      <div class="join-actions">
+          <button id="joinRemoteBtn" class="btn-primary-inline">Join In Chessly</button>
+          <button id="clearRemoteBtn" class="btn-secondary-inline">Clear</button>
+      </div>
+  </div>
+
+  <div class="config-card">
       <div class="section-title">Connected Players</div>
       <div id="playersList" class="player-list">
           <div style="text-align:center; opacity:0.5; font-size:13px; padding:20px;">No players connected</div>
@@ -126,6 +183,10 @@
       const urlDisplay = document.getElementById('urlDisplay');
       const playersList = document.getElementById('playersList');
       const maxPlayersInput = document.getElementById('maxPlayers');
+      const remoteJoinUrlInput = document.getElementById('remoteJoinUrl');
+      const joinRemoteBtn = document.getElementById('joinRemoteBtn');
+      const clearRemoteBtn = document.getElementById('clearRemoteBtn');
+      const REMOTE_JOIN_KEY = 'chesslyLanRemoteJoinUrl';
 
       async function updateUI() {
           const status = await window.electronAPI.getLanStatus();
@@ -222,7 +283,23 @@
           window.electronAPI.lanSetConfig({ maxPlayers: parseInt(maxPlayersInput.value) });
       };
 
+      joinRemoteBtn.onclick = () => {
+          const joinUrl = remoteJoinUrlInput.value.trim();
+          if (!/^https?:\/\//i.test(joinUrl)) {
+              alert('Paste a valid LAN host link starting with http:// or https://');
+              return;
+          }
+          localStorage.setItem(REMOTE_JOIN_KEY, joinUrl);
+          window.electronAPI.openLanWindow();
+      };
+
+      clearRemoteBtn.onclick = () => {
+          remoteJoinUrlInput.value = '';
+          localStorage.removeItem(REMOTE_JOIN_KEY);
+      };
+
       // Init
+      remoteJoinUrlInput.value = localStorage.getItem(REMOTE_JOIN_KEY) || '';
       updateUI();
       setInterval(updateUI, 5000); // Poll status
       

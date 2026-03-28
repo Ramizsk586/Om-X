@@ -48,41 +48,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     return false;
   };
 
-  const formatLocalQuickBotResponse = (input, baseResponse, confidence = 0.7) => {
-    const raw = String(baseResponse || '').trim();
-    if (!raw) return '';
-
-    if (raw.length <= 180 && !raw.includes('\n')) {
-      return raw;
-    }
-
-    const sentences = raw
-      .replace(/\n+/g, ' ')
-      .split(/(?<=[.!?])\s+/)
-      .map((part) => part.trim())
-      .filter(Boolean);
-
-    const summary = sentences[0] || raw.slice(0, 180);
-    const points = sentences
-      .slice(1)
-      .filter((part) => part.length > 24)
-      .slice(0, 4);
-
-    const confidenceLabel = confidence >= 0.85 ? 'High' : confidence >= 0.7 ? 'Medium' : 'Low';
-    const normalizedInput = String(input || '').trim();
-    const closing = normalizedInput
-      ? `Need a deeper breakdown for "${normalizedInput}"?`
-      : 'Need a deeper breakdown?';
-
-    return [
-      summary,
-      points.length ? '' : null,
-      points.length ? points.map((point) => `- ${point}`).join('\n') : null,
-      '',
-      `${closing} (Match: ${confidenceLabel})`
-    ].filter(Boolean).join('\n');
-  };
-
   const els = {
     scraperControls: document.getElementById('scraper-controls'),
     scraperToolbar: document.getElementById('scraper-results-toolbar'),
@@ -122,6 +87,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   let webApiKeys = { serpapi: '', tavily: '', newsapi: '' };
   let scraperGroqModel = 'qwen/qwen3-32b';
+  let scraperOllamaConfig = {
+    model: '',
+    host: '127.0.0.1',
+    port: 11434,
+    baseUrl: 'http://127.0.0.1:11434'
+  };
   let adultContentBlockingEnabled = true;
 
   let currentScrapedImages = [];
@@ -132,7 +103,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   const AI_REPORT_SETTINGS_KEY = '__omx_ai_report_settings';
   const DEFAULT_AI_REPORT_SETTINGS = { contextLength: 3000, temperature: 0.3 };
   let aiReportSettings = { ...DEFAULT_AI_REPORT_SETTINGS };
-  const USE_LOCAL_QUICK_BOT = true;
 
   const setSaveAllButtonState = ({ visible, text, disabled } = {}) => {
     if (!els.btnSaveAllDesktop) return;
@@ -395,16 +365,26 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
   };
 
-  const fetchWikipediaData = async (query) => {
-    const primaryPage = await fetchWikipediaPageSummary(query);
-    const relatedUrl = `https://en.wikipedia.org/w/api.php?action=opensearch&search=${encodeURIComponent(query)}&limit=10&namespace=0&format=json&origin=*`;
+  const searchWikipediaCandidates = async (query, limit = 10) => {
+    const relatedUrl = `https://en.wikipedia.org/w/api.php?action=opensearch&search=${encodeURIComponent(query)}&limit=${Math.max(1, Math.min(limit, 10))}&namespace=0&format=json&origin=*`;
     const relatedRes = await fetch(relatedUrl);
+    if (!relatedRes.ok) {
+      return { titles: [], links: [] };
+    }
     const relatedJson = await relatedRes.json();
-    const relatedTopicsRaw = Array.isArray(relatedJson?.[1]) ? relatedJson[1].filter(Boolean) : [];
-    const relatedLinksRaw = Array.isArray(relatedJson?.[3]) ? relatedJson[3].filter(Boolean) : [];
+    return {
+      titles: Array.isArray(relatedJson?.[1]) ? relatedJson[1].filter(Boolean) : [],
+      links: Array.isArray(relatedJson?.[3]) ? relatedJson[3].filter(Boolean) : []
+    };
+  };
+
+  const fetchWikipediaData = async (query) => {
+    const candidateSearch = await searchWikipediaCandidates(query, 10);
+    const relatedTopicsRaw = Array.isArray(candidateSearch?.titles) ? candidateSearch.titles : [];
+    const relatedLinksRaw = Array.isArray(candidateSearch?.links) ? candidateSearch.links : [];
 
     const candidateTitles = dedupeBy(
-      [primaryPage?.title || query, ...relatedTopicsRaw].map((v) => String(v || '').trim()).filter(Boolean),
+      [...relatedTopicsRaw].map((v) => String(v || '').trim()).filter(Boolean),
       (v) => v.toLowerCase()
     ).slice(0, 5);
 
@@ -413,6 +393,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       .filter((r) => r.status === 'fulfilled' && r.value && r.value.summary)
       .map((r) => r.value);
 
+    const primaryPage = wikiPages[0] || null;
     const combinedSummary = wikiPages.map((p, idx) => `${idx + 1}. ${p.title}: ${p.summary}`).join('\n\n');
     const pageUrl = String(primaryPage?.pageUrl || wikiPages[0]?.pageUrl || '');
     const relatedTopics = dedupeBy(
@@ -687,7 +668,37 @@ document.addEventListener('DOMContentLoaded', async () => {
     return keys[idx];
   };
 
-  const getActiveLlmConfigForDataWorkflow = async (overrides = {}) => {
+  const getActiveLlmConfigForDataWorkflow = async (overrides = {}, llmBackend = 'groq') => {
+    const overrideMax = Number(overrides?.maxTokens);
+    const normalizedOverrideMax = Number.isFinite(overrideMax)
+      ? Math.max(96, Math.min(4096, Math.round(overrideMax)))
+      : null;
+
+    if (llmBackend === 'ollama') {
+      const envConfig = window.browserAPI?.ai?.getScraperOllamaConfig
+        ? await window.browserAPI.ai.getScraperOllamaConfig()
+        : {};
+      const resolved = {
+        ...scraperOllamaConfig,
+        ...(envConfig && typeof envConfig === 'object' ? envConfig : {})
+      };
+      scraperOllamaConfig = {
+        ...scraperOllamaConfig,
+        ...resolved,
+        model: String(resolved?.model || '').trim(),
+        host: String(resolved?.host || scraperOllamaConfig.host || '127.0.0.1').trim(),
+        port: Number(resolved?.port || scraperOllamaConfig.port || 11434) || 11434,
+        baseUrl: String(resolved?.baseUrl || scraperOllamaConfig.baseUrl || '').trim() || `http://${String(resolved?.host || '127.0.0.1').trim()}:${Number(resolved?.port || 11434) || 11434}`
+      };
+      return {
+        provider: 'ollama',
+        model: scraperOllamaConfig.model,
+        baseUrl: scraperOllamaConfig.baseUrl,
+        temperature: overrides.temperature,
+        maxTokens: normalizedOverrideMax || 700
+      };
+    }
+
     const full = await window.browserAPI.settings.get();
     const envGroqKeys = window.browserAPI?.ai?.getScraperGroqKeys
       ? await window.browserAPI.ai.getScraperGroqKeys()
@@ -695,10 +706,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     const groqKeys = Array.isArray(envGroqKeys) && envGroqKeys.length
       ? envGroqKeys
       : readGroqKeysFromConfig(full);
-    const overrideMax = Number(overrides?.maxTokens);
-    const normalizedOverrideMax = Number.isFinite(overrideMax)
-      ? Math.max(96, Math.min(4096, Math.round(overrideMax)))
-      : null;
     if (groqKeys.length) {
       return {
         provider: 'groq',
@@ -713,8 +720,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     const activeProvider = String(full?.activeProvider || 'google').trim();
     const providerCfg = full?.providers?.[activeProvider] || {};
     let baseUrl = String(providerCfg?.baseUrl || '').trim();
-    if (!baseUrl) {
-      if (activeProvider === 'openai-compatible') baseUrl = String(full?.aiConfig?.openaiCompatible?.baseUrl || '').trim();
+    if (!baseUrl && activeProvider === 'openai-compatible') {
+      baseUrl = String(full?.aiConfig?.openaiCompatible?.baseUrl || '').trim();
     }
     return {
       provider: activeProvider,
@@ -727,6 +734,31 @@ document.addEventListener('DOMContentLoaded', async () => {
   };
 
   const callLlmForDataWorkflow = async ({ prompt, systemInstruction, llmConfig }) => {
+    if (llmConfig?.provider === 'ollama') {
+      if (!window.browserAPI?.ai?.scraperGenerateWithOllama) throw new Error('Scraper Ollama API unavailable');
+      if (!llmConfig?.model) throw new Error('SCRAPER_OLLAMA_MODEL is not configured.');
+      let workingPrompt = String(prompt || '');
+      let effectiveMaxTokens = Number.isFinite(Number(llmConfig?.maxTokens))
+        ? Math.round(Number(llmConfig.maxTokens))
+        : 700;
+
+      effectiveMaxTokens = Math.max(96, Math.min(4096, effectiveMaxTokens));
+      const promptBudget = Math.max(700, 12000 - effectiveMaxTokens - estimateTokens(systemInstruction || '') - 120);
+      workingPrompt = trimPromptToTokenBudget(workingPrompt, promptBudget);
+
+      const res = await window.browserAPI.ai.scraperGenerateWithOllama({
+        prompt: workingPrompt,
+        systemInstruction,
+        temperature: llmConfig.temperature,
+        maxTokens: effectiveMaxTokens
+      });
+      if (res?.error) throw new Error(res.error);
+      return {
+        text: String(res?.text || '').trim(),
+        provider: String(res?.provider || llmConfig.provider || 'ollama')
+      };
+    }
+
     if (!window.browserAPI?.ai?.performTask) throw new Error('AI task API unavailable');
     const keys = Array.isArray(llmConfig.keys) ? llmConfig.keys : [];
     const keyRotationAttempts = Math.max(1, Math.min(keys.length || 1, 3));
@@ -814,7 +846,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     return serpSeeds.slice(0, safeSerpMax);
   };
 
-  const buildAiSearchPlan = async ({ query, wikiSummary = '', wikiTopics = [], llmOverrides = {}, maxDdgQueries = 20, maxSerpQueries = 2, useLocalQuickBot = USE_LOCAL_QUICK_BOT }) => {
+  const buildAiSearchPlan = async ({ query, wikiSummary = '', wikiTopics = [], llmOverrides = {}, maxDdgQueries = 20, maxSerpQueries = 2, llmBackend = 'groq' }) => {
     const safeDdgMax = Math.max(3, Math.min(20, Number(maxDdgQueries) || 20));
     const safeSerpMax = Math.max(0, Math.min(8, Number(maxSerpQueries) || 0));
     const safeSummary = cleanSnippet(String(wikiSummary || '')).slice(0, 900);
@@ -822,18 +854,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const fallbackSeeds = buildSearchQueries(query, topics);
     const fallbackSerpSeeds = buildFallbackSerpQueries(query, topics, safeSerpMax, fallbackSeeds);
 
-    if (useLocalQuickBot) {
-      const quickNoteSeed = 'Search plan for ' + String(query || '').trim() + '. Use Wikipedia context and focused web queries.';
-      const quickNotes = formatLocalQuickBotResponse(query, quickNoteSeed, 0.66) || '';
-      return {
-        ddgQueries: clampQueryList([], 3, safeDdgMax, fallbackSeeds),
-        serpQueries: clampQueryList([], safeSerpMax, safeSerpMax, fallbackSerpSeeds),
-        notes: quickNotes,
-        provider: 'quickbot'
-      };
-    }
-
-    const llmConfig = await getActiveLlmConfigForDataWorkflow(llmOverrides);
+    const llmConfig = await getActiveLlmConfigForDataWorkflow(llmOverrides, llmBackend);
     const systemInstruction = [
       'You are a research search planner.',
       'Return JSON only, no prose.',
@@ -874,26 +895,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   };
 
-  const synthesizeReportWithLlm = async ({ query, wikiSummary, wikiPages, normalizedSources, uniqueLinks, relatedTopics, uniqueImages, onStage, llmOverrides = {}, useLocalQuickBot = USE_LOCAL_QUICK_BOT }) => {
-    if (useLocalQuickBot) {
-      const evidenceSources = rankAndFilterSources(query, normalizedSources, -0.25).slice(0, 18);
-      const summaryStructured = buildExecutiveSummary(query, wikiSummary, evidenceSources, relatedTopics);
-      const detailedNarrative = buildDetailedNarrative(query, wikiSummary, evidenceSources, uniqueLinks, relatedTopics, 2500, 4000);
-      const quickOverviewSeed = summaryStructured.overview || ('Local report for ' + String(query || '').trim() + '.');
-      const quickOverview = formatLocalQuickBotResponse(query, quickOverviewSeed, 0.74) || quickOverviewSeed;
-      const quickNarrative = formatLocalQuickBotResponse(query, detailedNarrative, 0.68) || detailedNarrative;
-      onStage?.('QuickBot Synthesis');
-      return {
-        summaryStructured: { ...summaryStructured, overview: quickOverview },
-        summaryText: quickOverview,
-        detailedNarrative: quickNarrative,
-        llmProviderUsed: 'quickbot',
-        llmCalls: 1,
-        extractionChunkCalls: 0
-      };
-    }
-
-    const llmConfig = await getActiveLlmConfigForDataWorkflow(llmOverrides);
+  const synthesizeReportWithLlm = async ({ query, wikiSummary, wikiPages, normalizedSources, uniqueLinks, relatedTopics, uniqueImages, onStage, llmOverrides = {}, llmBackend = 'groq' }) => {
+    const llmConfig = await getActiveLlmConfigForDataWorkflow(llmOverrides, llmBackend);
     const evidenceSources = rankAndFilterSources(query, normalizedSources, -0.25).slice(0, 24);
     const evidenceRecords = [];
 
@@ -1080,32 +1083,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     const summaryStructured = report.summaryStructured || {
       overview: report.summary || '',
       keyPoints: [],
-      focusAreas: []
+        focusAreas: []
     };
-    if (report?.plan) {
-      const plan = report.plan || {};
-      const ddgList = Array.isArray(plan.ddgQueries) ? plan.ddgQueries : [];
-      const serpList = Array.isArray(plan.serpQueries) ? plan.serpQueries : [];
-      const planCard = document.createElement('div');
-      planCard.className = 'report-card';
-      planCard.innerHTML = `
-        <h3>AI Search Plan</h3>
-        <p>${escapeHtml(plan.notes || 'AI-curated query set and evidence routing.')}</p>
-        <div style="margin-top:10px;">
-          <div style="font-size:12px; color:#d4d4d8; font-weight:700; margin-bottom:6px;">DDG Queries (${ddgList.length})</div>
-          <div style="display:flex; flex-direction:column; gap:6px; color:#cbd5e1; font-size:12px;">
-            ${ddgList.map((q) => `<div>${escapeHtml(q)}</div>`).join('')}
-          </div>
-        </div>
-        <div style="margin-top:12px;">
-          <div style="font-size:12px; color:#d4d4d8; font-weight:700; margin-bottom:6px;">Serp Queries (${serpList.length})</div>
-          <div style="display:flex; flex-direction:column; gap:6px; color:#cbd5e1; font-size:12px;">
-            ${serpList.length ? serpList.map((q) => `<div>${escapeHtml(q)}</div>`).join('') : '<div>None</div>'}
-          </div>
-        </div>
-      `;
-      els.scraperResults.appendChild(planCard);
-    }
     const summaryCard = document.createElement('div');
     summaryCard.className = 'report-card';
     summaryCard.innerHTML = `
@@ -1117,13 +1096,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           <ul style="margin:0; padding-left:18px; color:#a1a1aa; font-size:13px; line-height:1.5; display:grid; gap:8px;">
             ${summaryStructured.keyPoints.map((point) => {
               const text = typeof point === 'string' ? point : (point?.text || '');
-              const source = typeof point === 'string' ? '' : (point?.source || '');
-              return `
-                <li>
-                  ${escapeHtml(text)}
-                  ${source ? `<div style="margin-top:4px; font-size:11px; color:#64748b;">Source: ${escapeHtml(source)}</div>` : ''}
-                </li>
-              `;
+              return `<li>${escapeHtml(text)}</li>`;
             }).join('')}
           </ul>
         </div>
@@ -1139,38 +1112,51 @@ document.addEventListener('DOMContentLoaded', async () => {
     `;
     els.scraperResults.appendChild(summaryCard);
 
-    if (!isAiData) {
-      const sourcesCard = document.createElement('div');
-      sourcesCard.className = 'report-links';
-      const sourceRows = (report.sources || []).slice(0, 15);
-      if (sourceRows.length === 0) {
-        sourcesCard.innerHTML = '<div class="report-link-row"><div class="report-link-title">No sources were collected.</div></div>';
-      } else {
-        sourcesCard.innerHTML = sourceRows.map((src) => `
-          <div class="report-link-row">
-            <div class="report-link-title">${escapeHtml(src.title || 'Source')}</div>
+    const rawDataCard = document.createElement('div');
+    rawDataCard.className = 'report-card';
+    const wikiRows = Array.isArray(report?.wikiPages) ? report.wikiPages.filter((page) => page?.title || page?.summary).slice(0, 8) : [];
+    const sourceRows = Array.isArray(report?.sources)
+      ? report.sources.filter((src) => src?.title || cleanSnippet(src?.snippet || '')).slice(0, 18)
+      : [];
+    const evidenceRows = sourceRows.filter((src) => cleanSnippet(src?.snippet || ''));
+    rawDataCard.innerHTML = `
+      <h3>Raw Data</h3>
+      ${wikiRows.length ? `
+        <div style="margin-top:10px;">
+          <div style="font-size:12px; color:#d4d4d8; font-weight:700; margin-bottom:8px;">Wikipedia Data</div>
+          <div style="display:grid; gap:10px;">
+            ${wikiRows.map((page) => `
+              <div style="padding:10px 12px; border:1px solid #27272a; border-radius:10px; background:#111114;">
+                <div style="font-size:12px; font-weight:700; color:#f4f4f5; margin-bottom:6px;">${escapeHtml(page.title || 'Wikipedia')}</div>
+                <div style="font-size:12px; color:#a1a1aa; line-height:1.55;">${escapeHtml(cleanSnippet(page.summary || 'No summary available.'))}</div>
+              </div>
+            `).join('')}
           </div>
-        `).join('');
-        sourcesCard.querySelectorAll('.report-link-row').forEach((row, index) => {
-          row.addEventListener('click', () => {
-            const url = sourceRows[index]?.url;
-            if (url) window.browserAPI.openTab(url);
-          });
-        });
-      }
-      els.scraperResults.appendChild(sourcesCard);
-    }
-
-    if (report?.diagnostics) {
-      const d = report.diagnostics;
-      const diag = document.createElement('div');
-      diag.className = 'report-card';
-      diag.innerHTML = `
-        <h3>Collection Diagnostics</h3>
-        <p>Web Raw: ${Number(d.webSourcesRaw || 0)} | Ranked Total: ${Number(d.sourcesRanked || 0)} | Ranked Non-Wiki: ${Number(d.nonWikiRanked || 0)}</p>
-      `;
-      els.scraperResults.appendChild(diag);
-    }
+        </div>
+      ` : ''}
+      ${evidenceRows.length ? `
+        <div style="margin-top:14px;">
+          <div style="font-size:12px; color:#d4d4d8; font-weight:700; margin-bottom:8px;">Collected Evidence</div>
+          <div style="display:grid; gap:10px;">
+            ${evidenceRows.map((src) => `
+              <div style="padding:10px 12px; border:1px solid #27272a; border-radius:10px; background:#111114;">
+                <div style="font-size:12px; font-weight:700; color:#f4f4f5; margin-bottom:6px;">${escapeHtml(src.title || 'Source')}</div>
+                <div style="font-size:12px; color:#a1a1aa; line-height:1.55;">${escapeHtml(cleanSnippet(src.snippet || ''))}</div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      ` : ''}
+      ${Array.isArray(report?.relatedTopics) && report.relatedTopics.length ? `
+        <div style="margin-top:14px;">
+          <div style="font-size:12px; color:#d4d4d8; font-weight:700; margin-bottom:8px;">Related Topics</div>
+          <div style="display:flex; flex-wrap:wrap; gap:8px;">
+            ${report.relatedTopics.slice(0, 18).map((topic) => `<span style="font-size:11px; color:#d4d4d8; border:1px solid #3f3f46; padding:5px 9px; border-radius:999px; background:#16161a;">${escapeHtml(topic)}</span>`).join('')}
+          </div>
+        </div>
+      ` : ''}
+    `;
+    els.scraperResults.appendChild(rawDataCard);
 
     if (!isAiData) {
       const imageRows = (report.images || []).slice(0, 8);
@@ -1269,6 +1255,16 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     els.scraperResults.innerHTML = `
       <section class="workflow-card">
+        <div class="workflow-live-panel" data-state="idle">
+          <div class="workflow-live-header">
+            <div class="workflow-live-title">Preparing research workflow</div>
+            <div class="workflow-live-badge">LIVE</div>
+          </div>
+          <div class="workflow-live-meta">Collecting sources and waiting for the model to respond.</div>
+          <div class="workflow-live-track">
+            <div class="workflow-live-bar"></div>
+          </div>
+        </div>
         <div class="workflow-steps">${stepMarkup}</div>
       </section>
     `;
@@ -1282,9 +1278,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     stepEl.dataset.state = state;
   };
 
+  const updateWorkflowLivePanel = ({ title, meta, state } = {}) => {
+    const panel = els.scraperResults?.querySelector('.workflow-live-panel');
+    if (!panel) return;
+    if (typeof state === 'string' && state) panel.dataset.state = state;
+    const titleEl = panel.querySelector('.workflow-live-title');
+    const metaEl = panel.querySelector('.workflow-live-meta');
+    if (titleEl && typeof title === 'string') titleEl.textContent = title;
+    if (metaEl && typeof meta === 'string') metaEl.textContent = meta;
+  };
+
 
   const runDataIntelligenceWorkflow = async (query) => {
     const report = await runAiDataIntelligenceWorkflow(query, {
+      llmBackend: 'ollama',
       maxDdgQueries: DATA_PANEL_DDG_MAX_QUERIES,
       maxSerpQueries: DATA_PANEL_SERP_MAX_QUERIES
     });
@@ -1300,6 +1307,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   };
 
   const runAiDataIntelligenceWorkflow = async (query, options = {}) => {
+    const llmBackend = String(options?.llmBackend || 'groq').trim().toLowerCase() === 'ollama' ? 'ollama' : 'groq';
     const maxDdgQueries = Math.max(3, Math.min(20, Number(options?.maxDdgQueries) || AI_DATA_PANEL_DDG_MAX_QUERIES));
     const maxSerpQueries = Math.max(0, Math.min(8, Number(options?.maxSerpQueries) || AI_DATA_PANEL_SERP_MAX_QUERIES));
     currentDataReport = null;
@@ -1316,7 +1324,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
     const setStepLabel = (stepId, label) => {
       const el = els.scraperResults?.querySelector(`.workflow-step[data-step="${stepId}"]`);
-      if (el) el.textContent = label;
+      const labelEl = el?.querySelector('.workflow-step-label');
+      if (labelEl) labelEl.textContent = label;
+    };
+    const backendLabel = llmBackend === 'ollama' ? 'Ollama' : 'Groq';
+    const setLiveStatus = (title, meta, state = 'active') => {
+      updateWorkflowLivePanel({ title, meta, state });
     };
 
     const collectedSources = [];
@@ -1334,34 +1347,54 @@ document.addEventListener('DOMContentLoaded', async () => {
       snippet: ''
     };
 
-    await setWorkflowStepState('wiki', 'active', 120);
     try {
-      const wiki = await fetchWikipediaData(query);
-      wikiSummary = wiki.summary || '';
-      wikiTopics = wiki.relatedTopics || [];
-      wikiPages = Array.isArray(wiki.wikiPages) ? wiki.wikiPages : [];
-      if (wiki.pageUrl) {
-        wikiPrimarySource = { title: `Wikipedia: ${query}`, url: wiki.pageUrl, snippet: wikiSummary.slice(0, 240) };
+      if (llmBackend === 'ollama' && window.browserAPI?.ai?.getScraperOllamaConfig) {
+        scraperOllamaConfig = {
+          ...scraperOllamaConfig,
+          ...(await window.browserAPI.ai.getScraperOllamaConfig())
+        };
       }
-      wikiPages.forEach((p) => {
-        if (!p?.pageUrl) return;
-        collectedSources.push({
-          title: `Wikipedia: ${p.title || query}`,
-          url: p.pageUrl,
-          snippet: String(p.summary || '').slice(0, 320)
-        });
-      });
-      collectedLinks.push(...(wiki.relatedLinks || []));
-      await setWorkflowStepState('wiki', 'done', 140);
-    } catch (err) {
-      console.warn('[AI Data] Wikipedia step failed:', err?.message || err);
-      await setWorkflowStepState('wiki', 'error', 140);
-    }
 
-    await setWorkflowStepState('plan', 'active', 120);
-    const llmOverrides = {
-      temperature: aiReportSettings.temperature,
-      maxTokens: aiReportSettings.contextLength
+      setLiveStatus(
+        llmBackend === 'ollama' ? 'Booting Ollama research flow' : 'Booting AI research flow',
+        llmBackend === 'ollama'
+          ? `Preparing ${backendLabel} and gathering trusted context before the report is written.`
+          : `Preparing ${backendLabel} planning and collecting trusted context before synthesis starts.`
+      );
+
+      await setWorkflowStepState('wiki', 'active', 120);
+      try {
+        setLiveStatus('Reading Wikipedia context', 'Finding the closest topic pages and short summaries for your query.');
+        const wiki = await fetchWikipediaData(query);
+        wikiSummary = wiki.summary || '';
+        wikiTopics = wiki.relatedTopics || [];
+        wikiPages = Array.isArray(wiki.wikiPages) ? wiki.wikiPages : [];
+        if (wiki.pageUrl) {
+          wikiPrimarySource = { title: `Wikipedia: ${query}`, url: wiki.pageUrl, snippet: wikiSummary.slice(0, 240) };
+        }
+        wikiPages.forEach((p) => {
+          if (!p?.pageUrl) return;
+          collectedSources.push({
+            title: `Wikipedia: ${p.title || query}`,
+            url: p.pageUrl,
+            snippet: String(p.summary || '').slice(0, 320)
+          });
+        });
+        collectedLinks.push(...(wiki.relatedLinks || []));
+        await setWorkflowStepState('wiki', 'done', 140);
+      } catch (err) {
+        console.warn('[AI Data] Wikipedia step failed:', err?.message || err);
+        await setWorkflowStepState('wiki', 'error', 140);
+      }
+
+      await setWorkflowStepState('plan', 'active', 120);
+      setLiveStatus(
+        llmBackend === 'ollama' ? 'Planning search with Ollama' : 'Planning search with AI',
+        `Using ${backendLabel} to decide which search queries are worth running next.`
+      );
+      const llmOverrides = {
+        temperature: aiReportSettings.temperature,
+        maxTokens: aiReportSettings.contextLength
     };
     let aiPlan = { ddgQueries: [], serpQueries: [], notes: '', provider: '' };
     try {
@@ -1372,7 +1405,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         llmOverrides,
         maxDdgQueries,
         maxSerpQueries,
-        useLocalQuickBot: true
+        llmBackend
       });
       await setWorkflowStepState('plan', 'done', 140);
     } catch (err) {
@@ -1390,6 +1423,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     setStepLabel('ddg', 'Collect DDG Sources');
     await setWorkflowStepState('ddg', 'active', 120);
     try {
+      setLiveStatus('Collecting DuckDuckGo sources', 'Searching broad web results to build evidence before the model writes.');
       for (let i = 0; i < ddgQueries.length; i++) {
         const q = ddgQueries[i];
         setStepLabel('ddg', `Collect DDG Sources (${i + 1}/${ddgQueries.length})`);
@@ -1423,6 +1457,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     setStepLabel('serp', 'Collect Serp Sources');
     await setWorkflowStepState('serp', 'active', 120);
     try {
+      setLiveStatus('Collecting premium search sources', 'Adding higher-value sources and references to strengthen the final report.');
       if (!hasSerpKey) {
         setStepLabel('serp', 'Collect Serp Sources (no key)');
         await setWorkflowStepState('serp', 'error', 120);
@@ -1453,10 +1488,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     await setWorkflowStepState('images', 'active', 120);
+    setLiveStatus('Gathering image references', 'Saving a few visual references that match the topic and collected sources.');
     const uniqueImages = dedupeBy(collectedImages.map((url) => normalizeUrl(url)).filter(Boolean), (url) => url).slice(0, 12);
     await setWorkflowStepState('images', uniqueImages.length > 0 ? 'done' : 'error', 160);
 
     await setWorkflowStepState('links', 'active', 120);
+    setLiveStatus('Curating source links', 'Cleaning, ranking, and deduplicating links so the final report stays grounded.');
     const rankedWebSources = rankAndFilterSources(query, collectedWebSources, -0.2);
     const rankedAllSources = rankAndFilterSources(query, collectedSources, -0.15);
     const normalizedSources = dedupeBy(
@@ -1472,6 +1509,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     await setWorkflowStepState('links', uniqueLinks.length > 0 ? 'done' : 'error', 140);
 
     await setWorkflowStepState('topics', 'active', 120);
+    setLiveStatus('Mapping related topics', 'Finding connected themes and entities that should appear in the final answer.');
     const relatedTopics = deriveRelatedTopics(query, normalizedSources, wikiTopics);
     await setWorkflowStepState('topics', relatedTopics.length > 0 ? 'done' : 'error', 140);
 
@@ -1483,8 +1521,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     await setWorkflowStepState('report', 'active', 120);
     try {
       const reportStepEl = els.scraperResults?.querySelector('.workflow-step[data-step="report"]');
-      const originalReportLabel = reportStepEl?.textContent || 'AI Synthesis + PDF';
-      if (reportStepEl) reportStepEl.textContent = 'Extract + Synthesize With Selected AI';
+      const originalReportLabel = reportStepEl?.querySelector('.workflow-step-label')?.textContent || 'AI Synthesis + PDF';
+      setStepLabel('report', llmBackend === 'ollama' ? 'Ollama Writing Report' : 'AI Synthesis + PDF');
+      setLiveStatus(
+        llmBackend === 'ollama' ? 'Ollama is building the answer' : 'AI is building the answer',
+        llmBackend === 'ollama'
+          ? 'The sources are ready. Ollama is now extracting evidence, summarizing it, and writing the final response.'
+          : 'The sources are ready. The model is now extracting evidence, summarizing it, and writing the final response.'
+      );
       const llmSynth = await synthesizeReportWithLlm({
         query,
         wikiSummary,
@@ -1493,10 +1537,19 @@ document.addEventListener('DOMContentLoaded', async () => {
         uniqueLinks,
         relatedTopics,
         uniqueImages,
-        useLocalQuickBot: true,
+        llmBackend,
         llmOverrides,
         onStage: (stage) => {
-          if (reportStepEl) reportStepEl.textContent = `${stage}`;
+          setStepLabel('report', stage);
+          const normalizedStage = String(stage || '').toLowerCase();
+          const stageMeta = normalizedStage.includes('extract')
+            ? `${backendLabel} is reading source chunks and pulling out usable facts. This can take a little time on bigger topics.`
+            : normalizedStage.includes('summary')
+              ? `${backendLabel} is compressing the extracted evidence into a cleaner summary now.`
+              : normalizedStage.includes('detailed') || normalizedStage.includes('compose')
+                ? `${backendLabel} is writing the final detailed answer now. The work is still running even if no new rows appear below.`
+                : `${backendLabel} is processing the report.`;
+          setLiveStatus(stage, stageMeta, 'active');
         }
       });
       if (llmSynth?.summaryStructured?.overview) {
@@ -1524,9 +1577,19 @@ document.addEventListener('DOMContentLoaded', async () => {
         extractionChunkCalls: Number(llmSynth?.extractionChunkCalls || 0),
         fallbackUsed: !(llmSynth?.summaryStructured?.overview || llmSynth?.summaryText || llmSynth?.detailedNarrative)
       };
-      if (reportStepEl) reportStepEl.textContent = originalReportLabel;
+      setStepLabel('report', originalReportLabel);
+      setLiveStatus(
+        llmBackend === 'ollama' ? 'Ollama report ready' : 'AI report ready',
+        'The synthesis step finished successfully. Preparing the final report card and PDF export.',
+        'done'
+      );
     } catch (llmErr) {
       console.warn('[AI Data] LLM synthesis fallback triggered:', llmErr?.message || llmErr);
+      setLiveStatus(
+        llmBackend === 'ollama' ? 'Ollama synthesis hit a problem' : 'AI synthesis hit a problem',
+        String(llmErr?.message || llmErr || 'Unknown model error'),
+        'error'
+      );
       llmDiagnostics = { enabled: true, provider: '', calls: 0, extractionChunkCalls: 0, fallbackUsed: true, error: String(llmErr?.message || llmErr) };
     }
 
@@ -1563,6 +1626,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
     currentDataReport = report;
     await setWorkflowStepState('report', 'done', 220);
+    setLiveStatus(
+      llmBackend === 'ollama' ? 'Ollama workflow completed' : 'AI workflow completed',
+      'All steps finished. You can now read the report or export it as PDF.',
+      'done'
+    );
     return report;
   };
 
@@ -1968,12 +2036,23 @@ document.addEventListener('DOMContentLoaded', async () => {
     const envGroqModel = window.browserAPI?.ai?.getScraperGroqModel
       ? await window.browserAPI.ai.getScraperGroqModel()
       : '';
+    const envOllamaConfig = window.browserAPI?.ai?.getScraperOllamaConfig
+      ? await window.browserAPI.ai.getScraperOllamaConfig()
+      : {};
     webApiKeys = {
       serpapi: String(envKeys?.serpapi || envKeys?.scrapeSerp || '').trim(),
       tavily: String(envKeys?.tavily || '').trim(),
       newsapi: String(envKeys?.newsapi || '').trim()
     };
     scraperGroqModel = String(envGroqModel || '').trim() || 'qwen/qwen3-32b';
+    scraperOllamaConfig = {
+      ...scraperOllamaConfig,
+      ...(envOllamaConfig && typeof envOllamaConfig === 'object' ? envOllamaConfig : {}),
+      model: String(envOllamaConfig?.model || scraperOllamaConfig.model || '').trim(),
+      host: String(envOllamaConfig?.host || scraperOllamaConfig.host || '127.0.0.1').trim(),
+      port: Number(envOllamaConfig?.port || scraperOllamaConfig.port || 11434) || 11434,
+      baseUrl: String(envOllamaConfig?.baseUrl || scraperOllamaConfig.baseUrl || '').trim() || `http://${String(envOllamaConfig?.host || scraperOllamaConfig.host || '127.0.0.1').trim()}:${Number(envOllamaConfig?.port || scraperOllamaConfig.port || 11434) || 11434}`
+    };
     const { keys: _ignoredKeys, scraper: _ignoredScraper, ...persistedConfig } = persisted;
     config = {
       ...DEFAULT_CONFIG,
@@ -2013,7 +2092,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const buildRawDataExport = (report) => {
     const sanitizeSource = (source = {}) => ({
       title: String(source.title || ''),
-      snippet: String(source.snippet || ''),
+      snippet: String(source.snippet || '').trim(),
       score: Number.isFinite(source.score) ? Number(source.score) : undefined
     });
     const sanitizeWikiPage = (page = {}) => ({
@@ -2042,15 +2121,15 @@ document.addEventListener('DOMContentLoaded', async () => {
           : []
       },
       detailedNarrative: String(report?.detailedNarrative || ''),
-      plan: report?.plan ? {
-        ddgQueries: Array.isArray(report.plan.ddgQueries) ? report.plan.ddgQueries.map((q) => String(q || '')).filter(Boolean) : [],
-        serpQueries: Array.isArray(report.plan.serpQueries) ? report.plan.serpQueries.map((q) => String(q || '')).filter(Boolean) : [],
-        notes: String(report.plan.notes || ''),
-        provider: String(report.plan.provider || '')
-      } : null,
       relatedTopics: Array.isArray(report?.relatedTopics) ? report.relatedTopics.map((topic) => String(topic || '')).filter(Boolean) : [],
       wikiPages: Array.isArray(report?.wikiPages) ? report.wikiPages.map(sanitizeWikiPage).filter((page) => page.title || page.summary) : [],
-      sources: Array.isArray(report?.sources) ? report.sources.map(sanitizeSource).filter((source) => source.title || source.snippet) : []
+      rawData: {
+        wikiPages: Array.isArray(report?.wikiPages) ? report.wikiPages.map(sanitizeWikiPage).filter((page) => page.title || page.summary) : [],
+        evidenceSources: Array.isArray(report?.sources)
+          ? report.sources.map(sanitizeSource).filter((source) => source.title || source.snippet)
+          : [],
+        images: Array.isArray(report?.images) ? report.images.map((img) => String(img || '')).filter(Boolean) : []
+      }
     };
   };
 
@@ -2365,7 +2444,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           const report = await runDataIntelligenceWorkflow(query);
           if (!report) throw new Error('No report generated');
           renderDataReport(report);
-          els.resultsLabel.textContent = `${report.sources.length} SOURCES | ${report.images.length} IMAGES | ${report.relatedLinks.length} LINKS`;
+          els.resultsLabel.textContent = 'RAW DATA REPORT READY';
           setSaveAllButtonState({ visible: true, disabled: false, text: 'DOWNLOAD PDF' });
         } catch (e) {
           console.error('Data workflow failure:', e);
@@ -2396,7 +2475,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           const report = await runAiDataIntelligenceWorkflow(query);
           if (!report) throw new Error('No report generated');
           renderDataReport(report);
-          els.resultsLabel.textContent = `${report.sources.length} SOURCES | PDF EXPORT`;
+          els.resultsLabel.textContent = 'AI DATA REPORT READY';
           setSaveAllButtonState({ visible: true, disabled: false, text: 'DOWNLOAD PDF' });
         } catch (e) {
           console.error('AI data workflow failure:', e);

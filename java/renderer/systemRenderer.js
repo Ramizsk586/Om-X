@@ -57,6 +57,7 @@ const applyThemeClass = (theme) => {
     featLoadingAnim: document.getElementById('feat-loading-anim'),
     // Shared LLM
     llmOperatorCards: document.querySelectorAll('.llm-operator-card'),
+    btnReplaceEnvFile: document.getElementById('btn-replace-env-file'),
     // Security Panel
     featFirewall: document.getElementById('feat-firewall'),
     featAntivirus: document.getElementById('feat-antivirus'),
@@ -78,34 +79,6 @@ const applyThemeClass = (theme) => {
     featAdblockerTrackers: document.getElementById('feat-adblocker-trackers'),
     featAdblockerSearch: document.getElementById('feat-adblocker-search'),
     adblockerTogglesContainer: document.getElementById('adblocker-toggles-container'),
-    virusTotalConfig: document.getElementById('virustotal-config'),
-    btnOpenVirusTotalPopup: document.getElementById('btn-open-virustotal-popup'),
-    virusTotalPopup: document.getElementById('virustotal-popup'),
-    btnCloseVirusTotalPopup: document.getElementById('btn-close-virustotal-popup'),
-    virusTotalApiKey: document.getElementById('virustotal-api-key'),
-    featVirusTotalUrlScan: document.getElementById('feat-virustotal-url-scan'),
-    featVirusTotalFileScan: document.getElementById('feat-virustotal-file-scan'),
-    btnVerifyVirusTotal: document.getElementById('btn-verify-virustotal'),
-    virusTotalVerifyStatus: document.getElementById('virustotal-verify-status'),
-    virusTotalQuotaCard: document.getElementById('virustotal-quota-card'),
-    virusTotalDailyUsed: document.getElementById('virustotal-daily-used'),
-    virusTotalDailyLimit: document.getElementById('virustotal-daily-limit'),
-    virusTotalMonthlyLeft: document.getElementById('virustotal-monthly-left'),
-    virusTotalMonthlyLimit: document.getElementById('virustotal-monthly-limit'),
-    virusTotalLinkTools: document.getElementById('virustotal-link-tools'),
-    virusTotalLinkInput: document.getElementById('virustotal-link-input'),
-    btnScanVirusTotalLink: document.getElementById('btn-scan-virustotal-link'),
-    btnClearVirusTotalLink: document.getElementById('btn-clear-virustotal-link'),
-    virusTotalLinkStatus: document.getElementById('virustotal-link-status'),
-    virusTotalLinkResult: document.getElementById('virustotal-link-result'),
-    // Block List Panel
-    blockInputDomain: document.getElementById('block-input-domain'),
-    btnAddBlock: document.getElementById('btn-add-block'),
-    blockListContainer: document.getElementById('block-list-container'),
-    // Whitelist Panel
-    whitelistInputDomain: document.getElementById('whitelist-input-domain'),
-    btnAddWhitelist: document.getElementById('btn-add-whitelist'),
-    whitelistContainer: document.getElementById('whitelist-container'),
     // Footer / UI
     btnSave: document.getElementById('btn-save-settings'),
     status: document.getElementById('save-status'),
@@ -136,7 +109,6 @@ const applyThemeClass = (theme) => {
 
   let currentSettings = {};
   let selectedTheme = 'noir';
-  let virusTotalLinkScanToken = 0;
   let selectedLlmProvider = 'google';
 
   const syncLlmOperatorSelection = (provider = 'google') => {
@@ -163,48 +135,6 @@ const applyThemeClass = (theme) => {
     return 'google';
   };
 
-  function setVirusTotalStatus(message = '', type = '') {
-    if (!els.virusTotalVerifyStatus) return;
-    els.virusTotalVerifyStatus.textContent = message;
-    els.virusTotalVerifyStatus.className = `virustotal-status ${type}`.trim();
-  }
-
-  function setVirusTotalQuotaCard(payload = null) {
-    if (!els.virusTotalQuotaCard) return;
-
-    const formatQuota = (value) => Number.isFinite(value) ? Number(value).toLocaleString() : 'N/A';
-    const setText = (el, value) => {
-      if (el) el.textContent = formatQuota(value);
-    };
-
-    if (!payload || !payload.success) {
-      setText(els.virusTotalDailyUsed, null);
-      setText(els.virusTotalDailyLimit, null);
-      setText(els.virusTotalMonthlyLeft, null);
-      setText(els.virusTotalMonthlyLimit, null);
-      els.virusTotalQuotaCard.classList.add('is-hidden');
-      return;
-    }
-
-    const dailyUsed = Number.isFinite(payload.dailyUsed) ? Number(payload.dailyUsed) : null;
-    const dailyLimit = Number.isFinite(payload.dailyQuota) ? Number(payload.dailyQuota) : null;
-    const monthlyLeft = Number.isFinite(payload.monthlyLeft) ? Number(payload.monthlyLeft) : null;
-    const monthlyLimit = Number.isFinite(payload.monthlyQuota) ? Number(payload.monthlyQuota) : null;
-
-    setText(els.virusTotalDailyUsed, dailyUsed);
-    setText(els.virusTotalDailyLimit, dailyLimit);
-    setText(els.virusTotalMonthlyLeft, monthlyLeft);
-    setText(els.virusTotalMonthlyLimit, monthlyLimit);
-    els.virusTotalQuotaCard.classList.remove('is-hidden');
-  }
-
-  function setVirusTotalPopupVisible(visible) {
-    if (!els.virusTotalPopup) return;
-    const shouldShow = Boolean(visible && els.featVirusTotal?.checked);
-    els.virusTotalPopup.classList.toggle('hidden', !shouldShow);
-    els.virusTotalPopup.setAttribute('aria-hidden', String(!shouldShow));
-  }
-
   function escapeHtml(value = '') {
     return String(value)
       .replace(/&/g, '&amp;')
@@ -214,103 +144,6 @@ const applyThemeClass = (theme) => {
       .replace(/'/g, '&#39;');
   }
 
-  function setVirusTotalLinkToolsVisible(visible) {
-    if (!els.virusTotalLinkTools) return;
-    els.virusTotalLinkTools.classList.toggle('is-hidden', !visible);
-  }
-
-  function setVirusTotalLinkStatus(message = '', type = '') {
-    if (!els.virusTotalLinkStatus) return;
-    els.virusTotalLinkStatus.textContent = message;
-    els.virusTotalLinkStatus.className = `virustotal-status ${type}`.trim();
-  }
-
-  function renderVirusTotalLinkReport(report = null) {
-    if (!els.virusTotalLinkResult) return;
-    if (!report || !report.success) {
-      els.virusTotalLinkResult.innerHTML = '';
-      els.virusTotalLinkResult.classList.add('is-hidden');
-      return;
-    }
-
-    const riskLevel = String(report.riskLevel || 'unknown').toLowerCase();
-    const riskLabel = riskLevel === 'danger'
-      ? 'Unsafe'
-      : riskLevel === 'suspicious'
-        ? 'Suspicious'
-        : riskLevel === 'clean'
-          ? 'Safe'
-          : 'Unknown';
-    const stats = report.stats || {};
-    const categories = Array.isArray(report.categories) && report.categories.length
-      ? report.categories.join(', ')
-      : 'Uncategorized';
-    const scanDate = report.scanDate ? new Date(report.scanDate).toLocaleString() : 'N/A';
-    const detections = Array.isArray(report.detections) ? report.detections : [];
-    const detectionRows = detections.length
-      ? detections.map((row) => {
-          const engine = escapeHtml(row.engine || 'Unknown Engine');
-          const result = escapeHtml(row.result || row.category || 'flagged');
-          return `<div class="virustotal-detection-item"><strong>${engine}</strong>: ${result}</div>`;
-        }).join('')
-      : '<div class="virustotal-detection-item">No flagged engines in the current URL analysis.</div>';
-
-    els.virusTotalLinkResult.innerHTML = `
-      <div class="virustotal-risk-header">
-        <span class="virustotal-risk-badge ${escapeHtml(riskLevel)}">${escapeHtml(riskLabel)}</span>
-        <span class="virustotal-risk-score">Risk Score: ${Number(report.riskScore || 0)}%</span>
-      </div>
-      <div class="virustotal-url-line">${escapeHtml(report.url || '')}</div>
-      <div class="virustotal-stats-grid">
-        <div class="virustotal-stat"><div class="k">Malicious</div><div class="v">${Number(stats.malicious || 0)}</div></div>
-        <div class="virustotal-stat"><div class="k">Suspicious</div><div class="v">${Number(stats.suspicious || 0)}</div></div>
-        <div class="virustotal-stat"><div class="k">Harmless</div><div class="v">${Number(stats.harmless || 0)}</div></div>
-        <div class="virustotal-stat"><div class="k">Undetected</div><div class="v">${Number(stats.undetected || 0)}</div></div>
-      </div>
-      <div class="virustotal-meta-line">Categories: ${escapeHtml(categories)}</div>
-      <div class="virustotal-meta-line">Reputation: ${Number(report.reputation || 0)} | Engines: ${Number(report.engineCount || 0)} | Last Scan: ${escapeHtml(scanDate)}</div>
-      <div class="virustotal-meta-line">${escapeHtml(report.reason || '')}</div>
-      <div class="virustotal-detections">
-        <div class="virustotal-detections-title">Flagged Engines</div>
-        ${detectionRows}
-      </div>
-    `;
-    els.virusTotalLinkResult.classList.remove('is-hidden');
-  }
-
-  function resetVirusTotalLinkScan({ preserveInput = true } = {}) {
-    if (!preserveInput && els.virusTotalLinkInput) {
-      els.virusTotalLinkInput.value = '';
-    }
-    setVirusTotalLinkStatus('', '');
-    renderVirusTotalLinkReport(null);
-  }
-
-  function syncVirusTotalLinkTools() {
-    const hasApiKey = Boolean(els.virusTotalApiKey?.value.trim());
-    const enabled = Boolean(els.featVirusTotal?.checked);
-    const shouldShow = enabled && hasApiKey;
-    setVirusTotalLinkToolsVisible(shouldShow);
-    if (!shouldShow) {
-      resetVirusTotalLinkScan();
-    }
-  }
-
-  function syncVirusTotalVisibility() {
-    if (!els.virusTotalConfig) return;
-    const enabled = Boolean(els.featVirusTotal?.checked);
-    els.virusTotalConfig.classList.toggle('is-hidden', !enabled);
-    if (!enabled) {
-      setVirusTotalStatus('', '');
-      setVirusTotalQuotaCard(null);
-      setVirusTotalLinkToolsVisible(false);
-      resetVirusTotalLinkScan();
-      setVirusTotalPopupVisible(false);
-      return;
-    }
-    syncVirusTotalLinkTools();
-  }
-
   function syncAdblockerToggles() {
     if (!els.adblockerTogglesContainer) return;
     const enabled = Boolean(els.featAdblockerMaster?.checked);
@@ -318,72 +151,34 @@ const applyThemeClass = (theme) => {
     els.adblockerTogglesContainer.style.pointerEvents = enabled ? 'auto' : 'none';
   }
 
-  async function scanVirusTotalLink() {
-    const targetUrl = String(els.virusTotalLinkInput?.value || '').trim();
-    const apiKey = String(els.virusTotalApiKey?.value || '').trim();
-
-    if (!targetUrl) {
-      setVirusTotalLinkStatus('Paste a link first.', 'error');
-      renderVirusTotalLinkReport(null);
-      els.virusTotalLinkInput?.focus();
-      return;
-    }
-
-    if (!apiKey) {
-      setVirusTotalLinkStatus('Enter and verify API key first.', 'error');
-      renderVirusTotalLinkReport(null);
-      els.virusTotalApiKey?.focus();
-      return;
-    }
-
-    if (!window.browserAPI?.security?.scanVirusTotalUrl) {
-      setVirusTotalLinkStatus('Link scanner unavailable. Restart app.', 'error');
-      renderVirusTotalLinkReport(null);
-      return;
-    }
-
-    const requestToken = ++virusTotalLinkScanToken;
-    if (els.btnScanVirusTotalLink) {
-      els.btnScanVirusTotalLink.disabled = true;
-      els.btnScanVirusTotalLink.textContent = 'Scanning...';
-    }
-    setVirusTotalLinkStatus('Scanning link on VirusTotal...', '');
-    renderVirusTotalLinkReport(null);
-
+  bindLlmOperatorCards();
+  els.btnReplaceEnvFile?.addEventListener('click', async () => {
+    if (!window.browserAPI?.envFile?.replace) return;
+    els.btnReplaceEnvFile.disabled = true;
     try {
-      const result = await window.browserAPI.security.scanVirusTotalUrl({ url: targetUrl, apiKey });
-      if (requestToken !== virusTotalLinkScanToken) return;
-
-      if (!result?.success) {
-        setVirusTotalLinkStatus(result?.error || 'VirusTotal scan failed.', 'error');
-        return;
-      }
-
-      renderVirusTotalLinkReport(result);
-
-      const riskLevel = String(result.riskLevel || 'unknown').toLowerCase();
-      if (riskLevel === 'danger') {
-        setVirusTotalLinkStatus('Unsafe verdict returned for this link.', 'error');
-      } else if (riskLevel === 'suspicious') {
-        setVirusTotalLinkStatus('Suspicious signals were detected for this link.', 'warn');
-      } else if (riskLevel === 'clean') {
-        setVirusTotalLinkStatus('Safe verdict returned for this link.', 'success');
-      } else {
-        setVirusTotalLinkStatus('No strong verdict was returned for this link.', '');
+      const result = await window.browserAPI.envFile.replace();
+      if (result?.canceled) return;
+      if (result?.success) {
+        if (els.status) {
+          els.status.textContent = `.env replaced. ${result.keyCount || 0} keys loaded.`;
+          els.status.className = 'save-status visible';
+        }
+      } else if (els.status) {
+        els.status.textContent = result?.error || 'Failed to replace .env.';
+        els.status.className = 'save-status visible error';
       }
     } catch (error) {
-      if (requestToken !== virusTotalLinkScanToken) return;
-      setVirusTotalLinkStatus(error?.message || 'VirusTotal scan failed.', 'error');
-      renderVirusTotalLinkReport(null);
-    } finally {
-      if (requestToken === virusTotalLinkScanToken && els.btnScanVirusTotalLink) {
-        els.btnScanVirusTotalLink.disabled = false;
-        els.btnScanVirusTotalLink.textContent = 'Scan Link';
+      if (els.status) {
+        els.status.textContent = error?.message || 'Failed to replace .env.';
+        els.status.className = 'save-status visible error';
       }
+    } finally {
+      els.btnReplaceEnvFile.disabled = false;
+      setTimeout(() => {
+        if (els.status) els.status.classList.remove('visible');
+      }, 2500);
     }
-  }
-
-  bindLlmOperatorCards();
+  });
 
   // ─── OmChat MongoDB Toggle & Local Folder Browse ─────────────────
   function syncOmChatMongoToggle() {
@@ -626,7 +421,6 @@ const applyThemeClass = (theme) => {
       if (!targetId) return;
       els.navItems.forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
-      setVirusTotalPopupVisible(false);
       setActivePanel(targetId);
     });
   });
@@ -634,49 +428,6 @@ const applyThemeClass = (theme) => {
   const initialNav = document.querySelector('.sys-nav-item.active');
   if (initialNav?.dataset?.target) {
     setActivePanel(initialNav.dataset.target);
-  }
-
-
-  function renderBlockList(blocklist = []) {
-    if (!els.blockListContainer) return;
-    
-    if (!Array.isArray(blocklist) || blocklist.length === 0) {
-      els.blockListContainer.innerHTML = '<div style="padding: 24px; text-align: center; color: #71717a;"><p style="margin: 0; margin-bottom: 8px;">No blocked sites yet</p><span style="font-size: 12px;">Add domains above to block them</span></div>';
-      return;
-    }
-    
-    els.blockListContainer.innerHTML = '';
-    [...blocklist].reverse().forEach((domain) => {
-      const item = document.createElement('div');
-      item.style.cssText = 'display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,0.05); background: rgba(255, 100, 100, 0.02);';
-      const info = document.createElement('div');
-      info.style.cssText = 'flex: 1; min-width: 0;';
-      const title = document.createElement('div');
-      title.style.cssText = 'color: #fff; font-weight: 500; font-size: 14px; word-break: break-all;';
-      title.textContent = String(domain || '');
-      const description = document.createElement('div');
-      description.style.cssText = 'color: #71717a; font-size: 12px; margin-top: 4px;';
-      description.textContent = 'Blocked by security system';
-      info.appendChild(title);
-      info.appendChild(description);
-
-      const removeBtn = document.createElement('button');
-      removeBtn.className = 'btn-remove-block';
-      removeBtn.dataset.domain = String(domain || '');
-      removeBtn.style.cssText = 'background: rgba(255,100,100,0.2); color: #ff6464; border: 1px solid rgba(255,100,100,0.3); padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 600; transition: all 0.2s; flex-shrink: 0; margin-left: 12px; white-space: nowrap;';
-      removeBtn.textContent = 'Remove';
-      removeBtn.addEventListener('click', (event) => {
-        const targetDomain = event.currentTarget?.dataset?.domain;
-        const updated = (currentSettings.blocklist || []).filter(d => d !== targetDomain);
-        currentSettings.blocklist = updated;
-        window.omniSettings.blocklist = updated;
-        renderBlockList(updated);
-      });
-
-      item.appendChild(info);
-      item.appendChild(removeBtn);
-      els.blockListContainer.appendChild(item);
-    });
   }
 
   // --- Load function ---
@@ -811,7 +562,7 @@ const applyThemeClass = (theme) => {
     try {
       currentSettings = injectedSettings || await window.browserAPI.settings.get();
       // Authority sync: Sub-panels depend on this object being global to avoid stale saves
-      window.omniSettings = currentSettings;
+      window.omxSettings = currentSettings;
       
       const s = currentSettings;
       
@@ -844,25 +595,12 @@ const applyThemeClass = (theme) => {
       if (els.featAdblockerSearch) els.featAdblockerSearch.checked = adBlocker.cleanSearchEngines ?? false;
       syncAdblockerToggles();
       
-      if (els.virusTotalApiKey) els.virusTotalApiKey.value = s.security?.virusTotal?.apiKey || '';
-      if (els.featVirusTotalUrlScan) els.featVirusTotalUrlScan.checked = s.security?.virusTotal?.scanUrls ?? true;
-      if (els.featVirusTotalFileScan) els.featVirusTotalFileScan.checked = s.security?.virusTotal?.scanExecutables ?? true;
-      syncVirusTotalVisibility();
-      setVirusTotalStatus('', '');
-      resetVirusTotalLinkScan();
-
       syncLlmOperatorSelection(getFallbackLlmProvider(s));
 
       // Load OmChat DB settings
       const omchatSettings = s.omchat || {};
       if (els.omchatLocalDbPath) els.omchatLocalDbPath.value = omchatSettings.localDbPath || '';
       syncOmChatMongoToggle();
-
-      // Load blocklist
-      renderBlockList(s.blocklist || []);
-      
-      // Load whitelist
-      renderWhitelist(s.adBlockerWhitelist || []);
 
       selectedTheme = applyThemeClass(s.theme || 'noir');
       renderShortcuts(s.shortcuts || {});
@@ -876,9 +614,9 @@ const applyThemeClass = (theme) => {
       const omchatPath = els.omchatLocalDbPath?.value.trim() || currentSettings.omchat?.localDbPath || '';
 
       const nextSettings = {
-        ...window.omniSettings,
+        ...window.omxSettings,
         features: { 
-            ...window.omniSettings.features, 
+            ...window.omxSettings.features, 
             enableHistory: true,
             showLoadingAnimation: els.featLoadingAnim?.checked ?? false,
             enableFirewall: true, 
@@ -886,26 +624,22 @@ const applyThemeClass = (theme) => {
             enableVirusTotal: els.featVirusTotal?.checked ?? false
         },
         security: {
-            ...(window.omniSettings.security || {}),
+            ...(window.omxSettings.security || {}),
             virusTotal: {
-                ...(window.omniSettings.security?.virusTotal || {}),
-                apiKey: els.virusTotalApiKey?.value.trim() || '',
-                scanUrls: els.featVirusTotalUrlScan?.checked ?? true,
-                scanExecutables: els.featVirusTotalFileScan?.checked ?? true,
-                blockOnSuspicious: true
+                ...(window.omxSettings.security?.virusTotal || {})
             },
             popupBlocker: {
-                ...(window.omniSettings.security?.popupBlocker || {}),
+                ...(window.omxSettings.security?.popupBlocker || {}),
                 enabled: true
             },
             cookieShield: {
-                ...(window.omniSettings.security?.cookieShield || {}),
+                ...(window.omxSettings.security?.cookieShield || {}),
                 enabled: true,
                 blockThirdPartyRequestCookies: true,
                 blockThirdPartyResponseCookies: true
             },
             sessionGuard: {
-                ...(window.omniSettings.security?.sessionGuard || {}),
+                ...(window.omxSettings.security?.sessionGuard || {}),
                 enabled: els.featSessionGuard?.checked ?? true
             }
         },
@@ -930,12 +664,10 @@ const applyThemeClass = (theme) => {
             alwaysOn: els.featOmchatAlwaysOn?.checked ?? false
         },
         mcp: {
-            ...(window.omniSettings.mcp || {}),
+            ...(window.omxSettings.mcp || {}),
             alwaysOn: els.featMcpAlwaysOn?.checked ?? false
         },
         shortcuts: newShortcuts,
-        blocklist: currentSettings.blocklist || [],
-        adBlockerWhitelist: currentSettings.adBlockerWhitelist || [],
         openDevToolsOnStart: false
       };
       els.btnSave.disabled = true; els.btnSave.textContent = "Saving...";
@@ -945,223 +677,17 @@ const applyThemeClass = (theme) => {
           els.status.className = `save-status visible ${success ? '' : 'error'}`;
       }
       currentSettings = nextSettings;
-      window.omniSettings = nextSettings;
+      window.omxSettings = nextSettings;
       setTimeout(() => { if (els.status) els.status.classList.remove('visible'); els.btnSave.disabled = false; els.btnSave.textContent = "Save Changes"; }, 2000);
     };
   }
 
-  // Block list handlers
-  if (els.btnAddBlock) {
-    els.btnAddBlock.addEventListener('click', () => {
-      const domain = els.blockInputDomain?.value.trim();
-      if (!domain) return;
-      
-      // Clean the domain (remove protocol if present)
-      let cleanDomain = domain.replace(/^https?:\/\//, '').replace(/\/$/, '');
-      
-      if (!currentSettings.blocklist) currentSettings.blocklist = [];
-      if (!currentSettings.blocklist.includes(cleanDomain)) {
-        currentSettings.blocklist.push(cleanDomain);
-        window.omniSettings.blocklist = currentSettings.blocklist;
-        renderBlockList(currentSettings.blocklist);
-        if (els.blockInputDomain) els.blockInputDomain.value = '';
-      }
-    });
-  }
-
-  // Allow Enter key to add domain
-  if (els.blockInputDomain) {
-    els.blockInputDomain.addEventListener('keypress', (e) => {
-      if (e.key === 'Enter') els.btnAddBlock?.click();
-    });
-  }
-
-  // Whitelist handlers
-  function renderWhitelist(whitelist = []) {
-    if (!els.whitelistContainer) return;
-    
-    if (!Array.isArray(whitelist) || whitelist.length === 0) {
-      els.whitelistContainer.innerHTML = '<div style="padding: 24px; text-align: center; color: #71717a;"><p style="margin: 0; margin-bottom: 8px;">No whitelisted sites yet</p><span style="font-size: 12px;">Add domains above to reduce ad blocking on them</span></div>';
-      return;
-    }
-    
-    els.whitelistContainer.innerHTML = '';
-    [...whitelist].reverse().forEach((domain) => {
-      const item = document.createElement('div');
-      item.style.cssText = 'display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,0.05); background: rgba(16,185,129,0.02);';
-      const info = document.createElement('div');
-      info.style.cssText = 'flex: 1; min-width: 0;';
-      const title = document.createElement('div');
-      title.style.cssText = 'color: #fff; font-weight: 500; font-size: 14px; word-break: break-all;';
-      title.textContent = String(domain || '');
-      const description = document.createElement('div');
-      description.style.cssText = 'color: #71717a; font-size: 12px; margin-top: 4px;';
-      description.textContent = 'Ad blocker reduced to popup-only mode';
-      info.appendChild(title);
-      info.appendChild(description);
-
-      const removeBtn = document.createElement('button');
-      removeBtn.className = 'btn-remove-whitelist';
-      removeBtn.dataset.domain = String(domain || '');
-      removeBtn.style.cssText = 'background: rgba(16,185,129,0.2); color: #10b981; border: 1px solid rgba(16,185,129,0.3); padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 600; transition: all 0.2s; flex-shrink: 0; margin-left: 12px; white-space: nowrap;';
-      removeBtn.textContent = 'Remove';
-      removeBtn.addEventListener('click', (event) => {
-        const targetDomain = event.currentTarget?.dataset?.domain;
-        const updated = (currentSettings.adBlockerWhitelist || []).filter(d => d !== targetDomain);
-        currentSettings.adBlockerWhitelist = updated;
-        window.omniSettings.adBlockerWhitelist = updated;
-        renderWhitelist(updated);
-      });
-
-      item.appendChild(info);
-      item.appendChild(removeBtn);
-      els.whitelistContainer.appendChild(item);
-    });
-  }
-
-  if (els.btnAddWhitelist) {
-    els.btnAddWhitelist.addEventListener('click', () => {
-      const domain = els.whitelistInputDomain?.value.trim();
-      if (!domain) return;
-      
-      // Clean the domain (remove protocol if present)
-      let cleanDomain = domain.replace(/^https?:\/\//, '').replace(/\/$/, '');
-      
-      if (!currentSettings.adBlockerWhitelist) currentSettings.adBlockerWhitelist = [];
-      if (!currentSettings.adBlockerWhitelist.includes(cleanDomain)) {
-        currentSettings.adBlockerWhitelist.push(cleanDomain);
-        window.omniSettings.adBlockerWhitelist = currentSettings.adBlockerWhitelist;
-        renderWhitelist(currentSettings.adBlockerWhitelist);
-        if (els.whitelistInputDomain) els.whitelistInputDomain.value = '';
-      }
-    });
-  }
-
-  // Allow Enter key to add whitelisted domain
-  if (els.whitelistInputDomain) {
-    els.whitelistInputDomain.addEventListener('keypress', (e) => {
-      if (e.key === 'Enter') els.btnAddWhitelist?.click();
-    });
-  }
-
   document.addEventListener('keydown', (event) => {
     if (event.key !== 'Escape') return;
-    if (els.virusTotalPopup && !els.virusTotalPopup.classList.contains('hidden')) {
-      setVirusTotalPopupVisible(false);
-    }
   });
-
-  if (els.featVirusTotal) {
-    els.featVirusTotal.addEventListener('change', syncVirusTotalVisibility);
-  }
 
   if (els.featAdblockerMaster) {
     els.featAdblockerMaster.addEventListener('change', syncAdblockerToggles);
-  }
-
-  if (els.virusTotalApiKey) {
-    els.virusTotalApiKey.addEventListener('input', () => {
-      setVirusTotalStatus('', '');
-      setVirusTotalQuotaCard(null);
-      syncVirusTotalLinkTools();
-    });
-  }
-
-  if (els.btnOpenVirusTotalPopup) {
-    els.btnOpenVirusTotalPopup.addEventListener('click', () => {
-      syncVirusTotalLinkTools();
-      setVirusTotalPopupVisible(true);
-    });
-  }
-
-  if (els.btnCloseVirusTotalPopup) {
-    els.btnCloseVirusTotalPopup.addEventListener('click', () => {
-      setVirusTotalPopupVisible(false);
-    });
-  }
-
-  if (els.virusTotalPopup) {
-    els.virusTotalPopup.addEventListener('click', (event) => {
-      if (event.target === els.virusTotalPopup) {
-        setVirusTotalPopupVisible(false);
-      }
-    });
-  }
-
-  if (els.btnVerifyVirusTotal) {
-    els.btnVerifyVirusTotal.addEventListener('click', async () => {
-      const apiKey = els.virusTotalApiKey?.value.trim() || '';
-      if (!apiKey) {
-        setVirusTotalQuotaCard(null);
-        setVirusTotalStatus('Enter API key first.', 'error');
-        return;
-      }
-      if (!window.browserAPI?.security?.verifyVirusTotalKey) {
-        setVirusTotalQuotaCard(null);
-        setVirusTotalStatus('Security bridge unavailable. Restart app.', 'error');
-        return;
-      }
-
-      els.btnVerifyVirusTotal.disabled = true;
-      els.btnVerifyVirusTotal.textContent = 'Verifying...';
-      setVirusTotalStatus('Connecting to VirusTotal...', '');
-
-      try {
-        const result = await window.browserAPI.security.verifyVirusTotalKey(apiKey);
-        if (result?.success) {
-          setVirusTotalQuotaCard(result);
-          syncVirusTotalLinkTools();
-          const details = [];
-          if (Number.isFinite(result?.dailyUsed)) {
-            details.push(`Daily used: ${Number(result.dailyUsed).toLocaleString()}`);
-          }
-          if (Number.isFinite(result?.dailyQuota)) {
-            details.push(`Daily limit: ${Number(result.dailyQuota).toLocaleString()}`);
-          }
-          if (Number.isFinite(result?.monthlyLeft)) {
-            details.push(`Monthly left: ${Number(result.monthlyLeft).toLocaleString()}`);
-          }
-          if (Number.isFinite(result?.monthlyQuota)) {
-            details.push(`Monthly limit: ${Number(result.monthlyQuota).toLocaleString()}`);
-          }
-          const detailText = details.length ? ` ${details.join(' | ')}` : '';
-          setVirusTotalStatus(`Verified as ${result.userName || 'account'}.${detailText}`, 'success');
-          return;
-        }
-        setVirusTotalQuotaCard(null);
-        renderVirusTotalLinkReport(null);
-        setVirusTotalStatus(result?.error || 'Verification failed.', 'error');
-      } catch (error) {
-        setVirusTotalQuotaCard(null);
-        renderVirusTotalLinkReport(null);
-        setVirusTotalStatus(error?.message || 'Verification failed.', 'error');
-      } finally {
-        els.btnVerifyVirusTotal.disabled = false;
-        els.btnVerifyVirusTotal.textContent = 'Verify API';
-      }
-    });
-  }
-
-  if (els.btnScanVirusTotalLink) {
-    els.btnScanVirusTotalLink.addEventListener('click', () => {
-      scanVirusTotalLink();
-    });
-  }
-
-  if (els.btnClearVirusTotalLink) {
-    els.btnClearVirusTotalLink.addEventListener('click', () => {
-      virusTotalLinkScanToken += 1;
-      resetVirusTotalLinkScan({ preserveInput: false });
-      els.virusTotalLinkInput?.focus();
-    });
-  }
-
-  if (els.virusTotalLinkInput) {
-    els.virusTotalLinkInput.addEventListener('keydown', (event) => {
-      if (event.key !== 'Enter') return;
-      event.preventDefault();
-      scanVirusTotalLink();
-    });
   }
 
   load();

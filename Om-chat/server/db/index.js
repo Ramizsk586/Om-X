@@ -5,7 +5,7 @@ const userRepo = require('./userRepo');
 const ChatMessage = require('../models/ChatMessage.model');
 const DmConversation = require('../models/DmConversation.model');
 const UploadBlob = require('../models/UploadBlob.model');
-const { getModel, isLocalMode } = require('./getModel');
+const { getModel } = require('./getModel');
 
 function getChatMessageCollection() { return getModel('chatMessages', ChatMessage); }
 function getDmConversationCollection() { return getModel('dmConversations', DmConversation); }

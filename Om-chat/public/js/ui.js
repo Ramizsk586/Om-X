@@ -83,6 +83,34 @@ export function renderMarkdown(text) {
   return html;
 }
 
+export function extractMessageLinks(text, limit = 3) {
+  const source = decodeHtmlEntities(String(text || ''));
+  if (!source) return [];
+
+  const seen = new Set();
+  const links = [];
+  const regex = /(^|[\s(>])((?:https?:\/\/|www\.)[^\s<]+[^\s<.,!?;:")\]])/gi;
+  let match = regex.exec(source);
+  while (match) {
+    const raw = String(match[2] || '').trim();
+    const href = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+    try {
+      const parsed = new URL(href);
+      if (/^https?:$/i.test(parsed.protocol)) {
+        const normalized = parsed.toString();
+        if (!seen.has(normalized)) {
+          seen.add(normalized);
+          links.push(normalized);
+          if (links.length >= limit) break;
+        }
+      }
+    } catch (_) {}
+    match = regex.exec(source);
+  }
+
+  return links;
+}
+
 export function messageShouldGroup(prevMessage, nextMessage) {
   if (!prevMessage || !nextMessage) return false;
   if (prevMessage.userId !== nextMessage.userId) return false;
@@ -173,6 +201,87 @@ function getChannelIconLabel(type) {
 
 function buildActionButton(action, label) {
   return `<button class="action-btn" data-action="${action}" aria-label="${label}" title="${label}">${ICONS[action] || ICONS.more}</button>`;
+}
+
+function normalizePreviewImageUrl(url = '') {
+  const value = String(url || '').trim();
+  if (!value) return '';
+  try {
+    const parsed = new URL(value, window.location.href);
+    return /^https?:$/i.test(parsed.protocol) ? parsed.toString() : '';
+  } catch (_) {
+    return '';
+  }
+}
+
+function createLinkPreviewElement(preview = {}) {
+  const href = String(preview.url || '').trim();
+  if (!href) return null;
+
+  const card = document.createElement('a');
+  card.className = 'message-link-preview';
+  card.href = href;
+  card.target = '_blank';
+  card.rel = 'noreferrer noopener';
+
+  const copy = document.createElement('div');
+  copy.className = 'message-link-preview-copy';
+
+  const host = document.createElement('span');
+  host.className = 'message-link-preview-host';
+  host.textContent = String(preview.hostname || '').trim() || 'External link';
+
+  const title = document.createElement('strong');
+  title.className = 'message-link-preview-title';
+  title.textContent = String(preview.title || '').trim() || href;
+
+  copy.append(host, title);
+
+  const description = String(preview.description || '').trim();
+  if (description) {
+    const descriptionNode = document.createElement('p');
+    descriptionNode.className = 'message-link-preview-description';
+    descriptionNode.textContent = description;
+    copy.appendChild(descriptionNode);
+  }
+
+  const urlNode = document.createElement('span');
+  urlNode.className = 'message-link-preview-url';
+  urlNode.textContent = String(preview.displayUrl || href).trim() || href;
+  copy.appendChild(urlNode);
+
+  const imageUrl = normalizePreviewImageUrl(preview.image);
+  if (imageUrl) {
+    const media = document.createElement('div');
+    media.className = 'message-link-preview-media';
+
+    const image = document.createElement('img');
+    image.className = 'message-link-preview-image';
+    image.src = imageUrl;
+    image.alt = String(preview.title || preview.hostname || 'Link preview').trim() || 'Link preview';
+    image.loading = 'lazy';
+    image.addEventListener('error', () => media.remove(), { once: true });
+
+    media.appendChild(image);
+    card.append(copy, media);
+  } else {
+    card.appendChild(copy);
+  }
+
+  return card;
+}
+
+function createLinkPreviewSkeleton(url = '') {
+  const shell = document.createElement('div');
+  shell.className = 'message-link-preview loading';
+  shell.innerHTML = `
+    <div class="message-link-preview-copy">
+      <span class="message-link-preview-host">Loading preview</span>
+      <strong class="message-link-preview-title">${escapeHtml(String(url || 'Fetching website data...'))}</strong>
+      <p class="message-link-preview-description">OmChat is loading the page title, description, and image.</p>
+    </div>
+  `;
+  return shell;
 }
 
 function formatMessageTimestamp(createdAt) {
@@ -428,6 +537,21 @@ export function createMessageElement(message, grouped = false, currentUserId = n
   content.innerHTML = renderMarkdown(message.content || '');
   contentWrap.appendChild(content);
 
+  if (Array.isArray(message.linkPreviews) && message.linkPreviews.length) {
+    const previews = document.createElement('div');
+    previews.className = 'message-link-previews';
+    message.linkPreviews.forEach((preview) => {
+      const element = createLinkPreviewElement(preview);
+      if (element) previews.appendChild(element);
+    });
+    if (previews.childElementCount) contentWrap.appendChild(previews);
+  } else if (message._linkPreviewState === 'loading' && Array.isArray(message._linkPreviewUrls) && message._linkPreviewUrls.length) {
+    const previews = document.createElement('div');
+    previews.className = 'message-link-previews';
+    previews.appendChild(createLinkPreviewSkeleton(message._linkPreviewUrls[0]));
+    contentWrap.appendChild(previews);
+  }
+
   if ((message.attachments || []).length) {
     const attachments = document.createElement('div');
     attachments.className = 'message-attachments';
@@ -439,16 +563,34 @@ export function createMessageElement(message, grouped = false, currentUserId = n
 
   const reactionRow = document.createElement('div');
   reactionRow.className = 'reaction-row';
-  for (const [emoji, users] of Object.entries(message.reactions || {})) {
+  const reactionEntries = Object.entries(message.reactions || {})
+    .filter(([, users]) => Array.isArray(users) && users.length)
+    .sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]));
+
+  for (const [emoji, users] of reactionEntries) {
     const pill = document.createElement('button');
     pill.type = 'button';
     pill.className = 'reaction';
     pill.dataset.emoji = emoji;
-    pill.textContent = `${emoji} ${users.length}`;
+    if (Array.isArray(users) && users.includes(currentUserId)) {
+      pill.classList.add('is-active');
+    }
+    pill.title = `${users.length} reaction${users.length === 1 ? '' : 's'}`;
+
+    const emojiNode = document.createElement('span');
+    emojiNode.className = 'reaction-emoji';
+    emojiNode.textContent = emoji;
+
+    const countNode = document.createElement('span');
+    countNode.className = 'reaction-count';
+    countNode.textContent = String(users.length);
+
+    pill.append(emojiNode, countNode);
     reactionRow.appendChild(pill);
   }
 
-  body.append(meta, actions, contentWrap, reactionRow);
+  body.append(meta, actions, contentWrap);
+  if (reactionRow.childElementCount) body.appendChild(reactionRow);
   layout.append(gutter, body);
   row.appendChild(layout);
   return row;

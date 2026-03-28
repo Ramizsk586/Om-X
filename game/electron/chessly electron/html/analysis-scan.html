@@ -1,5 +1,3 @@
-
-
 <!DOCTYPE html>
 <html>
 <head>
@@ -8,7 +6,12 @@
   <title>Visual Scanner</title>
   <link rel="stylesheet" href="css/styles.css" />
   <style>
-    /* Arena Specific Overrides for Scanner */
+    :root {
+      --scan-surface: rgba(255,255,255,0.04);
+      --scan-border: 1px solid rgba(255,255,255,0.08);
+      --scan-muted: rgba(148, 163, 184, 0.92);
+    }
+
     body {
       margin: 0;
       overflow: hidden;
@@ -17,189 +20,523 @@
     }
 
     .main-layout {
-        display: flex; width: 100vw; height: 100vh;
+      display: flex;
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
     }
 
-    /* Board Panel */
     .board-panel {
-        flex: 1;
-        display: flex; justify-content: center; align-items: center;
-        position: relative;
-        background: radial-gradient(circle at center, rgba(255,255,255,0.02), transparent 70%);
-    }
-    
-    .arena-glow {
-        position: absolute; width: 800px; height: 800px;
-        background: radial-gradient(circle, var(--highlight-last) 0%, transparent 70%);
-        opacity: 0.1; pointer-events: none; z-index: 0;
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      position: relative;
+      background: radial-gradient(circle at center, rgba(255,255,255,0.02), transparent 70%);
     }
 
-    /* Sidebar */
+    .arena-glow {
+      position: absolute;
+      width: 800px;
+      height: 800px;
+      background: radial-gradient(circle, var(--highlight-last) 0%, transparent 70%);
+      opacity: 0.1;
+      pointer-events: none;
+      z-index: 0;
+    }
+
     .sidebar {
-        width: 380px; min-width: 380px;
-        background: var(--sidebar-bg);
-        backdrop-filter: blur(24px);
-        border-left: var(--glass-border);
-        display: flex; flex-direction: column;
-        z-index: 10;
-        box-shadow: -10px 0 40px rgba(0,0,0,0.5);
+      width: 390px;
+      min-width: 390px;
+      background: var(--sidebar-bg);
+      backdrop-filter: blur(24px);
+      border-left: var(--glass-border);
+      display: flex;
+      flex-direction: column;
+      z-index: 10;
+      box-shadow: -10px 0 40px rgba(0,0,0,0.5);
+      overflow: hidden;
     }
 
     .sidebar-header {
-        padding: 24px;
-        border-bottom: 1px solid rgba(255,255,255,0.05);
-        text-align: center;
-    }
-    .sidebar-header h2 {
-        margin: 0; font-size: 18px; color: var(--primary-accent); 
-        text-transform: uppercase; letter-spacing: 3px; font-weight: 800;
-        text-shadow: 0 0 20px var(--highlight-move);
-    }
-    #status-msg {
-        font-size: 11px; color: var(--text-muted); margin-top: 6px; font-weight: 500;
+      padding: 20px 18px 14px;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+      text-align: left;
     }
 
-    /* Scanner Drop Zone */
+    .sidebar-header h2 {
+      margin: 0 0 10px 0;
+      font-size: 18px;
+      color: var(--primary-accent);
+      text-transform: uppercase;
+      letter-spacing: 3px;
+      font-weight: 800;
+      text-shadow: 0 0 20px var(--highlight-move);
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      width: fit-content;
+      max-width: 100%;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 999px;
+      padding: 7px 12px;
+      color: #fff;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--primary-accent);
+      box-shadow: 0 0 12px var(--primary-accent);
+      flex-shrink: 0;
+    }
+
     .scanner-container {
-        flex: 1;
-        display: flex; flex-direction: column;
-        padding: 20px;
-        overflow-y: auto;
-        gap: 20px;
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      padding: 12px;
+      overflow-y: auto;
+      gap: 10px;
+    }
+
+    .scan-card {
+      background: var(--scan-surface);
+      border: var(--scan-border);
+      border-radius: 16px;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      box-shadow: 0 12px 30px rgba(0,0,0,0.16);
+    }
+
+    .card-title {
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 1.2px;
+      text-transform: uppercase;
+      color: var(--scan-muted);
     }
 
     .drop-zone {
-        background: rgba(255,255,255,0.03);
-        border: 2px dashed rgba(255,255,255,0.1);
-        border-radius: 16px;
-        height: 200px;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        color: var(--text-muted);
-        transition: all 0.2s;
-        cursor: pointer;
-        position: relative;
-        overflow: hidden;
+      background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.015));
+      border: 2px dashed rgba(255,255,255,0.1);
+      border-radius: 14px;
+      min-height: 132px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-muted);
+      transition: all 0.2s;
+      cursor: pointer;
+      position: relative;
+      overflow: hidden;
+      isolation: isolate;
     }
-    .drop-zone:hover, .drop-zone.dragover {
-        border-color: var(--primary-accent);
-        background: rgba(92, 107, 192, 0.1);
-        color: #fff;
+
+    .drop-zone:hover,
+    .drop-zone.dragover {
+      border-color: var(--primary-accent);
+      background: rgba(92, 107, 192, 0.1);
+      color: #fff;
     }
-    
+
+    .drop-zone::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(circle at top, rgba(99, 102, 241, 0.12), transparent 60%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .drop-copy {
+      position: relative;
+      z-index: 2;
+      text-align: center;
+      padding: 12px;
+    }
+
+    .drop-icon {
+      font-size: 24px;
+      margin-bottom: 6px;
+      opacity: 0.75;
+    }
+
+    .drop-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: #fff;
+      margin-bottom: 4px;
+    }
+
+    .drop-subtitle {
+      font-size: 11px;
+      color: var(--scan-muted);
+      line-height: 1.35;
+    }
+
     .preview-img {
-        width: 100%; height: 100%; object-fit: contain;
-        display: none;
-        border-radius: 14px;
-        z-index: 5;
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      display: none;
+      border-radius: 14px;
+      z-index: 5;
+      padding: 12px;
+      background: rgba(3, 7, 18, 0.86);
     }
-    
+
     .scan-beam {
-        position: absolute; top: 0; left: 0; right: 0; height: 4px;
-        background: var(--primary-accent);
-        box-shadow: 0 0 15px var(--primary-accent);
-        animation: scan 2s infinite alternate;
-        display: none; z-index: 10;
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 4px;
+      background: var(--primary-accent);
+      box-shadow: 0 0 15px var(--primary-accent);
+      animation: scan 2s infinite alternate;
+      display: none;
+      z-index: 10;
     }
-    @keyframes scan { from{top:0;} to{top:100%;} }
 
-    /* Analysis Results */
+    @keyframes scan {
+      from { top: 0; }
+      to { top: 100%; }
+    }
+
     .analysis-info {
-        background: rgba(255,255,255,0.03);
-        border-radius: 12px;
-        padding: 16px;
-        border: 1px solid rgba(255,255,255,0.05);
+      background: rgba(255,255,255,0.03);
+      border-radius: 12px;
+      padding: 12px;
+      border: 1px solid rgba(255,255,255,0.05);
     }
-    
+
     .info-row {
-        display: flex; justify-content: space-between; margin-bottom: 8px;
-        font-size: 13px; align-items: center;
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 8px;
+      font-size: 13px;
+      align-items: center;
     }
-    .info-label { color: var(--text-muted); text-transform: uppercase; font-size: 11px; font-weight: 700; }
-    .info-val { font-weight: 700; color: #fff; font-family: 'JetBrains Mono', monospace; }
-    
+
+    .info-label {
+      color: var(--text-muted);
+      text-transform: uppercase;
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .info-val {
+      font-weight: 700;
+      color: #fff;
+      font-family: 'JetBrains Mono', monospace;
+      max-width: 170px;
+      text-align: right;
+      word-break: break-word;
+    }
+
     .eval-bar-mini {
-        height: 4px; width: 100%; background: #333; border-radius: 2px; overflow: hidden; margin-top: 8px;
-    }
-    .eval-fill {
-        height: 100%; background: #fff; width: 50%; transition: width 0.5s;
+      height: 4px;
+      width: 100%;
+      background: #333;
+      border-radius: 2px;
+      overflow: hidden;
+      margin-top: 8px;
+      position: relative;
     }
 
-    /* Controls */
-    .controls { padding: 24px; border-top: 1px solid rgba(255,255,255,0.05); display: flex; flex-direction: column; gap: 12px; }
-    
+    .eval-bar-mini-fill {
+      height: 100%;
+      background: #fff;
+      width: 50%;
+      transition: width 0.5s;
+      position: relative;
+    }
+
+    .piece-palette {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+    }
+
+    .piece-chip {
+      min-height: 48px;
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,0.08);
+      background: rgba(255,255,255,0.03);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      position: relative;
+    }
+
+    .piece-chip:hover {
+      background: rgba(255,255,255,0.08);
+      border-color: rgba(255,255,255,0.18);
+    }
+
+    .piece-chip.active {
+      border-color: var(--primary-accent);
+      box-shadow: 0 0 0 1px var(--primary-accent), 0 0 16px rgba(99, 102, 241, 0.2);
+      background: rgba(99, 102, 241, 0.12);
+    }
+
+    .piece-chip img {
+      width: 28px;
+      height: 28px;
+      object-fit: contain;
+      pointer-events: none;
+    }
+
+    .piece-chip.erase {
+      color: #fff;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+
+    .manual-meta-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .manual-field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .manual-field label {
+      font-size: 10px;
+      font-weight: 800;
+      color: var(--scan-muted);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .manual-field input,
+    .manual-field select {
+      min-height: 38px;
+      padding: 8px 10px;
+      border-radius: 10px;
+      font-size: 12px;
+    }
+
+    .castle-row {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+    }
+
+    .castle-pill {
+      min-height: 36px;
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 10px;
+      background: rgba(255,255,255,0.03);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      font-size: 12px;
+      color: #fff;
+    }
+
+    .castle-pill input {
+      width: auto;
+      margin: 0;
+    }
+
+    .compact-btn {
+      min-height: 40px;
+      padding: 10px 14px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 1px;
+      flex-shrink: 0;
+    }
+
+    .button-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .controls {
+      padding: 12px;
+      border-top: 1px solid rgba(255,255,255,0.05);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
     .fen-box {
-        width: 100%; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1);
-        border-radius: 8px; padding: 8px; color: var(--text-muted); font-family: monospace; font-size: 11px;
-        resize: none; height: 60px;
+      width: 100%;
+      background: rgba(0,0,0,0.3);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 8px;
+      padding: 8px 10px;
+      color: var(--text-muted);
+      font-family: monospace;
+      font-size: 11px;
+      resize: none;
+      min-height: 58px;
     }
-    .fen-box:focus { border-color: var(--primary-accent); color: #fff; outline: none; }
 
-    /* Overlay Arrow Layer */
-    #arrow-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 20; }
+    .fen-box:focus {
+      border-color: var(--primary-accent);
+      color: #fff;
+      outline: none;
+    }
+
+    .helper-text {
+      font-size: 10px;
+      color: var(--scan-muted);
+      line-height: 1.4;
+    }
+
+    #arrow-layer {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 20;
+    }
   </style>
 </head>
 <body>
-
   <div class="main-layout">
     <div class="board-panel">
-       <div class="arena-glow"></div>
-       <div id="board-container">
-          <div id="board"></div>
-          <svg id="arrow-layer"></svg>
-       </div>
+      <div class="arena-glow"></div>
+      <div id="board-container">
+        <div id="board"></div>
+        <svg id="arrow-layer"></svg>
+      </div>
     </div>
 
     <div class="sidebar">
-       <div class="sidebar-header">
-          <h2>Visual Scanner</h2>
-          <div id="scanStatus">Ready for Image</div>
-       </div>
+      <div class="sidebar-header">
+        <h2>Visual Scanner</h2>
+        <div class="status-pill">
+          <span class="status-dot"></span>
+          <span id="scanStatus">Ready for Manual or Image Setup</span>
+        </div>
+      </div>
 
-       <div class="scanner-container">
-           <div class="drop-zone" id="dropZone">
-               <div class="scan-beam" id="scanBeam"></div>
-               <img id="previewImg" class="preview-img">
-               <div id="dropText" style="text-align:center;">
-                   <div style="font-size:32px; margin-bottom:10px; opacity:0.7;">📷</div>
-                   <div style="font-size:12px; font-weight:600;">Drop Image / Paste / Click</div>
-               </div>
-               <input type="file" id="fileInput" accept="image/*" hidden>
-           </div>
-           
-           <button class="btn-primary" id="scanBtn" style="width:100%; margin-top:10px;" disabled>ANALYZE IMAGE</button>
+      <div class="scanner-container">
+        <div class="scan-card">
+          <div class="card-title">Image Scan</div>
+          <div class="drop-zone" id="dropZone">
+            <div class="scan-beam" id="scanBeam"></div>
+            <img id="previewImg" class="preview-img" alt="Scan preview">
+            <div id="dropText" class="drop-copy">
+              <div class="drop-icon">[IMG]</div>
+              <div class="drop-title">Drop, Paste or Click</div>
+              <div class="drop-subtitle">Scan a board image, or skip this and build the position manually below.</div>
+            </div>
+            <input type="file" id="fileInput" accept="image/*" hidden>
+          </div>
+          <button class="btn-primary compact-btn" id="scanBtn" style="width:100%;" disabled>Analyze Image</button>
+        </div>
 
-           <div class="analysis-info">
-               <div class="info-row">
-                   <span class="info-label">Evaluation</span>
-                   <span class="info-val" id="evalScore">--</span>
-               </div>
-               <div class="eval-bar-mini"><div class="eval-fill" id="evalFill"></div></div>
-               <div class="info-row" style="margin-top:12px;">
-                   <span class="info-label">Best Move</span>
-                   <span class="info-val" id="bestMove" style="color:var(--primary-accent);">...</span>
-               </div>
-           </div>
-       </div>
+        <div class="scan-card">
+          <div class="card-title">Manual Setup</div>
+          <div class="helper-text">Pick a piece, click squares on the board, then apply the manual position for engine analysis.</div>
+          <div class="piece-palette" id="piecePalette"></div>
 
-       <div class="controls">
-           <textarea id="fenInput" class="fen-box" placeholder="Or paste FEN string here..."></textarea>
-           <div style="display:flex; gap:10px;">
-               <button class="btn-secondary" id="loadFenBtn" style="flex:1;">Load FEN</button>
-               <button class="btn-secondary" id="clearBtn" style="width:50px;">✕</button>
-           </div>
-       </div>
+          <div class="manual-meta-grid">
+            <div class="manual-field">
+              <label for="turnSelect">Side To Move</label>
+              <select id="turnSelect">
+                <option value="w">White</option>
+                <option value="b">Black</option>
+              </select>
+            </div>
+            <div class="manual-field">
+              <label for="epInput">En Passant</label>
+              <input type="text" id="epInput" maxlength="2" placeholder="-">
+            </div>
+            <div class="manual-field">
+              <label for="halfmoveInput">Halfmove</label>
+              <input type="number" id="halfmoveInput" min="0" value="0">
+            </div>
+            <div class="manual-field">
+              <label for="fullmoveInput">Fullmove</label>
+              <input type="number" id="fullmoveInput" min="1" value="1">
+            </div>
+          </div>
+
+          <div class="castle-row">
+            <label class="castle-pill"><input type="checkbox" id="castleK"> K</label>
+            <label class="castle-pill"><input type="checkbox" id="castleQ"> Q</label>
+            <label class="castle-pill"><input type="checkbox" id="castlek"> k</label>
+            <label class="castle-pill"><input type="checkbox" id="castleq"> q</label>
+          </div>
+
+          <div class="button-row">
+            <button class="btn-primary compact-btn" id="applyManualBtn">Analyze Manual</button>
+            <button class="btn-secondary compact-btn" id="startManualBtn">Start Position</button>
+          </div>
+          <button class="btn-secondary compact-btn" id="clearManualBtn">Clear Board</button>
+        </div>
+
+        <div class="scan-card">
+          <div class="card-title">Engine Readout</div>
+          <div class="analysis-info">
+            <div class="info-row">
+              <span class="info-label">Evaluation</span>
+              <span class="info-val" id="evalScore">--</span>
+            </div>
+            <div class="eval-bar-mini"><div class="eval-bar-mini-fill" id="evalFill"></div></div>
+            <div class="info-row" style="margin-top:12px;">
+              <span class="info-label">Best Move</span>
+              <span class="info-val" id="bestMove" style="color:var(--primary-accent);">...</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="controls">
+        <textarea id="fenInput" class="fen-box" placeholder="Paste or edit FEN here..."></textarea>
+        <button class="btn-secondary compact-btn" id="loadFenBtn" style="width:100%;">Load FEN And Analyze</button>
+      </div>
     </div>
   </div>
 
   <script>
-      // State
-      let currentFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+      const START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+      const PIECE_OPTIONS = [
+          { code: "wK" }, { code: "wQ" }, { code: "wR" }, { code: "wB" },
+          { code: "wN" }, { code: "wP" }, { code: "bK" }, { code: "bQ" },
+          { code: "bR" }, { code: "bB" }, { code: "bN" }, { code: "bP" }
+      ];
+
+      let currentFen = START_FEN;
       let imageBase64 = null;
-      
-      // DOM
+      let selectedManualPiece = "wP";
+      let manualState = null;
+
       const dropZone = document.getElementById('dropZone');
       const fileInput = document.getElementById('fileInput');
       const previewImg = document.getElementById('previewImg');
@@ -209,43 +546,180 @@
       const scanBeam = document.getElementById('scanBeam');
       const fenInput = document.getElementById('fenInput');
       const loadFenBtn = document.getElementById('loadFenBtn');
-      const clearBtn = document.getElementById('clearBtn');
       const boardEl = document.getElementById('board');
       const arrowLayer = document.getElementById('arrow-layer');
       const bestMoveVal = document.getElementById('bestMove');
       const evalScore = document.getElementById('evalScore');
       const evalFill = document.getElementById('evalFill');
-      
-      // --- Board Rendering ---
-      function renderBoard(fen) {
-          boardEl.innerHTML = "";
-          arrowLayer.innerHTML = ""; // Clear arrows
-          
-          const parts = fen.split(' ');
-          const rows = parts[0].split('/');
-          
-          for(let r=0; r<8; r++) {
+      const piecePalette = document.getElementById('piecePalette');
+      const turnSelect = document.getElementById('turnSelect');
+      const epInput = document.getElementById('epInput');
+      const halfmoveInput = document.getElementById('halfmoveInput');
+      const fullmoveInput = document.getElementById('fullmoveInput');
+      const castleK = document.getElementById('castleK');
+      const castleQ = document.getElementById('castleQ');
+      const castlek = document.getElementById('castlek');
+      const castleq = document.getElementById('castleq');
+      const applyManualBtn = document.getElementById('applyManualBtn');
+      const startManualBtn = document.getElementById('startManualBtn');
+      const clearManualBtn = document.getElementById('clearManualBtn');
+
+      function emptyBoard() {
+          return Array.from({ length: 8 }, () => Array(8).fill(null));
+      }
+
+      function pieceCodeToFenChar(pieceCode) {
+          if (!pieceCode) return null;
+          const color = pieceCode[0];
+          const type = pieceCode[1];
+          const char = type.toLowerCase();
+          return color === 'w' ? char.toUpperCase() : char;
+      }
+
+      function fenCharToPieceCode(char) {
+          if (!char || /\d/.test(char)) return null;
+          const color = char === char.toUpperCase() ? "w" : "b";
+          return color + char.toUpperCase();
+      }
+
+      function parseFenToState(fen) {
+          const safeFen = (fen || START_FEN).trim();
+          const parts = safeFen.split(/\s+/);
+          const board = emptyBoard();
+          const rows = (parts[0] || START_FEN.split(" ")[0]).split('/');
+
+          for (let r = 0; r < 8; r++) {
               let c = 0;
-              const rowStr = rows[r];
-              for(let i=0; i<rowStr.length; i++) {
-                  const char = rowStr[i];
-                  if(!isNaN(char)) {
-                      const empties = parseInt(char);
-                      for(let k=0; k<empties; k++) { createSquare(r, c, null); c++; }
+              const row = rows[r] || "8";
+              for (const char of row) {
+                  if (!isNaN(char)) {
+                      c += parseInt(char, 10);
                   } else {
-                      const color = char === char.toUpperCase() ? 'w' : 'b';
-                      const type = char.toUpperCase();
-                      createSquare(r, c, color+type);
+                      if (c < 8) board[r][c] = fenCharToPieceCode(char);
                       c++;
                   }
               }
           }
+
+          return {
+              board,
+              turn: parts[1] === "b" ? "b" : "w",
+              castling: parts[2] && parts[2] !== "-" ? parts[2] : "",
+              enPassant: parts[3] || "-",
+              halfmove: Number.isFinite(Number(parts[4])) ? Number(parts[4]) : 0,
+              fullmove: Number.isFinite(Number(parts[5])) ? Number(parts[5]) : 1
+          };
       }
-      
+
+      function buildFenFromState(state) {
+          const rows = [];
+          for (let r = 0; r < 8; r++) {
+              let row = "";
+              let empties = 0;
+              for (let c = 0; c < 8; c++) {
+                  const piece = state.board[r][c];
+                  if (!piece) {
+                      empties++;
+                      continue;
+                  }
+                  if (empties) {
+                      row += String(empties);
+                      empties = 0;
+                  }
+                  row += pieceCodeToFenChar(piece);
+              }
+              if (empties) row += String(empties);
+              rows.push(row);
+          }
+          const castling = state.castling || "-";
+          const ep = state.enPassant && /^[a-h][36]$/.test(state.enPassant) ? state.enPassant : "-";
+          const halfmove = Number.isFinite(Number(state.halfmove)) ? Math.max(0, Number(state.halfmove)) : 0;
+          const fullmove = Number.isFinite(Number(state.fullmove)) ? Math.max(1, Number(state.fullmove)) : 1;
+          return `${rows.join('/')} ${state.turn === 'b' ? 'b' : 'w'} ${castling} ${ep} ${halfmove} ${fullmove}`;
+      }
+
+      function syncManualControlsFromState() {
+          turnSelect.value = manualState.turn;
+          epInput.value = manualState.enPassant === "-" ? "" : manualState.enPassant;
+          halfmoveInput.value = manualState.halfmove;
+          fullmoveInput.value = manualState.fullmove;
+          castleK.checked = manualState.castling.includes("K");
+          castleQ.checked = manualState.castling.includes("Q");
+          castlek.checked = manualState.castling.includes("k");
+          castleq.checked = manualState.castling.includes("q");
+      }
+
+      function readManualControlsIntoState() {
+          manualState.turn = turnSelect.value === "b" ? "b" : "w";
+          manualState.enPassant = (epInput.value || "").trim().toLowerCase() || "-";
+          manualState.halfmove = Number(halfmoveInput.value) || 0;
+          manualState.fullmove = Math.max(1, Number(fullmoveInput.value) || 1);
+          manualState.castling = [
+              castleK.checked ? "K" : "",
+              castleQ.checked ? "Q" : "",
+              castlek.checked ? "k" : "",
+              castleq.checked ? "q" : ""
+          ].join("");
+      }
+
+      function refreshFenFromManualState() {
+          readManualControlsIntoState();
+          currentFen = buildFenFromState(manualState);
+          fenInput.value = currentFen;
+      }
+
+      function setStateFromFen(fen) {
+          manualState = parseFenToState(fen);
+          currentFen = buildFenFromState(manualState);
+          fenInput.value = currentFen;
+          syncManualControlsFromState();
+          renderBoard();
+      }
+
+      function renderPiecePalette() {
+          piecePalette.innerHTML = "";
+          const erase = document.createElement("button");
+          erase.type = "button";
+          erase.className = `piece-chip erase${selectedManualPiece === null ? " active" : ""}`;
+          erase.textContent = "Clear";
+          erase.onclick = () => {
+              selectedManualPiece = null;
+              renderPiecePalette();
+          };
+          piecePalette.appendChild(erase);
+
+          for (const option of PIECE_OPTIONS) {
+              const btn = document.createElement("button");
+              btn.type = "button";
+              btn.className = `piece-chip${selectedManualPiece === option.code ? " active" : ""}`;
+              btn.innerHTML = `<img src="../assets/pieces/${option.code}.png" alt="${option.code}">`;
+              btn.onclick = () => {
+                  selectedManualPiece = option.code;
+                  renderPiecePalette();
+              };
+              piecePalette.appendChild(btn);
+          }
+      }
+
+      function renderBoard() {
+          boardEl.innerHTML = "";
+          arrowLayer.innerHTML = "";
+          for (let r = 0; r < 8; r++) {
+              for (let c = 0; c < 8; c++) {
+                  createSquare(r, c, manualState.board[r][c]);
+              }
+          }
+      }
+
       function createSquare(r, c, piece) {
           const sq = document.createElement('div');
-          sq.className = `square ${(r+c)%2===0 ? 'light' : 'dark'}`;
-          if(piece) {
+          sq.className = `square ${(r + c) % 2 === 0 ? 'light' : 'dark'}`;
+          sq.onclick = () => {
+              manualState.board[r][c] = selectedManualPiece;
+              refreshFenFromManualState();
+              renderBoard();
+          };
+          if (piece) {
               const p = document.createElement('div');
               p.className = 'piece';
               p.style.backgroundImage = `url('../assets/pieces/${piece}.png')`;
@@ -253,18 +727,22 @@
           }
           boardEl.appendChild(sq);
       }
-      
+
       function drawArrow(uciMove) {
-          if(!uciMove) return;
-          const from = uciMove.substring(0,2);
-          const to = uciMove.substring(2,4);
-          
-          const c1 = from.charCodeAt(0)-97; const r1 = 8-parseInt(from[1]);
-          const c2 = to.charCodeAt(0)-97; const r2 = 8-parseInt(to[1]);
-          
-          const x1 = (c1 * 12.5) + 6.25; const y1 = (r1 * 12.5) + 6.25;
-          const x2 = (c2 * 12.5) + 6.25; const y2 = (r2 * 12.5) + 6.25;
-          
+          if (!uciMove || uciMove.length < 4) return;
+          const from = uciMove.substring(0, 2);
+          const to = uciMove.substring(2, 4);
+
+          const c1 = from.charCodeAt(0) - 97;
+          const r1 = 8 - parseInt(from[1], 10);
+          const c2 = to.charCodeAt(0) - 97;
+          const r2 = 8 - parseInt(to[1], 10);
+
+          const x1 = (c1 * 12.5) + 6.25;
+          const y1 = (r1 * 12.5) + 6.25;
+          const x2 = (c2 * 12.5) + 6.25;
+          const y2 = (r2 * 12.5) + 6.25;
+
           arrowLayer.innerHTML = `
             <defs>
                 <marker id="head" orient="auto" markerWidth="4" markerHeight="4" refX="2" refY="2">
@@ -275,33 +753,52 @@
           `;
       }
 
-      // --- Drag & Drop ---
+      function resetAnalysisReadout(statusText = "Ready for Manual or Image Setup") {
+          scanStatus.textContent = statusText;
+          bestMoveVal.textContent = "...";
+          evalScore.textContent = "--";
+          evalFill.style.width = "50%";
+          arrowLayer.innerHTML = "";
+      }
+
+      function updatePosition() {
+          currentFen = buildFenFromState(manualState);
+          fenInput.value = currentFen;
+          renderBoard();
+          scanStatus.textContent = "Calculating...";
+          bestMoveVal.textContent = "...";
+          window.electronAPI.requestAnalysis(currentFen);
+      }
+
       dropZone.onclick = () => fileInput.click();
-      
+
       fileInput.onchange = (e) => {
-          if(e.target.files[0]) processFile(e.target.files[0]);
+          if (e.target.files[0]) processFile(e.target.files[0]);
       };
-      
-      dropZone.ondragover = (e) => { e.preventDefault(); dropZone.classList.add('dragover'); };
+
+      dropZone.ondragover = (e) => {
+          e.preventDefault();
+          dropZone.classList.add('dragover');
+      };
+
       dropZone.ondragleave = () => dropZone.classList.remove('dragover');
-      
+
       dropZone.ondrop = (e) => {
           e.preventDefault();
           dropZone.classList.remove('dragover');
-          if(e.dataTransfer.files[0]) processFile(e.dataTransfer.files[0]);
+          if (e.dataTransfer.files[0]) processFile(e.dataTransfer.files[0]);
       };
-      
-      // Paste Support
+
       document.onpaste = (e) => {
           const items = e.clipboardData.items;
-          for(let i=0; i<items.length; i++) {
-              if(items[i].type.indexOf("image") !== -1) {
+          for (let i = 0; i < items.length; i++) {
+              if (items[i].type.indexOf("image") !== -1) {
                   processFile(items[i].getAsFile());
                   break;
               }
           }
       };
-      
+
       function processFile(file) {
           const reader = new FileReader();
           reader.onload = (e) => {
@@ -314,95 +811,103 @@
           };
           reader.readAsDataURL(file);
       }
-      
-      // --- Handlers ---
-      
+
       scanBtn.onclick = async () => {
-          if(!imageBase64) return;
-          
+          if (!imageBase64) return;
+
           scanStatus.textContent = "AI Scanning...";
           scanBtn.disabled = true;
-          scanBtn.textContent = "SCANNING...";
+          scanBtn.textContent = "Scanning...";
           scanBeam.style.display = 'block';
-          
+
           const result = await window.electronAPI.analyzeImageFen({ imageBase64 });
-          
+
           scanBeam.style.display = 'none';
           scanBtn.disabled = false;
-          scanBtn.textContent = "ANALYZE IMAGE";
-          
-          if(result.success) {
-              currentFen = result.fen;
-              fenInput.value = currentFen;
+          scanBtn.textContent = "Analyze Image";
+
+          if (result.success) {
+              setStateFromFen(result.fen);
               scanStatus.textContent = "Scan Complete";
               updatePosition();
           } else {
               scanStatus.textContent = "Scan Failed";
               console.error(result.error);
-              if(result.error.includes("No Vision")) {
-                  alert("Requires a Vision Model (e.g. Gemini 1.5 Flash) in Settings > Engines.");
-              }
+              alert(result.error || "Image scan failed");
           }
       };
-      
+
       loadFenBtn.onclick = () => {
           const val = fenInput.value.trim();
-          if(val) {
-              currentFen = val;
+          if (!val) return;
+          try {
+              setStateFromFen(val);
               updatePosition();
+          } catch (_) {
+              alert("Invalid FEN");
           }
       };
-      
-      clearBtn.onclick = () => {
-          fenInput.value = "";
-          previewImg.style.display = 'none';
-          previewImg.src = "";
-          dropText.style.display = 'block';
-          imageBase64 = null;
-          scanBtn.disabled = true;
-          scanStatus.textContent = "Ready";
-          arrowLayer.innerHTML = "";
+
+      applyManualBtn.onclick = () => {
+          refreshFenFromManualState();
+          updatePosition();
       };
-      
-      function updatePosition() {
-          renderBoard(currentFen);
-          
-          // Trigger Engine
-          scanStatus.textContent = "Calculating...";
-          bestMoveVal.textContent = "...";
-          
-          window.electronAPI.requestAnalysis(currentFen);
-      }
-      
+
+      startManualBtn.onclick = () => {
+          setStateFromFen(START_FEN);
+          resetAnalysisReadout("Start Position Loaded");
+      };
+
+      clearManualBtn.onclick = () => {
+          manualState = {
+              board: emptyBoard(),
+              turn: "w",
+              castling: "",
+              enPassant: "-",
+              halfmove: 0,
+              fullmove: 1
+          };
+          syncManualControlsFromState();
+          refreshFenFromManualState();
+          renderBoard();
+          resetAnalysisReadout("Board Cleared");
+      };
+
+      turnSelect.onchange = refreshFenFromManualState;
+      epInput.oninput = refreshFenFromManualState;
+      halfmoveInput.oninput = refreshFenFromManualState;
+      fullmoveInput.oninput = refreshFenFromManualState;
+      castleK.onchange = refreshFenFromManualState;
+      castleQ.onchange = refreshFenFromManualState;
+      castlek.onchange = refreshFenFromManualState;
+      castleq.onchange = refreshFenFromManualState;
+
       window.electronAPI.onAnalysisResult((results) => {
-          const best = results[1]; // PV 1
-          if(best) {
+          const best = results[1];
+          if (best) {
               bestMoveVal.textContent = best;
-              drawArrow(best.split(' ')[0]); // Draw first move of PV
+              drawArrow(best.split(' ')[0]);
               scanStatus.textContent = "Analysis Ready";
           }
       });
-      
-      // Evaluation Score Listener
+
       window.electronAPI.onEvalScore((score) => {
-          const val = typeof score === 'number' ? score.toFixed(2) : score;
-          evalScore.textContent = (val > 0 ? "+" : "") + val;
-          
-          // Update mini bar
-          const clamped = Math.max(-5, Math.min(5, score || 0));
+          const numericScore = typeof score === 'number' ? score : Number(score) || 0;
+          evalScore.textContent = `${numericScore > 0 ? "+" : ""}${numericScore.toFixed(2)}`;
+          const clamped = Math.max(-5, Math.min(5, numericScore));
           const pct = 50 + (clamped * 10);
-          evalFill.style.width = pct + "%";
+          evalFill.style.width = `${pct}%`;
       });
-      
-      // Initial Render
-      renderBoard(currentFen);
-      
-      // Apply Theme
+
+      setStateFromFen(START_FEN);
+      renderPiecePalette();
+      resetAnalysisReadout();
+
       (async () => {
           const prefs = await window.electronAPI.getPreferences();
-          if(prefs?.boardTheme) document.documentElement.setAttribute('data-theme', prefs.boardTheme);
+          if (prefs?.boardTheme) document.documentElement.setAttribute('data-theme', prefs.boardTheme);
       })();
-      
+
       window.electronAPI.onThemeChanged((theme) => document.documentElement.setAttribute('data-theme', theme));
   </script>
 </body>

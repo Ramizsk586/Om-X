@@ -20,12 +20,18 @@ const navProfile = document.getElementById('nav-profile');
 const allNavs = [navHome, navAIArena, navMadArena, navReview, navThreats, navScan, navEngines, navSettings, navLan, navProfile];
 const chesslyElectronAPI = window.electronAPI || null;
 
+function dispatchViewData(wv, viewName, data) {
+    if (!wv || data == null) return;
+    try {
+        if (viewName === 'mad-report') {
+            wv.send('mad-report-data', data);
+        }
+    } catch (_) {}
+}
+
 async function navigateTo(viewName, data = null) {
     if (navigationTimeout) clearTimeout(navigationTimeout);
     allNavs.forEach(el => { if(el) el.classList.remove('active'); });
-    
-    // Bot Factory view has been retired; route any legacy calls back home
-    if (viewName === 'bots') viewName = 'home';
     
     // Highlight Logic
     if (viewName === 'home') navHome?.classList.add('active');
@@ -84,11 +90,11 @@ async function navigateTo(viewName, data = null) {
             
             wv.executeJavaScript(`document.documentElement.setAttribute('data-theme', '${theme}')`);
             wv.executeJavaScript(`document.documentElement.setAttribute('data-animations', '${animations ? 'on' : 'off'}')`);
-            
-            // Don't trigger a full-window reload for review; the webview is already loaded.
+            dispatchViewData(wv, viewName, data);
         });
     } else {
         wv.style.display = 'flex';
+        dispatchViewData(wv, viewName, data);
     }
 }
 

@@ -1,5 +1,3 @@
-import { isBlocked, addToBlocklist, checkVirusTotal, checkKnownMaliciousPatterns } from '../block.js';
-
 export class TabManager {
   constructor(tabListContainerId, webviewContainerId, onTabStateChange, onContextMenu, onTabContextMenu, onTabClose) {
     this.tabListContainer = document.getElementById(tabListContainerId);
@@ -40,7 +38,8 @@ export class TabManager {
       new URL('../../../html/', import.meta.url).href
     ];
     this.OMX_ICON_URL = new URL('../../../assets/icons/app.ico', import.meta.url).href;
-    this.OMCHAT_ICON_URL = new URL('../../../Om-chat/public/assets/omx-browser.png', import.meta.url).href;
+    this.OMCHAT_ICON_URL = new URL('../../../assets/icons/omchat.svg', import.meta.url).href;
+    this.OPENWEBUI_ICON = new URL('../../../assets/icons/openwebui.svg', import.meta.url).href;
     
     this.APP_ICON = this.OMX_ICON_URL;
     this.SETTINGS_ICON = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23ffffff'%3E%3Cpath d='M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.56-1.62.94l2.39-.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47.12.61l2.03 1.58c-.05.3-.07.63-.07.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l0.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-0.24,1.13-0.56,1.62-0.94l2.39.96 c0.22,0.08,0.47,0,0.59-0.22l1.92-3.32c0.12-0.22,0.07-0.47-0.12-0.61L19.14,12.94z M12,15.6c-1.98,0-3.6-1.62-3.6-3.6 s1.62-3.6,3.6-3.6s3.6,1.62,3.6,3.6S13.98,15.6,12,15.6z'/%3E%3C/svg%3E";
@@ -79,6 +78,7 @@ export class TabManager {
     this.nextTabId = 1;
     this.activeAudioTabId = null; 
     this.settings = null;
+    this.pendingWebviewFocusTimer = null;
     this.findingInterval = null;
     this.findingStartTime = 0;
     this.loaderActiveTabId = null;
@@ -324,7 +324,22 @@ export class TabManager {
     try {
       const parsed = new URL(value, window.location.href);
       const host = String(parsed.hostname || '').toLowerCase();
+      if (this.isOpenWebUiUrl(parsed)) return false;
       return host === 'duck.ai' || host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0';
+    } catch (_) {
+      return false;
+    }
+  }
+
+  isOpenWebUiUrl(url = '') {
+    const value = String(url || '').trim();
+    if (!value) return false;
+    try {
+      const parsed = url instanceof URL ? url : new URL(value, window.location.href);
+      const host = String(parsed.hostname || '').toLowerCase();
+      const port = String(parsed.port || '').trim();
+      const isLocal = host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0';
+      return isLocal && port === '8081';
     } catch (_) {
       return false;
     }
@@ -2570,7 +2585,6 @@ body[class*="overflow-hidden"]:not([data-legit]) {
     //  Defines no-op shims BEFORE tracker scripts execute
     // ════════════════════════════════════════════════════════════════
     const noop = () => {};
-    const noopPromise = () => Promise.resolve();
     const noopArr = Object.assign(noop, { push: noop, q: [], l: 1, call: noop, apply: noop });
     [
       // Google
@@ -3798,25 +3812,6 @@ body[class*="overflow-hidden"]:not([data-legit]) {
 
   // Check if URL is in the user's ad blocker whitelist
   // Whitelisted sites only get popup ad blocking — 90% less ad blocking power
-  isWhitelistedUrl(url = '') {
-    try {
-      const whitelist = this.settings?.adBlockerWhitelist || [];
-      if (!Array.isArray(whitelist) || whitelist.length === 0) return false;
-
-      const checkHost = new URL(url).hostname.toLowerCase().replace(/^www\./, '');
-
-      for (const entry of whitelist) {
-        const cleanEntry = String(entry || '').trim().toLowerCase().replace(/^(https?:\/\/)?(www\.)?/, '').replace(/\/.*$/, '');
-        if (!cleanEntry) continue;
-        // Exact match or subdomain match
-        if (checkHost === cleanEntry || checkHost.endsWith('.' + cleanEntry)) return true;
-      }
-      return false;
-    } catch (e) {
-      return false;
-    }
-  }
-
   // Minimal popup-only blocker for whitelisted sites
   // Only blocks popup/overlay ads — no CSS changes, no image blurring, no floating detection
   getPopupOnlyBlockerScript() {
@@ -3893,7 +3888,6 @@ body[class*="overflow-hidden"]:not([data-legit]) {
       const isYT      = this.isYouTubeUrl(url);
       const isInsta   = this.isInstagramUrl(url);
       const isSearchEngine = this.isSearchEngineUrl(url);
-      const isWhitelisted = this.isWhitelistedUrl(url);
 
       // If ad blocker is completely disabled, clear everything
       if (!ab.enabled) {
@@ -3915,16 +3909,6 @@ body[class*="overflow-hidden"]:not([data-legit]) {
         return;
       }
 
-      // Whitelisted sites: only block popup ads if enabled
-      if (isWhitelisted) {
-        await this.syncWebviewInsertedCss(webview, '__omxFloatAdBlockerCssKey', '');
-        if (isWebsite && ab.blockPopups) {
-          await webview.executeJavaScript(this.getPopupOnlyBlockerScript(), true);
-        }
-        return;
-      }
-
-      // Full ad blocking for non-whitelisted websites
       // Floating ad blocking
       const cssText = (isWebsite && ab.blockFloating) ? this.getFloatingAdBlockerCss() : '';
       await this.syncWebviewInsertedCss(webview, '__omxFloatAdBlockerCssKey', cssText);
@@ -4180,9 +4164,8 @@ body[class*="overflow-hidden"]:not([data-legit]) {
   }
 
   getDuckAiChatConfig() {
-    const cfg = this.settings?.aiChat || {};
     return {
-      hideSidebar: cfg.duckAiHideSidebar === true
+      hideSidebar: true
     };
   }
 
@@ -4521,7 +4504,31 @@ body[class*="overflow-hidden"]:not([data-legit]) {
   async getSessionGuardStats(webview) {
     try {
       if (!webview?.executeJavaScript) return null;
-      return await webview.executeJavaScript('window.__omxSessionGuardStats || null', true);
+      return await webview.executeJavaScript(`
+        (() => {
+          const stats = window.__omxSessionGuardStats || null;
+          if (!stats) return null;
+          const read = (key, fallback = null) => {
+            try {
+              const value = stats[key];
+              return typeof value === 'function' ? value() : (value ?? fallback);
+            } catch (_) {
+              return fallback;
+            }
+          };
+          const tokensProtected = read('getTokensProtected', read('tokensProtected', []));
+          return {
+            threatsBlocked: Number(read('getThreatsBlocked', read('threatsBlocked', 0)) || 0),
+            tokensProtected: Array.isArray(tokensProtected) ? tokensProtected : [],
+            vaultEnabled: Boolean(read('isVaultEnabled', read('vaultEnabled', false))),
+            vaultMode: String(read('getVaultMode', read('vaultMode', 'preload-only')) || 'preload-only'),
+            encryptedWrites: Number(read('getEncryptedWrites', read('encryptedWrites', 0)) || 0),
+            decryptedReads: Number(read('getDecryptedReads', read('decryptedReads', 0)) || 0),
+            protected: Boolean(read('isProtected', read('protected', false))),
+            domain: String(read('domain', location.hostname || 'unknown') || 'unknown')
+          };
+        })();
+      `, true);
     } catch (e) {
       return null;
     }
@@ -5252,18 +5259,6 @@ body[class*="overflow-hidden"]:not([data-legit]) {
       };
     }
 
-    try {
-      const blocked = isBlocked(parsed.href);
-      if (blocked && typeof blocked === 'object' && String(blocked.status || '').toUpperCase() === 'BLOCKED') {
-        return {
-          safe: false,
-          type: 'blocked-site',
-          originalUrl: parsed.href,
-          reason: String(blocked.reason || 'Blocked by policy')
-        };
-      }
-    } catch (_) {}
-
     return { safe: true, originalUrl: parsed.href };
   }
 
@@ -5274,124 +5269,6 @@ body[class*="overflow-hidden"]:not([data-legit]) {
       return `${defenseBase}?type=${type}&url=${safeUrl}&reason=${safeReason}`;
   }
 
-  // Security settings
-  getSecurityConfig() {
-    const cfg = this.settings?.security || {};
-    return {
-      virusTotalEnabled: cfg.virusTotalEnabled !== false, // enabled by default
-      virusTotalApiKey: cfg.virusTotalApiKey || '',
-      localPatternCheck: cfg.localPatternCheck !== false // enabled by default
-    };
-  }
-
-  // Check if URL is malicious and block if necessary
-  // Returns: { isMalicious: boolean, reason: string }
-  async checkUrlSecurity(url) {
-    try {
-      // Skip checking for system pages, about:blank, etc.
-      if (!url || url.startsWith('file://') || url.startsWith('about:') || url.startsWith('data:')) {
-        return { isMalicious: false, reason: 'Internal page' };
-      }
-
-      // Skip if already blocked
-      const blockedCheck = isBlocked(url);
-      if (blockedCheck.status === 'BLOCKED') {
-        return { isMalicious: true, reason: blockedCheck.reason || 'Already blocked' };
-      }
-
-      const config = this.getSecurityConfig();
-
-      // 1. Local pattern check (fast, no API needed)
-      if (config.localPatternCheck) {
-        const patternResult = checkKnownMaliciousPatterns(url);
-        if (patternResult.isSuspicious) {
-          console.warn(`[Security] Suspicious pattern detected: ${url} - ${patternResult.reason}`);
-          // Add to blocklist but don't close yet (local patterns can have false positives)
-          // Only block if it matches known typosquatting
-          if (patternResult.pattern?.includes('typosquat')) {
-            addToBlocklist(url, patternResult.reason, 'Local Pattern');
-            return { isMalicious: true, reason: patternResult.reason };
-          }
-        }
-      }
-
-      // 2. VirusTotal API check
-      if (config.virusTotalEnabled && config.virusTotalApiKey) {
-        try {
-          const vtResult = await checkVirusTotal(url);
-          
-          if (vtResult.error) {
-            // API error, allow navigation but log
-            console.warn('[Security] VirusTotal API error, allowing navigation');
-            return { isMalicious: false, reason: 'API unavailable' };
-          }
-
-          if (vtResult.isMalicious) {
-            // Add to blocklist
-            addToBlocklist(
-              url, 
-              vtResult.reason || `Detected by ${vtResult.detections} engines`, 
-              'VirusTotal',
-              vtResult.detections
-            );
-            return { 
-              isMalicious: true, 
-              reason: vtResult.reason,
-              detections: vtResult.detections 
-            };
-          }
-
-          return { isMalicious: false, reason: 'VirusTotal: Safe' };
-        } catch (e) {
-          console.warn('[Security] VirusTotal check failed:', e);
-          return { isMalicious: false, reason: 'Check failed' };
-        }
-      }
-
-      return { isMalicious: false, reason: 'Security check skipped' };
-    } catch (e) {
-      console.warn('[Security] URL security check failed:', e);
-      return { isMalicious: false, reason: 'Check error' };
-    }
-  }
-
-  // Handle malicious URL detection - close tab and block site
-  async handleMaliciousUrl(tab, url, reason) {
-    try {
-      if (tab?.isOmChat) {
-        console.warn('[Security] Skipping auto-close for OmChat tab.');
-        return;
-      }
-      console.warn(`[Security] MALICIOUS SITE DETECTED: ${url}`);
-      console.warn(`[Security] Reason: ${reason}`);
-      console.warn(`[Security] Closing tab and adding to blocklist...`);
-
-      // Add to blocklist
-      addToBlocklist(url, reason, 'VirusTotal');
-
-      // Show notification to user (if notification system exists)
-      if (window.browserAPI?.notifications) {
-        window.browserAPI.notifications.show({
-          title: '⚠️ Security Alert',
-          body: `Blocked malicious site: ${new URL(url).hostname}\nReason: ${reason}`,
-          type: 'warning'
-        });
-      }
-
-      // Close the tab immediately
-      if (tab && tab.id) {
-        this.closeTab(tab.id);
-      }
-
-      // Create a security alert tab
-      const alertUrl = this.createDefenseUrl('malicious-site', url, reason);
-      this.createTab(alertUrl);
-
-    } catch (e) {
-      console.warn('[Security] Failed to handle malicious URL:', e);
-    }
-  }
-  
   navigateTo(url, options = {}) {
     if (!url) return;
     const safety = this.checkUrlSafety(url);
@@ -5436,6 +5313,7 @@ body[class*="overflow-hidden"]:not([data-legit]) {
     const isDownloadsPage = finalUrl.includes('downloads.html');
     const isScraberPage = finalUrl.includes('scraper.html');
     const isServerOperatorPage = finalUrl.includes('server-operator.html');
+    const isOpenWebUiPage = options.isOpenWebUi === true || this.isOpenWebUiUrl(finalUrl);
     const isLocalAIPage = this.isLocalOrHostedAiUrl(finalUrl);
 
     if (isScraberPage) {
@@ -5450,15 +5328,15 @@ body[class*="overflow-hidden"]:not([data-legit]) {
 
     const { tabItem, titleEl, iconEl, spinnerEl } = this.createTabUI(id, {
         isSystemPage, isTextStudio, isHistoryPage, isGamesPage, isDefensePage,
-        isHomePage, isTodoPage, isDownloadsPage, isScraberPage, isServerOperatorPage, isLocalAIPage, isOmChat
+        isHomePage, isTodoPage, isDownloadsPage, isScraberPage, isServerOperatorPage, isOpenWebUiPage, isLocalAIPage, isOmChat
     }, finalUrl);
     const tabState = {
       id, webview: null, tabItem, titleEl, iconEl, spinnerEl, url: finalUrl,
       lastAccessed: Date.now(), suspended: false, isSystemPage,
       isTextStudio, isHistoryPage, isGamesPage, isDefensePage,
-      isHomePage, isTodoPage, isDownloadsPage, isScraberPage, isServerOperatorPage, isLocalAIPage,
+      isHomePage, isTodoPage, isDownloadsPage, isScraberPage, isServerOperatorPage, isOpenWebUiPage, isLocalAIPage,
       isOmChat, noSuspend: isOmChat || isScraberPage,
-      isLoading: true, isMainFrameLoading: true, customIcon: isOmChat, audible: false,
+      isLoading: true, isMainFrameLoading: true, customIcon: isOmChat || isOpenWebUiPage, audible: false,
       interactiveSearch: options.interactiveSearch || null
     };
     this.tabs.push(tabState);
@@ -5479,9 +5357,18 @@ body[class*="overflow-hidden"]:not([data-legit]) {
     tabState.iconEl.src = this.OMCHAT_ICON_URL;
     if (!tabState.isLoading) tabState.iconEl.style.visibility = 'visible';
     tabState.iconEl.style.display = 'block';
-    if (tabState.titleEl && (!tabState.titleEl.textContent || tabState.titleEl.textContent === 'Loading...' || tabState.titleEl.textContent === 'New Tab')) {
-      tabState.titleEl.textContent = 'OmChat';
-    }
+    if (tabState.titleEl) tabState.titleEl.textContent = 'OmChat';
+    if (tabState.tabItem) tabState.tabItem.title = 'OmChat';
+  }
+
+  applyOpenWebUiTabIcon(tabState) {
+    if (!tabState?.iconEl) return;
+    tabState.customIcon = true;
+    tabState.iconEl.src = this.OPENWEBUI_ICON;
+    if (!tabState.isLoading) tabState.iconEl.style.visibility = 'visible';
+    tabState.iconEl.style.display = 'block';
+    if (tabState.titleEl) tabState.titleEl.textContent = 'Open WebUI';
+    if (tabState.tabItem) tabState.tabItem.title = 'Open WebUI';
   }
 
   createTabUI(id, flags, url = '') {
@@ -5499,6 +5386,7 @@ body[class*="overflow-hidden"]:not([data-legit]) {
     else if (flags.isTodoPage) { iconSrc = this.TODO_ICON; title = 'Todo'; }
     else if (flags.isDownloadsPage) { iconSrc = this.DOWNLOADS_ICON; title = 'Downloads'; }
     else if (flags.isScraberPage) { iconSrc = this.AI_SETTINGS_ICON; title = 'Scraper'; }
+    else if (flags.isOpenWebUiPage) { iconSrc = this.OPENWEBUI_ICON; title = 'Open WebUI'; }
     else if (flags.isLocalAIPage) { iconSrc = this.CHAT_ICON; title = 'AI Chat'; }
     else if (flags.isDefensePage) { iconSrc = this.SHIELD_ICON; title = 'Security Alert'; tabItem.classList.add('defense-tab'); }
     else {
@@ -5600,7 +5488,6 @@ body[class*="overflow-hidden"]:not([data-legit]) {
         const isWebsite = this.isWebsiteUrl(url);
         const isYT = this.isYouTubeUrl(url);
         const isSearchEngine = this.isSearchEngineUrl(url);
-        const isWhitelisted = this.isWhitelistedUrl(url);
         const sessionGuardEnabled = this.settings?.security?.sessionGuard?.enabled !== false;
         const ab = this.getAdBlockerSettings();
 
@@ -5614,14 +5501,6 @@ body[class*="overflow-hidden"]:not([data-legit]) {
 
         // If ad blocker is disabled, skip all ad blocking
         if (!ab.enabled) return;
-
-        // Whitelisted sites: only inject popup blocker if enabled
-        if (isWhitelisted && isWebsite) {
-          if (ab.blockPopups) {
-            await webview.executeJavaScript(this.getPopupOnlyBlockerScript(), true);
-          }
-          return;
-        }
 
         // Early injection for floating ad blocker (before page scripts)
         if (isWebsite && !isYT && !this.isInstagramUrl(url)) {
@@ -5869,7 +5748,7 @@ body[class*="overflow-hidden"]:not([data-legit]) {
       }
 
       try {
-        if(!tabState.isSystemPage && !tabState.isTextStudio && !tabState.isHistoryPage && !tabState.isGamesPage && !tabState.isDefensePage && !tabState.isLocalAIPage && !tabState.isDownloadsPage) {
+        if(!tabState.isSystemPage && !tabState.isTextStudio && !tabState.isHistoryPage && !tabState.isGamesPage && !tabState.isDefensePage && !tabState.isLocalAIPage && !tabState.isDownloadsPage && !tabState.isOmChat && !tabState.isOpenWebUiPage) {
             const pageTitle = webview.getTitle();
             if (pageTitle) {
                 tabState.titleEl.textContent = pageTitle;
@@ -5891,14 +5770,14 @@ body[class*="overflow-hidden"]:not([data-legit]) {
        }
     });
     webview.addEventListener('page-title-updated', (e) => {
-       if(!tabState.isSystemPage && !tabState.isTextStudio && !tabState.isHistoryPage && !tabState.isGamesPage && !tabState.isDefensePage && !tabState.isLocalAIPage && !tabState.isDownloadsPage) {
+       if(!tabState.isSystemPage && !tabState.isTextStudio && !tabState.isHistoryPage && !tabState.isGamesPage && !tabState.isDefensePage && !tabState.isLocalAIPage && !tabState.isDownloadsPage && !tabState.isOmChat && !tabState.isOpenWebUiPage) {
            tabState.titleEl.textContent = e.title;
            tabState.tabItem.title = e.title;
            if (this.activeAudioTabId === tabState.id && this.playerTitle) this.playerTitle.textContent = e.title;
        }
     });
     webview.addEventListener('page-favicon-updated', (e) => {
-       if (!tabState.customIcon && !tabState.isSystemPage && !tabState.isTextStudio && !tabState.isHistoryPage && !tabState.isGamesPage && !tabState.isDefensePage && !tabState.isLocalAIPage && !tabState.isDownloadsPage && e.favicons && e.favicons.length > 0) {
+       if (!tabState.customIcon && !tabState.isSystemPage && !tabState.isTextStudio && !tabState.isHistoryPage && !tabState.isGamesPage && !tabState.isDefensePage && !tabState.isLocalAIPage && !tabState.isDownloadsPage && !tabState.isOmChat && !tabState.isOpenWebUiPage && e.favicons && e.favicons.length > 0) {
          tabState.iconEl.src = e.favicons[0];
          if (!tabState.isLoading) tabState.iconEl.style.visibility = 'visible';
        }
@@ -5908,11 +5787,12 @@ body[class*="overflow-hidden"]:not([data-legit]) {
       tabState.isOmChat = isOmChatNow;
       tabState.noSuspend = isOmChatNow;
       if (isOmChatNow) this.applyOmChatTabIcon(tabState);
+      if (tabState.isOpenWebUiPage) this.applyOpenWebUiTabIcon(tabState);
       tabState.url = e.url; 
       if (this.isPdfUrl(e.url) && !tabState.customIcon) {
         tabState.titleEl.textContent = webview.getTitle() || 'PDF Viewer';
       }
-      if (!tabState.isSystemPage && !tabState.isTextStudio && !tabState.isHistoryPage && !tabState.isGamesPage && !tabState.isDefensePage && !tabState.isLocalAIPage && !tabState.isDownloadsPage && !e.url.includes('html/pages/home.html') && !e.url.startsWith('data:') && !e.url.startsWith('file:')) {
+      if (!tabState.isSystemPage && !tabState.isTextStudio && !tabState.isHistoryPage && !tabState.isGamesPage && !tabState.isDefensePage && !tabState.isLocalAIPage && !tabState.isDownloadsPage && !tabState.isOmChat && !tabState.isOpenWebUiPage && !e.url.includes('html/pages/home.html') && !e.url.startsWith('data:') && !e.url.startsWith('file:')) {
           if (window.browserAPI && window.browserAPI.history) {
              window.browserAPI.history.push({
                  title: webview.getTitle() || e.url,
@@ -5925,16 +5805,7 @@ body[class*="overflow-hidden"]:not([data-legit]) {
 
       // ── Security Check: Scan URL for malware/phishing ──────────────────
       // Runs asynchronously - if malicious, closes tab and blocks site
-      (async () => {
-        try {
-          const securityCheck = await this.checkUrlSecurity(e.url);
-          if (securityCheck.isMalicious) {
-            await this.handleMaliciousUrl(tabState, e.url, securityCheck.reason);
-          }
-        } catch (err) {
-          console.warn('[Security] Check failed:', err);
-        }
-      })();
+      
       // ── End Security Check ─────────────────────────────────────────────
 
       setTimeout(() => {
@@ -6001,7 +5872,8 @@ body[class*="overflow-hidden"]:not([data-legit]) {
        const senderUrl = (webview.getURL && webview.getURL()) || tabState.url || '';
        const trustedHostMessage = this.isTrustedHostPageUrl(senderUrl);
        const isGuestOpenTabRequest = event.channel === 'open-tab';
-       if (!trustedHostMessage && !isGuestOpenTabRequest) {
+       const isGuestSiteNotification = event.channel === 'site-notification';
+       if (!trustedHostMessage && !isGuestOpenTabRequest && !isGuestSiteNotification) {
            console.warn('[Tabs] Blocked host IPC message from untrusted page:', event.channel, senderUrl);
            return;
        }
@@ -6023,6 +5895,25 @@ body[class*="overflow-hidden"]:not([data-legit]) {
                targetUrl = this.createDefenseUrl(safety.type, safety.originalUrl, safety.reason);
            }
            this.createTab(targetUrl);
+       } else if (event.channel === 'site-notification') {
+           const payload = (event.args[0] && typeof event.args[0] === 'object') ? event.args[0] : {};
+           const sourceUrl = String(payload.url || senderUrl || '').trim();
+           if (this.getStoredSitePermission(sourceUrl || senderUrl, 'notifications') === 'deny') return;
+           let sourceHost = '';
+           try {
+               sourceHost = new URL(sourceUrl || senderUrl).hostname || '';
+           } catch (_) {}
+           const title = String(payload.title || '').trim() || (sourceHost ? `Notification from ${sourceHost}` : 'Website notification');
+           const body = String(payload.body || '').trim();
+           window.browserAPI?.notifications?.show?.({
+               title,
+               body,
+               source: sourceHost || 'Website',
+               type: 'site',
+               icon: String(payload.icon || '').trim(),
+               url: sourceUrl || senderUrl,
+               tabId: tabState.id
+           });
        } else if (event.channel === 'open-devtools') {
            try { webview.openDevTools({ mode: 'detach' }); } catch (e) {}
        } else if (event.channel === 'show-search-overlay') {
@@ -6295,6 +6186,10 @@ body[class*="overflow-hidden"]:not([data-legit]) {
     const tab = this.tabs.find(t => t.id === id);
     if (!tab) return;
     this.activeTabId = id;
+    if (this.pendingWebviewFocusTimer) {
+      clearTimeout(this.pendingWebviewFocusTimer);
+      this.pendingWebviewFocusTimer = null;
+    }
     if (this.loader) {
         const enabled = this.settings?.features?.showLoadingAnimation !== false;
         if (tab.isLoading && tab.isMainFrameLoading && enabled) {
@@ -6316,7 +6211,35 @@ body[class*="overflow-hidden"]:not([data-legit]) {
       if (t.id === id) {
         if(t.webview) {
             t.webview.classList.remove('hidden');
-            setTimeout(() => { try { t.webview.focus(); } catch(e){} }, 50); 
+            const activeEl = document.activeElement;
+            const hostInputIsFocused = Boolean(
+              activeEl &&
+              activeEl !== document.body &&
+              (
+                activeEl.tagName === 'INPUT' ||
+                activeEl.tagName === 'TEXTAREA' ||
+                activeEl.tagName === 'SELECT' ||
+                activeEl.isContentEditable
+              )
+            );
+            if (!hostInputIsFocused) {
+              this.pendingWebviewFocusTimer = setTimeout(() => {
+                this.pendingWebviewFocusTimer = null;
+                const latestActiveEl = document.activeElement;
+                const shouldKeepHostFocus = Boolean(
+                  latestActiveEl &&
+                  latestActiveEl !== document.body &&
+                  (
+                    latestActiveEl.tagName === 'INPUT' ||
+                    latestActiveEl.tagName === 'TEXTAREA' ||
+                    latestActiveEl.tagName === 'SELECT' ||
+                    latestActiveEl.isContentEditable
+                  )
+                );
+                if (shouldKeepHostFocus || this.activeTabId !== id) return;
+                try { t.webview.focus(); } catch (e) {}
+              }, 50);
+            }
             try { this.onTabStateChange(t.webview.getURL(), false); } catch (e) { this.onTabStateChange(t.url, false); }
         }
         t.tabItem.classList.add('active');

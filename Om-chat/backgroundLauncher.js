@@ -1,7 +1,5 @@
 const path = require('path');
 const fs = require('fs');
-const { spawn } = require('child_process');
-
 const serverEntry = path.join(__dirname, 'server', 'index.js');
 const ngrokHelperEntry = path.join(__dirname, 'scripts', 'run-with-ngrok.js');
 const pidFile = path.join(__dirname, '.background-server.pid');
@@ -44,9 +42,7 @@ async function startNgrokTunnel(port) {
     port,
     cwd: __dirname,
     settings,
-    onLog: (label, message) => {
-      console.log(`[ngrok:${label}] ${message}`);
-    }
+    onLog: () => {}
   });
 
   writeNgrokPid(child.pid);

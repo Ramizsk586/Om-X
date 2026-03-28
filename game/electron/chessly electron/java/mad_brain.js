@@ -51,6 +51,10 @@ class MadBrain {
         }
     }
 
+    cloneBoard(board = this.board) {
+        return board.map((row) => row.slice());
+    }
+
     boardToFen() {
         let fen = "";
         for(let r=0; r<8; r++) {
@@ -110,6 +114,91 @@ class MadBrain {
             if (adc === 1) return dr === dir;
         }
         return false;
+    }
+
+    canAttackSquare(board, r1, c1, r2, c2, piece) {
+        if (!piece) return false;
+        const type = piece[1];
+        const color = piece[0];
+        const dr = r2 - r1;
+        const dc = c2 - c1;
+        const adr = Math.abs(dr);
+        const adc = Math.abs(dc);
+
+        if (type === 'P') {
+            const dir = color === 'w' ? -1 : 1;
+            return dr === dir && adc === 1;
+        }
+
+        return this.isPseudoLegalStandard(r1, c1, r2, c2, piece);
+    }
+
+    findKing(color, board = this.board) {
+        for (let r = 0; r < 8; r++) {
+            for (let c = 0; c < 8; c++) {
+                if (board[r][c] === color + 'K') return { r, c };
+            }
+        }
+        return null;
+    }
+
+    isSquareAttacked(board, r, c, defenderColor) {
+        const attackerColor = defenderColor === 'w' ? 'b' : 'w';
+        for (let r1 = 0; r1 < 8; r1++) {
+            for (let c1 = 0; c1 < 8; c1++) {
+                const piece = board[r1][c1];
+                if (!piece || piece[0] !== attackerColor) continue;
+                if (this.canAttackSquare(board, r1, c1, r, c, piece)) return true;
+            }
+        }
+        return false;
+    }
+
+    isKingInCheck(color, board = this.board) {
+        const kingPos = this.findKing(color, board);
+        if (!kingPos) return true;
+        return this.isSquareAttacked(board, kingPos.r, kingPos.c, color);
+    }
+
+    simulateMove(uci, board = this.board) {
+        const nextBoard = this.cloneBoard(board);
+        const c1 = uci.charCodeAt(0) - 97;
+        const r1 = 8 - parseInt(uci[1], 10);
+        const c2 = uci.charCodeAt(2) - 97;
+        const r2 = 8 - parseInt(uci[3], 10);
+        const piece = nextBoard[r1]?.[c1];
+        if (!piece) return null;
+        nextBoard[r2][c2] = piece;
+        nextBoard[r1][c1] = '';
+        return nextBoard;
+    }
+
+    hasEscapeMove(color) {
+        const originalTurn = this.turn;
+        this.turn = color;
+        try {
+            for (let r1 = 0; r1 < 8; r1++) {
+                for (let c1 = 0; c1 < 8; c1++) {
+                    const piece = this.board[r1][c1];
+                    if (!piece || piece[0] !== color) continue;
+                    for (let r2 = 0; r2 < 8; r2++) {
+                        for (let c2 = 0; c2 < 8; c2++) {
+                            if (r1 === r2 && c1 === c2) continue;
+                            const uci = String.fromCharCode(97 + c1) + (8 - r1) + String.fromCharCode(97 + c2) + (8 - r2);
+                            const validity = this.validateMove(uci, false);
+                            if (!validity.valid) continue;
+                            const nextBoard = this.simulateMove(uci);
+                            if (nextBoard && !this.isKingInCheck(color, nextBoard)) {
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
+            return false;
+        } finally {
+            this.turn = originalTurn;
+        }
     }
     
     validateMove(uci, teleportAllowed) {
@@ -339,17 +428,40 @@ class MadBrain {
     }
     
     checkGameStatus() {
-        // Simple King Hunt check
-        let wK = false, bK = false;
-        for(let r=0; r<8; r++) for(let c=0; c<8; c++) {
-            if(this.board[r][c] === 'wK') wK = true;
-            if(this.board[r][c] === 'bK') bK = true;
+        const currentColor = this.turn;
+        const kingPos = this.findKing(currentColor);
+
+        if (!kingPos) {
+            return {
+                over: true,
+                winner: currentColor === 'w' ? 'Black' : 'White',
+                reason: 'Checkmate',
+                check: true
+            };
         }
-        
-        if(!wK) return { over: true, winner: 'Black', reason: 'Checkmate' }; // Regicide = Mate here
-        if(!bK) return { over: true, winner: 'White', reason: 'Checkmate' };
-        
-        return { over: false, check: false };
+
+        const check = this.isKingInCheck(currentColor);
+        const hasEscape = this.hasEscapeMove(currentColor);
+
+        if (check && !hasEscape) {
+            return {
+                over: true,
+                winner: currentColor === 'w' ? 'Black' : 'White',
+                reason: 'Checkmate',
+                check: true
+            };
+        }
+
+        if (!check && !hasEscape) {
+            return {
+                over: true,
+                winner: 'Draw',
+                reason: 'Stalemate',
+                check: false
+            };
+        }
+
+        return { over: false, check };
     }
     
     getMadReport() {

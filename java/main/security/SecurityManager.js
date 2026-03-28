@@ -796,14 +796,6 @@ class SecurityManager {
     });
   }
 
-  getBlockedSites() {
-    return this.firewall.getBlockedSites();
-  }
-
-  clearBlockedSites() {
-    this.firewall.blockedSites = [];
-  }
-
   setupPopupBlocking() {
       app.on('web-contents-created', (event, contents) => {
           contents.setWindowOpenHandler((details) => {
@@ -830,17 +822,6 @@ class SecurityManager {
 
   setupIpcHandlers() {
     const { ipcMain } = require('electron');
-    
-    // Get list of currently blocked sites
-    ipcMain.handle('security:get-blocked-sites', () => {
-      return this.getBlockedSites();
-    });
-    
-    // Clear blocked sites log
-    ipcMain.handle('security:clear-blocked-sites', () => {
-      this.clearBlockedSites();
-      return true;
-    });
   }
 }
 

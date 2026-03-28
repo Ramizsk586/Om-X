@@ -88,15 +88,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
   closeProfileWindow: () => ipcRenderer.send("close-profile-window"),
   setEvaluationWindowEnabled: (enabled) => ipcRenderer.send("set-eval-window", enabled),
   
-  openReportWindow: () => ipcRenderer.send("open-report-window"),
-  openMovesWindow: () => ipcRenderer.send("open-moves-window"),
-  openAIMatchWindow: () => ipcRenderer.send("open-ai-match-window"),
-  openScanWindow: () => ipcRenderer.send("open-scan-window"),
   openEnginesManager: () => ipcRenderer.send("open-engines-manager"),
   openNewGame: () => ipcRenderer.send("open-new-game"),
-  showConsole: () => ipcRenderer.send("show-console"),
-  openSoundsManager: () => ipcRenderer.send("open-sounds-manager"),
-  openThreatsWindow: () => ipcRenderer.send("open-threats-window"),
   openMadArena: () => ipcRenderer.send("open-mad-arena"),
   openMadSettings: () => ipcRenderer.send("open-mad-settings"),
   
@@ -144,11 +137,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
   enginesGetAll: () => ipcRenderer.invoke("engines-get-all"),
   enginesSave: (engine) => ipcRenderer.invoke("engines-save", engine),
   enginesDelete: (id) => ipcRenderer.invoke("engines-delete", id),
-  enginesGetBasic: () => ipcRenderer.invoke("engines-get-basic"),
   scanEnginesDir: () => ipcRenderer.invoke("scan-engines-dir"),
-  requestEngineMove: (info) => ipcRenderer.send("request-engine-move", info),
   requestEngineMovePromise: (payload) => ipcRenderer.invoke("request-engine-move-promise", payload),
-  onEngineMove: (callback) => ipcRenderer.on("engine-move", (_event, move) => callback(move)),
   
   aiVerifyAndListModels: (apiKey) => ipcRenderer.invoke("ai-verify-list", apiKey),
   aiGenerateMove: (payload) => ipcRenderer.invoke("ai-generate-move", payload),
@@ -156,16 +146,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
   requestAnalysis: (fen) => ipcRenderer.send("request-analysis", fen),
   onAnalysisResult: (callback) => ipcRenderer.on("analysis-result", (_event, results) => callback(results)),
   
-  startThreatScan: (moves) => ipcRenderer.send("start-threat-scan", moves),
-  onThreatFound: (callback) => ipcRenderer.on("threat-found", (_event, threat) => callback(threat)),
-  onScanComplete: (callback) => ipcRenderer.on("scan-complete", (_event) => callback()),
-  
   onMovesUpdate: (callback) => ipcRenderer.on("moves-update", (_event, moves) => callback(moves)),
-  onTimerGameStart: (callback) => ipcRenderer.on("timer-game-start", (_event, info) => callback(info)),
-  onTurnChanged: (callback) => ipcRenderer.on("turn-changed", (_event, color) => callback(color)),
-  onTimerStop: (callback) => ipcRenderer.on("timer-stop", () => callback()),
-  turnChanged: (color) => ipcRenderer.send("turn-changed", color),
-  stopMatch: () => ipcRenderer.send("stop-match"),
   
   soundsGetAll: () => ipcRenderer.invoke("sounds-get-all"),
   soundsSaveAll: (data) => ipcRenderer.invoke("sounds-save-all", data),

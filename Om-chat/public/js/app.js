@@ -3,12 +3,12 @@ import { initEmojiPicker } from './emoji.js';
 import {
   createAvatarNode,
   createMessageElement,
+  extractMessageLinks,
   escapeHtml,
   getCallIconSvg,
   getCustomStatusText,
   getDeviceBadgeSvg,
   getDeviceLabel,
-  getStatusLabel,
   messageShouldGroup,
   normalizeUserStatus,
   renderChannels,
@@ -65,6 +65,7 @@ const el = {
   activeChannelName: $('#active-channel-name'),
   activeChannelTopic: $('#active-channel-topic'),
   searchToggle: $('#search-toggle'),
+  securityKeyToggle: $('#security-key-toggle'),
   startVideoCallBtn: $('#btn-start-video-call'),
   dmWallpaperBtn: $('#dm-wallpaper-btn'),
   pinToggle: $('#pin-toggle'),
@@ -228,6 +229,10 @@ const state = {
   actionModal: {
     onConfirm: null
   },
+  emojiContext: {
+    mode: 'composer',
+    messageId: null
+  },
   mobileNavOpen: false,
   mobileMembersOpen: false,
   announcementAlert: false,
@@ -299,6 +304,145 @@ document.addEventListener('click', () => requestNotificationPermissionOnce(), { 
 
 const MAX_UPLOAD_SIZE_BYTES = 20 * 1024 * 1024;
 const MAX_AVATAR_SIZE_BYTES = 5 * 1024 * 1024;
+const MAX_MESSAGE_LINK_PREVIEWS = 2;
+const DIRECT_LINK_PREVIEW_BLOCKLIST_RE = /\.(?:png|jpe?g|gif|webp|svg|bmp|mp4|webm|mov|m4v|ogg|ogv|mp3|wav|flac|pdf|zip|rar|7z|tar|gz|txt|md|json|csv|xml|ya?ml|js|mjs|cjs|ts|tsx|jsx|css|html)(?:$|[?#])/i;
+const linkPreviewCache = new Map();
+let messageRenderFrame = 0;
+
+function scheduleMessageRender() {
+  if (messageRenderFrame) return;
+  messageRenderFrame = window.requestAnimationFrame(() => {
+    messageRenderFrame = 0;
+    renderMessages();
+  });
+}
+
+function generateSecurityKey(length = 32) {
+  const safeLength = Math.max(E2EE_MIN_PASSPHRASE_LENGTH, Number(length) || 32);
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%+=-_';
+  const bytes = new Uint32Array(safeLength);
+  window.crypto.getRandomValues(bytes);
+  return Array.from(bytes, (value) => alphabet[value % alphabet.length]).join('');
+}
+
+function normalizePreviewUrl(rawUrl = '') {
+  const safe = String(rawUrl || '').trim();
+  if (!safe) return '';
+  try {
+    const parsed = new URL(safe, window.location.origin);
+    return /^https?:$/i.test(parsed.protocol) ? parsed.toString() : '';
+  } catch (_) {
+    return '';
+  }
+}
+
+function shouldBuildLinkPreview(rawUrl = '') {
+  const safeUrl = normalizePreviewUrl(rawUrl);
+  if (!safeUrl) return false;
+  try {
+    const parsed = new URL(safeUrl);
+    if (!/^https?:$/i.test(parsed.protocol)) return false;
+    if (DIRECT_LINK_PREVIEW_BLOCKLIST_RE.test(`${parsed.pathname || ''}${parsed.search || ''}`)) return false;
+    if (parsed.origin === window.location.origin && String(parsed.pathname || '').startsWith('/uploads/')) return false;
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+function buildPreviewDisplayUrl(rawUrl = '') {
+  const safeUrl = normalizePreviewUrl(rawUrl);
+  if (!safeUrl) return '';
+  try {
+    const parsed = new URL(safeUrl);
+    const path = `${parsed.pathname || '/'}${parsed.search || ''}`;
+    return `${parsed.hostname}${path === '/' ? '' : truncate(path, 52)}`;
+  } catch (_) {
+    return truncate(safeUrl, 64);
+  }
+}
+
+function normalizeLinkPreviewPayload(requestUrl = '', payload = {}) {
+  const safeUrl = normalizePreviewUrl(payload?.url || requestUrl);
+  if (!safeUrl) return null;
+
+  let hostname = 'External link';
+  try {
+    hostname = new URL(safeUrl).hostname || hostname;
+  } catch (_) {}
+
+  const title = String(payload?.title || '').trim() || hostname;
+  const description = truncate(String(payload?.description || '').trim(), 220);
+  const image = normalizePreviewUrl(payload?.image || '');
+
+  return {
+    url: safeUrl,
+    hostname,
+    title: truncate(title, 140),
+    description,
+    image,
+    displayUrl: buildPreviewDisplayUrl(safeUrl)
+  };
+}
+
+async function fetchLinkPreview(rawUrl = '') {
+  const safeUrl = normalizePreviewUrl(rawUrl);
+  if (!safeUrl) return null;
+
+  const cached = linkPreviewCache.get(safeUrl);
+  if (cached) return cached instanceof Promise ? cached : Promise.resolve(cached);
+
+  const request = (async () => {
+    try {
+      const response = await fetch(`/api/messages/og?url=${encodeURIComponent(safeUrl)}`, {
+        credentials: 'same-origin'
+      });
+      if (!response.ok) throw new Error(`preview_${response.status}`);
+      const payload = await response.json();
+      const preview = normalizeLinkPreviewPayload(safeUrl, payload);
+      return preview || normalizeLinkPreviewPayload(safeUrl, { url: safeUrl });
+    } catch (_) {
+      return normalizeLinkPreviewPayload(safeUrl, { url: safeUrl });
+    }
+  })();
+
+  linkPreviewCache.set(safeUrl, request);
+  const resolved = await request;
+  linkPreviewCache.set(safeUrl, resolved);
+
+  if (linkPreviewCache.size > 150) {
+    const oldest = linkPreviewCache.keys().next().value;
+    if (oldest) linkPreviewCache.delete(oldest);
+  }
+
+  return resolved;
+}
+
+async function hydrateMessageLinkPreviews(message) {
+  if (!message || message.type !== 'text') return;
+  if (message._linkPreviewState === 'loading' || message._linkPreviewState === 'ready' || message._linkPreviewState === 'empty') return;
+  const urls = extractMessageLinks(message.content || '', MAX_MESSAGE_LINK_PREVIEWS).filter(shouldBuildLinkPreview);
+  if (!urls.length) {
+    message._linkPreviewState = 'empty';
+    message._linkPreviewUrls = [];
+    return;
+  }
+
+  message._linkPreviewState = 'loading';
+  message._linkPreviewUrls = urls;
+  scheduleMessageRender();
+
+  const previews = (await Promise.all(urls.map((url) => fetchLinkPreview(url))))
+    .filter((preview) => preview && preview.url);
+
+  const liveMessage = state.messages.find((item) => item.id === message.id);
+  if (!liveMessage) return;
+
+  liveMessage.linkPreviews = previews;
+  liveMessage._linkPreviewState = previews.length ? 'ready' : 'empty';
+  liveMessage._linkPreviewUrls = urls;
+  scheduleMessageRender();
+}
 
 // ─── End-to-End Encryption ────────────────────────────────────────────────────
 const E2EE_PREFIX = 'omx-e2ee:v1:';
@@ -310,6 +454,7 @@ const E2EE_MIN_PASSPHRASE_LENGTH = 8;
 
 const e2ee = {
   passphrase: '',
+  serverId: '',
   keyCache: new Map(),
   fingerprintCache: new Map(),
   textEncoder: new TextEncoder(),
@@ -540,13 +685,15 @@ function getGroupPassphraseStorageKey(serverId) {
  * This key encrypts server channel messages only — never DMs.
  */
 function setE2EEPassphrase(passphrase, { serverId = state.server?.id, persist = true } = {}) {
+  const safeServerId = String(serverId || '').trim();
   const next = String(passphrase || '').trim();
+  e2ee.serverId = safeServerId;
   e2ee.passphrase = next;
   e2ee.keyCache.clear();
   e2ee.fingerprintCache.clear();
   e2ee.status = next ? 'on' : 'off';
 
-  const storageKey = getGroupPassphraseStorageKey(serverId);
+  const storageKey = getGroupPassphraseStorageKey(safeServerId);
   if (persist && storageKey) {
     try {
       if (next) localStorage.setItem(storageKey, next);
@@ -557,8 +704,51 @@ function setE2EEPassphrase(passphrase, { serverId = state.server?.id, persist = 
   updateE2EEIndicator();
 }
 
-function isE2EEEnabled() {
-  return e2ee.status === 'on' && Boolean(e2ee.passphrase);
+function getStoredGroupPassphrase(serverId = state.server?.id) {
+  const storageKey = getGroupPassphraseStorageKey(serverId);
+  if (!storageKey) return '';
+  try {
+    return String(localStorage.getItem(storageKey) || '').trim();
+  } catch (_) {
+    return '';
+  }
+}
+
+function getActiveGroupPassphrase(serverId = state.server?.id) {
+  const safeServerId = String(serverId || state.server?.id || '').trim();
+  if (!safeServerId) return '';
+  if (e2ee.serverId === safeServerId && e2ee.passphrase) {
+    return e2ee.passphrase;
+  }
+  return getStoredGroupPassphrase(safeServerId);
+}
+
+function syncGroupE2EEState(serverId = state.server?.id, { clearError = false } = {}) {
+  const safeServerId = String(serverId || state.server?.id || '').trim();
+  const next = getActiveGroupPassphrase(safeServerId);
+  const shouldResync = e2ee.serverId !== safeServerId || e2ee.passphrase !== next;
+
+  if (shouldResync) {
+    setE2EEPassphrase(next, { serverId: safeServerId, persist: false });
+    return next;
+  }
+
+  if (!next && e2ee.status !== 'off') {
+    e2ee.status = 'off';
+    updateE2EEIndicator();
+    return next;
+  }
+
+  if (next && (e2ee.status === 'off' || (clearError && e2ee.status === 'error'))) {
+    e2ee.status = 'on';
+    updateE2EEIndicator();
+  }
+
+  return next;
+}
+
+function isE2EEEnabled(serverId = state.server?.id) {
+  return Boolean(getActiveGroupPassphrase(serverId));
 }
 
 // ─── DM passphrase (per-conversation) ────────────────────────────────────────
@@ -886,7 +1076,7 @@ function getE2EEContext(channelId = '') {
     passphrase = getDMPassphrase(channelId);
     saltNamespace = 'omchat-e2ee-dm-v1';
   } else {
-    passphrase = e2ee.passphrase;
+    passphrase = getActiveGroupPassphrase(state.server?.id || '');
     saltNamespace = 'omchat-e2ee-group-v1';
   }
 
@@ -981,10 +1171,11 @@ async function deriveFingerprint(passphrase, saltString) {
 
 /** Fingerprint for the GROUP passphrase. */
 async function getE2EEKeyFingerprint() {
-  if (!isE2EEEnabled()) return null;
+  const passphrase = getActiveGroupPassphrase(state.server?.id || '');
+  if (!passphrase) return null;
   if (e2ee.fingerprintCache.has('group_fp')) return e2ee.fingerprintCache.get('group_fp');
   try {
-    const fp = await deriveFingerprint(e2ee.passphrase, 'omchat-e2ee-group-fingerprint-v1');
+    const fp = await deriveFingerprint(passphrase, 'omchat-e2ee-group-fingerprint-v1');
     e2ee.fingerprintCache.set('group_fp', fp);
     return fp;
   } catch (_) { return null; }
@@ -1081,9 +1272,8 @@ async function decryptMessageText(content, channelId = '') {
       if (typeof plain === 'string') return plain;
     }
     return E2EE_FAILURE_TEXT;
-  } catch (_) {
-    e2ee.status = 'error';
-    updateE2EEIndicator();
+  } catch (error) {
+    console.warn('[Om Chat] E2EE decrypt failed for channel:', channelId || '(unknown)', error);
     return E2EE_FAILURE_TEXT;
   }
 }
@@ -1169,6 +1359,10 @@ function injectE2EEIndicator() {
       const partner = getCurrentPartner();
       openDME2EEModal(state.currentChannelId, partner?.username || 'this person');
     } else {
+      if (!canUseAdminOnlyCommands()) {
+        showVoiceTooltip('Only admins can manage the group security key.');
+        return;
+      }
       openE2EEModal();
     }
   });
@@ -1360,6 +1554,10 @@ function buildPassphraseModal({
 // ─── Group E2EE Modal ─────────────────────────────────────────────────────────
 
 async function openE2EEModal() {
+  if (!canUseAdminOnlyCommands()) {
+    showVoiceTooltip('Only admins can manage the group security key.');
+    return;
+  }
   const fingerprint = await getE2EEKeyFingerprint();
   const isOn = isE2EEEnabled();
   const statusHtml = isOn
@@ -1403,6 +1601,52 @@ async function openE2EEModal() {
 }
 
 // ─── DM E2EE Modal ────────────────────────────────────────────────────────────
+
+/**
+ * Admin-only generator for the shared group security key.
+ * The generated value becomes the server's group E2EE passphrase.
+ */
+function openSecurityKeyGenerator() {
+  if (!state.server?.id || state.currentView !== 'server') {
+    showVoiceTooltip('Open a server channel first.');
+    return;
+  }
+  if (!canUseAdminOnlyCommands()) {
+    showVoiceTooltip('Only admins can generate the group security key.');
+    return;
+  }
+
+  const generatedKey = generateSecurityKey(32);
+  const replacingExistingKey = isE2EEEnabled();
+
+  openActionModal({
+    title: 'Generate Security Key',
+    description: replacingExistingKey
+      ? 'Generate a fresh admin security key for this server. Saving it will replace the current group E2EE passphrase and copy the new key.'
+      : 'Generate an admin security key for this server. Saving it will enable group E2EE and copy the key so trusted admins can use it.',
+    value: generatedKey,
+    placeholder: 'Security key',
+    primaryLabel: replacingExistingKey ? 'Replace & Copy' : 'Use & Copy',
+    secondaryLabel: 'Cancel',
+    onConfirm: async (value) => {
+      const key = String(value || '').trim();
+      if (key.length < E2EE_MIN_PASSPHRASE_LENGTH) {
+        showVoiceTooltip(`Security key must be at least ${E2EE_MIN_PASSPHRASE_LENGTH} characters.`);
+        return false;
+      }
+
+      setE2EEPassphrase(key);
+      await copyText(key);
+      const fingerprint = await getE2EEKeyFingerprint();
+      showVoiceTooltip(
+        fingerprint
+          ? `Security key ready · ${fingerprint.slice(0, 9)}…`
+          : 'Security key generated and copied'
+      );
+      return true;
+    }
+  });
+}
 
 /**
  * Per-conversation DM encryption modal.
@@ -1476,16 +1720,12 @@ function initializeE2EE(serverId) {
     return;
   }
 
-  let savedPassphrase = '';
-  try {
-    savedPassphrase = localStorage.getItem(getGroupPassphraseStorageKey(safeServerId)) || '';
-  } catch (_) { savedPassphrase = ''; }
-
+  const savedPassphrase = getStoredGroupPassphrase(safeServerId);
   setE2EEPassphrase(savedPassphrase, { serverId: safeServerId, persist: false });
 }
 
 function refreshStoredE2EEState() {
-  initializeE2EE(state.server?.id || '');
+  syncGroupE2EEState(state.server?.id || '');
   updateE2EEIndicator();
 }
 
@@ -2161,6 +2401,7 @@ function updateActiveHeader() {
     el.activeChannelTopic.textContent = partnerStatus || (partner ? `Direct message with ${partner.username}` : 'Direct message');
     el.composerInput.placeholder = partner ? `Message @${partner.username}` : 'Message direct message';
     el.pinToggle.classList.add('hidden');
+    el.securityKeyToggle?.classList.add('hidden');
     el.startVideoCallBtn?.classList.add('hidden');
     el.dmWallpaperBtn?.classList.remove('hidden');
     el.pinnedPanel.classList.add('hidden');
@@ -2177,6 +2418,7 @@ function updateActiveHeader() {
   el.activeChannelTopic.textContent = channel?.topic || 'No topic';
   el.composerInput.placeholder = channel ? `Message #${channel.name}` : 'Message #channel';
   el.pinToggle.classList.remove('hidden');
+  el.securityKeyToggle?.classList.toggle('hidden', !canUseAdminOnlyCommands());
   const showCallButtons = isAnnouncementChannel(channel) && canUseAdminOrOpFeatures();
   el.startVideoCallBtn?.classList.toggle('hidden', !showCallButtons);
   el.dmWallpaperBtn?.classList.add('hidden');
@@ -2831,11 +3073,6 @@ async function ensureLocalCallStream(callId) {
     attachCallAnalyser(localUser.id, new MediaStream(stream.getAudioTracks()));
     startCallSpeakingMonitor();
     renderCallOverlay();
-    if (location.hostname === 'localhost') {
-      stream.getAudioTracks().forEach((track) => {
-        console.log('[Om Chat Call] Audio track settings:', track.getSettings());
-      });
-    }
     return stream;
   } catch (error) {
     socketActions.callLeave({ callId });
@@ -3965,6 +4202,7 @@ function renderMessages() {
   const allowModeration = canModerateCurrentChannel();
   state.messages.forEach((message, index) => {
     const previous = index > 0 ? state.messages[index - 1] : null;
+    void hydrateMessageLinkPreviews(message);
 
     if (!previous || !isSameCalendarDay(previous.createdAt, message.createdAt)) {
       const divider = document.createElement('div');
@@ -3974,8 +4212,8 @@ function renderMessages() {
     }
 
     const row = createMessageElement(message, messageShouldGroup(previous, message), state.user.id, allowModeration);
-    // Annotate the rendered row with an encryption badge
-    if (message._encrypted || message._decryptFailed) {
+    // Per-message encryption badges are intentionally hidden for a cleaner chat view.
+    if (false && (message._encrypted || message._decryptFailed)) {
       const contentBody = row.querySelector('.message-content-body, .message-text, .message-content');
       if (contentBody) {
         const badge = document.createElement('span');
@@ -4066,7 +4304,10 @@ function openDeleteConfirm(messageId, anchor) {
 }
 
 function closeFloatingPanels(except = '') {
-  if (except !== 'emoji') el.emojiPicker.classList.add('hidden');
+  if (except !== 'emoji') {
+    state.emojiContext = { mode: 'composer', messageId: null };
+    el.emojiPicker.classList.add('hidden');
+  }
   if (except !== 'gif') el.gifPicker.classList.add('hidden');
 }
 
@@ -5051,6 +5292,7 @@ function selectChannel(channelId) {
   state.currentView = 'server';
   state.currentChannelId = channelId;
   state.currentDmChannelId = null;
+  syncGroupE2EEState(state.server?.id || '', { clearError: true });
   state.dmPartner = null;
   state.messages = [];
   state.remoteTypingUsers = [];
@@ -5454,8 +5696,26 @@ function stopVoiceRecording() {
 function bind() {
   renderPendingAttachments();
   initEmojiPicker((emoji) => {
-    el.composerInput.value += emoji;
-    el.composerInput.focus();
+    const context = state.emojiContext?.mode === 'reaction'
+      ? { ...state.emojiContext }
+      : { mode: 'composer', messageId: null };
+
+    if (context.mode === 'reaction' && context.messageId) {
+      const message = state.messages.find((item) => item.id === context.messageId);
+      if (message) {
+        const users = Array.isArray(message.reactions?.[emoji]) ? message.reactions[emoji] : [];
+        if (users.includes(state.user?.id)) {
+          socketActions.removeReaction({ messageId: message.id, emoji });
+        } else {
+          socketActions.addReaction({ messageId: message.id, emoji });
+        }
+      }
+    } else {
+      el.composerInput.value += emoji;
+      el.composerInput.focus();
+    }
+
+    state.emojiContext = { mode: 'composer', messageId: null };
     el.emojiPicker.classList.add('hidden');
   });
 
@@ -5475,9 +5735,11 @@ function bind() {
 
   el.emojiButton.addEventListener('click', (event) => {
     event.stopPropagation();
+    state.emojiContext = { mode: 'composer', messageId: null };
     closeFloatingPanels(el.emojiPicker.classList.contains('hidden') ? 'emoji' : '');
     el.emojiPicker.classList.toggle('hidden');
     if (!el.emojiPicker.classList.contains('hidden')) el.gifPicker.classList.add('hidden');
+    else state.emojiContext = { mode: 'composer', messageId: null };
   });
 
   el.giftButton.addEventListener('click', (event) => {
@@ -5808,7 +6070,13 @@ function bind() {
     const reaction = event.target.closest('.reaction');
     if (reaction) {
       const row = reaction.closest('.chat-message');
-      if (row) socketActions.addReaction({ messageId: row.dataset.id, emoji: reaction.dataset.emoji });
+      const message = state.messages.find((item) => item.id === row?.dataset.id);
+      const emoji = String(reaction.dataset.emoji || '').trim();
+      if (message && emoji) {
+        const users = Array.isArray(message.reactions?.[emoji]) ? message.reactions[emoji] : [];
+        if (users.includes(state.user?.id)) socketActions.removeReaction({ messageId: message.id, emoji });
+        else socketActions.addReaction({ messageId: message.id, emoji });
+      }
       return;
     }
 
@@ -5819,7 +6087,15 @@ function bind() {
     const message = state.messages.find((item) => item.id === row?.dataset.id);
     if (!message) return;
 
-    if (actionButton.dataset.action === 'emoji') { closeFloatingPanels('emoji'); el.emojiPicker.classList.toggle('hidden'); return; }
+    if (actionButton.dataset.action === 'emoji') {
+      state.emojiContext = { mode: 'reaction', messageId: message.id };
+      closeFloatingPanels('emoji');
+      el.emojiPicker.classList.toggle('hidden');
+      if (el.emojiPicker.classList.contains('hidden')) {
+        state.emojiContext = { mode: 'composer', messageId: null };
+      }
+      return;
+    }
     if (actionButton.dataset.action === 'reply') { setReplyTarget(message); return; }
     if (actionButton.dataset.action === 'edit' && message.userId === state.user.id) { state.editing.messageId = message.id; state.editing.draft = message.content || ''; renderMessages(); return; }
     if (actionButton.dataset.action === 'delete') { openDeleteConfirm(message.id, actionButton); return; }
@@ -5934,6 +6210,7 @@ function bind() {
     el.searchPanel.classList.toggle('hidden');
     if (!el.searchPanel.classList.contains('hidden')) el.searchInput.focus();
   });
+  el.securityKeyToggle?.addEventListener('click', () => openSecurityKeyGenerator());
   el.searchInput.addEventListener('input', handleSearchInput);
 
   el.statusBtn.addEventListener('click', (event) => {
@@ -6225,6 +6502,16 @@ function wireSocket() {
       const previousTop = el.messageList.scrollTop;
       state.remoteTypingUsers = [];
       const decoded = (await decodeMessageListForDisplay(messages || [])).map(applyCallInviteState);
+      if (
+        state.currentView === 'server'
+        && e2ee.status === 'error'
+        && isE2EEEnabled()
+        && decoded.some((message) => message?._encrypted)
+        && !decoded.some((message) => message?._decryptFailed)
+      ) {
+        e2ee.status = 'on';
+        updateE2EEIndicator();
+      }
       state.messages = older ? [...decoded, ...state.messages] : decoded;
       renderMessages();
       renderTypingIndicator();
@@ -6273,6 +6560,7 @@ function wireSocket() {
         }
         const row = createMessageElement(decodedMessage, messageShouldGroup(previous, decodedMessage), state.user.id, canModerateCurrentChannel());
         el.messageList.appendChild(row);
+        void hydrateMessageLinkPreviews(decodedMessage);
         renderPinnedPanel();
         if (!state.isScrollingLocked) {
           el.messageList.scrollTop = el.messageList.scrollHeight;
@@ -6322,8 +6610,12 @@ function wireSocket() {
       message.content = await decryptMessageText(content, message.channelId || state.currentChannelId || '');
       message.edited = true;
       message.editedAt = editedAt;
+      message.linkPreviews = [];
+      message._linkPreviewState = '';
+      message._linkPreviewUrls = [];
       if (state.editing.messageId === messageId) { state.editing.messageId = null; state.editing.draft = ''; }
       renderMessages();
+      void hydrateMessageLinkPreviews(message);
     },
     message_deleted: ({ messageId }) => {
       state.messages = state.messages.filter((item) => item.id !== messageId);
@@ -6380,7 +6672,7 @@ function wireSocket() {
       renderSidebar();
       updateActiveHeader();
     },
-    user_list_update: ({ members }) => { state.members = members || []; updateAdminState(); renderSidebar(); if (state.currentView === 'dm') updateActiveHeader(); },
+    user_list_update: ({ members }) => { state.members = members || []; updateAdminState(); renderSidebar(); updateActiveHeader(); },
     user_joined: ({ user }) => {
       if (!user?.userId) return;
       const existing = state.members.find((item) => item.userId === user.userId);

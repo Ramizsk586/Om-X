@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; frame-src 'self' file: https: about: data:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://generativelanguage.googleapis.com https://openrouter.ai https://api.groq.com https://api.github.com https://suggestqueries.google.com; img-src 'self' data: https: http: file: chrome-extension:; font-src 'self';">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; frame-src 'self' file: https: about: data:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://generativelanguage.googleapis.com https://openrouter.ai https://api.groq.com https://api.github.com https://suggestqueries.google.com; img-src 'self' data: https: http: file:; font-src 'self';">
   <title>Om-X Browser</title>
   <link rel="icon" href="../../assets/icons/app.ico" type="image/x-icon">
   <link rel="stylesheet" href="../../css/base/reset.css">
@@ -39,6 +39,21 @@
     .modal-btn.primary:hover { background: #e0e0e0; transform: translateY(-1px); }
     .modal-btn.secondary { background: rgba(255,255,255,0.1); color: #fff; }
     .modal-btn.secondary:hover { background: rgba(255,255,255,0.15); }
+    .custom-app-editor-modal {
+      width: min(420px, calc(100vw - 48px));
+    }
+    .custom-app-editor-status {
+      min-height: 18px;
+      font-size: 12px;
+      font-weight: 600;
+      color: rgba(255,255,255,0.68);
+    }
+    .custom-app-editor-status.error {
+      color: #ef4444;
+    }
+    .custom-app-editor-status.success {
+      color: #22c55e;
+    }
     .vt-scan-modal {
       width: min(680px, calc(100vw - 56px));
       max-height: min(78vh, 780px);
@@ -212,6 +227,28 @@
     }
     .omchat-launch-status.success { color: #22c55e; }
     .omchat-launch-status.error { color: #ef4444; }
+    .openwebui-launch-timer {
+      display: flex;
+      align-items: center;
+      width: 100%;
+      max-width: 100%;
+      min-width: 0;
+      align-self: stretch;
+      box-sizing: border-box;
+      overflow: hidden;
+      min-height: 40px;
+      padding: 0 10px;
+      border-radius: 10px;
+      border: 1px solid rgba(255,255,255,0.08);
+      background: rgba(255,255,255,0.04);
+      font-size: 11px;
+      font-weight: 700;
+      color: rgba(255,255,255,0.72);
+      letter-spacing: 0.01em;
+      line-height: 1.2;
+    }
+    .openwebui-launch-timer.success { color: #22c55e; }
+    .openwebui-launch-timer.error { color: #ef4444; }
     .omchat-launch-log {
       flex: 1;
       min-height: 160px;
@@ -232,6 +269,29 @@
       white-space: pre-wrap;
       word-break: break-word;
     }
+    #openwebui-log {
+      gap: 0;
+      padding: 14px 16px;
+      border-color: rgba(255,255,255,0.14);
+      background:
+        radial-gradient(circle at top right, rgba(255,255,255,0.06), transparent 28%),
+        linear-gradient(180deg, rgba(16,18,24,0.98), rgba(7,8,11,0.98));
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
+      font-size: 12px;
+      line-height: 1.35;
+      color: #e5e7eb;
+      font-variant-ligatures: none;
+      text-rendering: optimizeSpeed;
+      overflow: auto;
+    }
+    #openwebui-log .terminal-line {
+      white-space: pre;
+      word-break: normal;
+      min-width: max-content;
+    }
+    #openwebui-log .terminal-fragment.bold { font-weight: 700; }
+    #openwebui-log .terminal-fragment.italic { font-style: italic; }
+    #openwebui-log .terminal-fragment.dim { opacity: 0.72; }
     .omchat-launch-log .line.info { color: rgba(255,255,255,0.78); }
     .omchat-launch-log .line.warn { color: #f59e0b; }
     .omchat-launch-log .line.error { color: #ef4444; }
@@ -347,7 +407,7 @@
     .quick-launch-tools {
       display: flex;
       align-items: center;
-      gap: 2px;
+      gap: 1px;
       flex: 0 0 auto;
     }
     .feature-tile {
@@ -369,18 +429,23 @@
       background: rgba(255,255,255,0.08);
     }
     .feature-tile svg {
-      width: 18px;
-      height: 18px;
+      width: 16px;
+      height: 16px;
       color: rgba(220,220,224,0.92);
     }
-    .feature-tile-discord svg {
-      width: 20px;
-      height: 20px;
-      color: #5865f2;
-      filter: drop-shadow(0 0 8px rgba(88, 101, 242, 0.28));
+    .feature-tile-google img {
+      width: 16px;
+      height: 16px;
+      display: block;
+      object-fit: contain;
+      filter: brightness(0) invert(1);
+      opacity: 0.92;
     }
-    .feature-tile-discord:hover {
-      background: rgba(88, 101, 242, 0.12);
+    .feature-tile-discord svg {
+      width: 16px;
+      height: 16px;
+      color: rgba(220,220,224,0.92);
+      filter: none;
     }
     .feature-tile::after {
       content: attr(data-tooltip);
@@ -922,11 +987,16 @@
                 <button class="feature-tile" id="quick-panel-bookmarks" type="button" title="Bookmarks" data-tooltip="Bookmarks">
                     <svg viewBox="0 0 24 24"><path d="M17 3H7c-1.1 0-2 .9-2 2v16l7-3 7 3V5c0-1.1-.9-2-2-2z" fill="currentColor"/></svg>
                 </button>
-                <button class="feature-tile" id="quick-panel-youtube-addon" type="button" title="YouTube Addon" data-tooltip="YouTube Addon">
-                    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M21.58 7.19a2.98 2.98 0 0 0-2.1-2.11C17.65 4.6 12 4.6 12 4.6s-5.65 0-7.48.48a2.98 2.98 0 0 0-2.1 2.11A31.6 31.6 0 0 0 2 12a31.6 31.6 0 0 0 .42 4.81 2.98 2.98 0 0 0 2.1 2.11c1.83.48 7.48.48 7.48.48s5.65 0 7.48-.48a2.98 2.98 0 0 0 2.1-2.11A31.6 31.6 0 0 0 22 12a31.6 31.6 0 0 0-.42-4.81zM10 15.5v-7l6 3.5-6 3.5z"/></svg>
+                <button class="feature-tile feature-tile-google" id="quick-panel-google" type="button" title="Google Apps" data-tooltip="Google Apps">
+                    <img src="../../assets/icons/google.svg" alt="" aria-hidden="true">
                 </button>
-                <button class="feature-tile" id="quick-panel-duck-ai" type="button" title="Duck AI" data-tooltip="Duck AI">
-                    <svg viewBox="0 0 24 24" fill="none"><path d="M7.5 13.5c0-3.04 2.46-5.5 5.5-5.5 1.7 0 3.22.77 4.23 1.97" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M14.5 5.5c.88-.96 2.11-1.5 3.42-1.5 2.53 0 4.58 2.05 4.58 4.58 0 1.27-.52 2.42-1.35 3.25" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M5.8 18.2c.92 1.14 2.33 1.8 3.8 1.8h4.9c2.76 0 5-2.24 5-5 0-2.42-1.72-4.44-4-4.9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="8.2" cy="11.2" r="1.4" fill="currentColor"/><path d="M3 13.5c0-1.93 1.57-3.5 3.5-3.5.58 0 1.13.14 1.61.39" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+                <button class="feature-tile" id="quick-panel-apps" type="button" title="Apps" data-tooltip="Apps">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <rect x="4" y="4" width="6" height="6" rx="1.4"></rect>
+                        <rect x="14" y="4" width="6" height="6" rx="1.4"></rect>
+                        <rect x="4" y="14" width="6" height="6" rx="1.4"></rect>
+                        <rect x="14" y="14" width="6" height="6" rx="1.4"></rect>
+                    </svg>
                 </button>
                 <button class="feature-tile" id="quick-panel-scraper" type="button" title="Scraper" data-tooltip="Scraper">
                     <svg viewBox="0 0 24 24" fill="none"><rect x="4" y="5" width="10" height="10" rx="2.5" fill="currentColor" opacity="0.18"/><path d="M7 8h5M7 11h3.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="16.5" cy="16.5" r="3.5" stroke="currentColor" stroke-width="2"/><path d="M19 19l2 2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
@@ -936,6 +1006,9 @@
                 </button>
                 <button class="feature-tile" id="quick-panel-games" type="button" title="Games" data-tooltip="Games">
                     <svg viewBox="0 0 24 24"><path d="M21 6H3c-1.1 0-2 .9-2 2v8c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-10 7H8v3H6v-3H3v-2h3V8h2v3h3v2zm4.5 2c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm4-3c-.83 0-1.5-.67-1.5-1.5S18.67 9 19.5 9s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z" fill="currentColor"/></svg>
+                </button>
+                <button class="feature-tile" id="quick-panel-youtube-addon" type="button" title="YouTube Addon" data-tooltip="YouTube Addon">
+                    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M21.58 7.19a2.98 2.98 0 0 0-2.1-2.11C17.65 4.6 12 4.6 12 4.6s-5.65 0-7.48.48a2.98 2.98 0 0 0-2.1 2.11A31.6 31.6 0 0 0 2 12a31.6 31.6 0 0 0 .42 4.81 2.98 2.98 0 0 0 2.1 2.11c1.83.48 7.48.48 7.48.48s5.65 0 7.48-.48a2.98 2.98 0 0 0 2.1-2.11A31.6 31.6 0 0 0 22 12a31.6 31.6 0 0 0-.42-4.81zM10 15.5v-7l6 3.5-6 3.5z"/></svg>
                 </button>
                 <button class="feature-tile" id="quick-panel-llama-server" type="button" title="Llama Server" data-tooltip="Llama">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v14a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M12 8v8"/><path d="M9 12h6"/><circle cx="12" cy="5" r="1" fill="currentColor" stroke="none"/></svg>
@@ -954,6 +1027,24 @@
                 </button>
             </div>
         </div>
+    </div>
+
+    <div id="google-apps-panel" class="bookmark-top-panel google-apps-top-panel hidden">
+      <div class="bookmark-top-card google-apps-top-card">
+        <div class="bookmark-top-header">
+          <div class="bookmark-top-title google-apps-top-title">G-Apps</div>
+        </div>
+        <div id="google-apps-grid" class="google-apps-grid"></div>
+      </div>
+    </div>
+
+    <div id="custom-apps-panel" class="bookmark-top-panel google-apps-top-panel hidden">
+      <div class="bookmark-top-card google-apps-top-card">
+        <div class="bookmark-top-header">
+          <div class="bookmark-top-title google-apps-top-title">Apps</div>
+        </div>
+        <div id="custom-apps-grid" class="google-apps-grid custom-apps-grid"></div>
+      </div>
     </div>
 
     <div id="navigation-top-panel" class="bookmark-top-panel navigation-top-panel hidden">
@@ -999,6 +1090,25 @@
       </div>
     </div>
 
+    <div id="custom-app-editor-overlay" class="modal-overlay hidden">
+      <div class="shortcut-modal custom-app-editor-modal">
+        <div class="modal-title">Add App</div>
+        <div id="custom-app-editor-status" class="custom-app-editor-status">Save up to 5 apps in this panel.</div>
+        <div class="modal-group">
+          <label class="modal-label" for="custom-app-name">Name</label>
+          <input id="custom-app-name" class="modal-input" type="text" maxlength="28" placeholder="App name">
+        </div>
+        <div class="modal-group">
+          <label class="modal-label" for="custom-app-url">URL</label>
+          <input id="custom-app-url" class="modal-input" type="text" placeholder="https://example.com">
+        </div>
+        <div class="modal-actions">
+          <button id="custom-app-editor-cancel" class="modal-btn secondary" type="button">Cancel</button>
+          <button id="custom-app-editor-save" class="modal-btn primary" type="button">Save</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Image Download Modal -->
     <div id="image-dl-overlay" class="modal-overlay hidden">
         <div class="shortcut-modal">
@@ -1032,24 +1142,6 @@
             </div>
         </div>
     </div>
-
-    <!-- VirusTotal Link Scan Modal -->
-    <div id="vt-link-scan-overlay" class="modal-overlay hidden">
-      <div class="shortcut-modal vt-scan-modal">
-        <div class="vt-scan-header">
-                <div class="modal-title">VirusTotal URL Scan</div>
-                <button id="btn-vt-close-top" class="modal-btn secondary" style="padding: 6px 12px;">Close</button>
-            </div>
-            <div id="vt-scan-target-url" class="vt-scan-target"></div>
-            <div id="vt-scan-status" class="vt-scan-status"></div>
-            <div id="vt-scan-report" class="vt-scan-report hidden"></div>
-            <div class="modal-actions">
-                <button id="btn-vt-open-link" class="modal-btn secondary" disabled>Open Link</button>
-                <button id="btn-vt-close" class="modal-btn primary">Done</button>
-            </div>
-        </div>
-    </div>
-
     <!-- Screenshot Overlay -->
     <div id="screenshot-layer">
       <canvas id="screenshot-canvas"></canvas>
@@ -1111,6 +1203,7 @@
           <button id="openwebui-close" class="modal-btn secondary" type="button">Close</button>
         </div>
         <div id="openwebui-status" class="omchat-launch-status">Checking Open WebUI requirements...</div>
+        <div id="openwebui-timer" class="openwebui-launch-timer hidden-panel" aria-live="polite"></div>
         <div id="openwebui-commands-note" class="setup-command-note hidden-panel"></div>
         <div id="openwebui-commands" class="setup-command-list hidden-panel"></div>
         <div id="openwebui-log" class="omchat-launch-log hidden-panel"></div>
@@ -1174,6 +1267,10 @@
         <svg viewBox="0 0 24 24"><path d="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9 9-4.03 9-9c0-.46-.04-.92-.1-1.36-.98 1.37-2.58 2.26-4.4 2.26-3.03 0-5.5-2.47-5.5-5.5 0-1.82.89-3.42 2.26-4.4-.44-.06-.9-.1-1.36-.1z" fill="currentColor"/></svg>
         <span>Toggle Dark Mode</span>
       </div>
+      <div class="context-menu-item" id="ctx-hide-window-controls">
+        <svg viewBox="0 0 24 24"><path d="M19 5H5v14h14V5zm-2 12H7V7h10v10zm-6-8h2v2h-2V9zm0 4h2v2h-2v-2z" fill="currentColor"/></svg>
+        <span>Hide Window Controls</span>
+      </div>
     </div>
 
     <!-- Content Context Menu (Webview) -->
@@ -1193,6 +1290,8 @@
        </div>
        <button id="btn-download-toast-cancel" class="dl-toast-cancel hidden" type="button">Cancel</button>
     </div>
+
+    <div id="site-notification-stack" class="site-notification-stack" aria-live="polite" aria-atomic="false"></div>
 
     <!-- Site Tool Slide Panels -->
     <div id="youtube-addon-panel" class="site-tool-panel hidden">
@@ -1261,29 +1360,6 @@
             </div>
             <span class="site-tool-switch">
               <input type="checkbox" id="youtube-addon-toggle-suggestions">
-              <span class="site-tool-slider"></span>
-            </span>
-          </label>
-        </div>
-      </div>
-    </div>
-
-    <div id="duck-ai-panel" class="site-tool-panel hidden">
-      <div class="site-tool-card">
-        <div class="site-tool-header">
-          <div class="site-tool-title-group">
-            <div class="site-tool-title">Duck AI</div>
-            <div class="site-tool-subtitle">Quick layout controls for duck.ai/chat</div>
-          </div>
-        </div>
-        <div class="site-tool-list">
-          <label class="site-tool-row">
-            <div class="site-tool-copy">
-              <span class="site-tool-label">Hide Sidebar</span>
-              <span class="site-tool-desc">Keeps the chat canvas centered and distraction-free.</span>
-            </div>
-            <span class="site-tool-switch">
-              <input type="checkbox" id="duck-ai-toggle-sidebar">
               <span class="site-tool-slider"></span>
             </span>
           </label>

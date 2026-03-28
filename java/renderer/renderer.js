@@ -32,12 +32,79 @@ const DOWNLOADS_URL       = new URL('../../html/pages/downloads.html',         i
 const SCRABER_URL         = new URL('../../html/pages/scraper.html',           import.meta.url).href;
 const SITE_SETTINGS_URL   = new URL('../../html/pages/site-settings.html',     import.meta.url).href;
 const BOOKMARK_FALLBACK_ICON = new URL('../../assets/icons/app.ico',           import.meta.url).href;
+const GOOGLE_ICON_URL     = new URL('../../assets/icons/google.svg',           import.meta.url).href;
+const GOOGLE_GMAIL_ICON_URL = new URL('../../assets/icons/gmail.svg',          import.meta.url).href;
+const GOOGLE_YOUTUBE_ICON_URL = new URL('../../assets/icons/youtube.svg',      import.meta.url).href;
+const GOOGLE_DRIVE_ICON_URL = new URL('../../assets/icons/Google_Drive.svg',   import.meta.url).href;
+const GOOGLE_MAPS_ICON_URL = new URL('../../assets/icons/google_maps.svg',     import.meta.url).href;
+const GOOGLE_CALENDAR_ICON_URL = new URL('../../assets/icons/Google_Calendar.svg', import.meta.url).href;
+const GOOGLE_GEMINI_ICON_URL = new URL('../../assets/icons/Google_Gemini.svg', import.meta.url).href;
+const GOOGLE_PHOTOS_ICON_URL = new URL('../../assets/icons/Google_Photos.svg', import.meta.url).href;
+const GOOGLE_TRANSLATE_ICON_URL = new URL('../../assets/icons/Google_Translate.svg', import.meta.url).href;
 const OMCHAT_PUBLIC_DISPLAY_URL = 'https://omchat.42web.io/';
 const OFFICIAL_OMX_WEBSITE = 'https://omx.kesug.com/';
 const FIRST_RUN_WEBSITE_KEY = 'omx:first-run-official-website-opened:v1';
+const CUSTOM_TOP_APPS_KEY = 'omx:custom-top-apps:v1';
+const CUSTOM_TOP_APPS_MAX = 5;
 
 const OM_CHAT_DEFAULT_PORT = 3031;
 const DUCK_AI_URL          = 'https://duck.ai/chat';
+const GOOGLE_QUICK_APPS = Object.freeze([
+    {
+        id: 'search',
+        label: 'Search',
+        url: 'https://www.google.com/',
+        icon: GOOGLE_ICON_URL
+    },
+    {
+        id: 'gmail',
+        label: 'Gmail',
+        url: 'https://mail.google.com/',
+        icon: GOOGLE_GMAIL_ICON_URL
+    },
+    {
+        id: 'youtube',
+        label: 'YouTube',
+        url: 'https://www.youtube.com/',
+        icon: GOOGLE_YOUTUBE_ICON_URL
+    },
+    {
+        id: 'drive',
+        label: 'Drive',
+        url: 'https://drive.google.com/',
+        icon: GOOGLE_DRIVE_ICON_URL
+    },
+    {
+        id: 'maps',
+        label: 'Maps',
+        url: 'https://maps.google.com/',
+        icon: GOOGLE_MAPS_ICON_URL
+    },
+    {
+        id: 'calendar',
+        label: 'Calendar',
+        url: 'https://calendar.google.com/',
+        icon: GOOGLE_CALENDAR_ICON_URL
+    },
+    {
+        id: 'gemini',
+        label: 'Gemini',
+        url: 'https://gemini.google.com/',
+        icon: GOOGLE_GEMINI_ICON_URL
+    },
+    {
+        id: 'photos',
+        label: 'Photos',
+        url: 'https://photos.google.com/',
+        icon: GOOGLE_PHOTOS_ICON_URL
+    },
+    {
+        id: 'translate',
+        label: 'Translate',
+        url: 'https://translate.google.com/',
+        icon: GOOGLE_TRANSLATE_ICON_URL
+    }
+]);
 
 // Pre-compiled dark-mode CSS injected into webviews (static; created once).
 const DARK_MODE_CSS = `
@@ -211,6 +278,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // ── ELEMENT REFS (queried once) ────────────────────────────────────────────
     const featuresHomePopup             = document.getElementById('features-home-popup');
+    const quickPanelGoogle              = document.getElementById('quick-panel-google');
+    const quickPanelApps                = document.getElementById('quick-panel-apps');
     const quickPanelYoutubeAddon        = document.getElementById('quick-panel-youtube-addon');
     const quickPanelDuckAi              = document.getElementById('quick-panel-duck-ai');
     const quickPanelNavigation          = document.getElementById('quick-panel-navigation');
@@ -222,6 +291,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     const quickPanelLlamaServer         = document.getElementById('quick-panel-llama-server');
     const quickPanelMcpServer           = document.getElementById('quick-panel-mcp-server');
     const quickPanelDiscord             = document.getElementById('quick-panel-discord');
+    const googleAppsPanel               = document.getElementById('google-apps-panel');
+    const googleAppsGrid                = document.getElementById('google-apps-grid');
+    const customAppsPanel               = document.getElementById('custom-apps-panel');
+    const customAppsGrid                = document.getElementById('custom-apps-grid');
+    const customAppEditorOverlay        = document.getElementById('custom-app-editor-overlay');
+    const customAppEditorStatus         = document.getElementById('custom-app-editor-status');
+    const customAppName                 = document.getElementById('custom-app-name');
+    const customAppUrl                  = document.getElementById('custom-app-url');
+    const customAppEditorCancel         = document.getElementById('custom-app-editor-cancel');
+    const customAppEditorSave           = document.getElementById('custom-app-editor-save');
     const navigationTopPanel            = document.getElementById('navigation-top-panel');
     const btnTopNavBack                 = document.getElementById('btn-top-nav-back');
     const btnTopNavForward              = document.getElementById('btn-top-nav-forward');
@@ -248,6 +327,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const dlStatus                      = downloadToast?.querySelector('.dl-toast-status');
     const dlFill                        = downloadToast?.querySelector('.dl-toast-fill');
     const dlCancelBtn                   = document.getElementById('btn-download-toast-cancel');
+    const siteNotificationStack         = document.getElementById('site-notification-stack');
     const youtubeAddonPanel             = document.getElementById('youtube-addon-panel') || document.getElementById('youtube-addon-popup');
     const youtubeAddonToggleHome        = document.getElementById('youtube-addon-toggle-home');
     const youtubeAddonToggleBlur        = document.getElementById('youtube-addon-toggle-blur');
@@ -264,6 +344,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const openWebUiOverlay              = document.getElementById('openwebui-overlay');
     const openWebUiClose                = document.getElementById('openwebui-close');
     const openWebUiStatus               = document.getElementById('openwebui-status');
+    const openWebUiTimer                = document.getElementById('openwebui-timer');
     const openWebUiCommandsNote         = document.getElementById('openwebui-commands-note');
     const openWebUiCommands             = document.getElementById('openwebui-commands');
     const openWebUiLog                  = document.getElementById('openwebui-log');
@@ -272,6 +353,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const SESSIONGUARD_POPUP_URL        = new URL('../../SessionGuard/popup/popup.html', import.meta.url).href;
     const webviewContextMenu            = document.getElementById('webview-context-menu');
     const tabContextMenu                = document.getElementById('tab-context-menu');
+    const ctxHideWindowControlsMenuItem = document.getElementById('ctx-hide-window-controls');
     const btnMin                        = document.getElementById('btn-min');
     const btnMax                        = document.getElementById('btn-max');
     const btnClose                      = document.getElementById('btn-close');
@@ -285,6 +367,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     let currentImageToDownload = null;
     let toastTimeout          = null;
     let activeToastDownloadId = null;
+    let activeSiteNotifications = [];
     let screenshotDelaySeconds = 0;
     let bookmarkItems         = [];
     let pendingBookmarkTab    = null;
@@ -292,8 +375,29 @@ document.addEventListener('DOMContentLoaded', async () => {
     let tabManager            = null;
     let omchatLogPollTimer    = null;
     let omchatLogLastCount    = 0;
+    let customTopApps         = [];
     let openWebUiLogPollTimer = null;
     let openWebUiLogLastCount = 0;
+    let openWebUiTerminalRenderState = {
+        currentLineEl: null,
+        pendingOverwrite: false,
+        ansiState: {
+            bold: false,
+            italic: false,
+            dim: false,
+            fg: ''
+        }
+    };
+    let openWebUiTimerInterval = null;
+    let openWebUiTimerState    = {
+        active: false,
+        startedAt: 0,
+        finishedAt: 0,
+        etaMs: null,
+        stageLabel: '',
+        finalLabel: '',
+        finalType: ''
+    };
     let openWebUiTabId        = null;
     let openWebUiTabUrl       = '';
     let llamaWebUiTabId       = null;
@@ -326,6 +430,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     contextMenuBackdrop.className = 'hidden';
     contextMenuBackdrop.style.cssText = 'position:fixed;inset:0;z-index:9999;background:transparent;pointer-events:none;';
     document.body.appendChild(contextMenuBackdrop);
+
+    const secondaryTopPanelBackdrop = document.createElement('div');
+    secondaryTopPanelBackdrop.id        = 'secondary-top-panel-backdrop';
+    secondaryTopPanelBackdrop.className = 'secondary-top-panel-backdrop hidden';
+    document.body.appendChild(secondaryTopPanelBackdrop);
 
     // ── SITE-INFO OVERLAY (built once) ────────────────────────────────────────
     // Previously siteInfoOverlay.innerHTML was assigned TWICE; the first
@@ -469,6 +578,134 @@ document.addEventListener('DOMContentLoaded', async () => {
     // ── HELPERS ───────────────────────────────────────────────────────────────
     const hideFeaturesHomePopup = () => featuresHomePopup?.classList.add('hidden');
 
+    const renderGoogleAppsPanel = () => {
+        if (!googleAppsGrid) return;
+        googleAppsGrid.innerHTML = GOOGLE_QUICK_APPS.map((app) => `
+            <button class="google-app-launch" type="button" data-url="${escapeHtml(app.url)}" data-app-id="${escapeHtml(app.id)}" title="${escapeHtml(app.label)}">
+                <span class="google-app-launch-icon">
+                    <img src="${escapeHtml(app.icon)}" alt="" aria-hidden="true">
+                </span>
+                <span class="google-app-launch-label">${escapeHtml(app.label)}</span>
+            </button>
+        `).join('');
+    };
+
+    const normalizeCustomAppUrl = (value) => {
+        const raw = String(value || '').trim();
+        if (!raw) return '';
+        const withProtocol = /^[a-zA-Z][a-zA-Z\d+\-.]*:/.test(raw) ? raw : `https://${raw}`;
+        try {
+            const parsed = new URL(withProtocol);
+            return ['http:', 'https:'].includes(parsed.protocol) ? parsed.href : '';
+        } catch (_) {
+            return '';
+        }
+    };
+
+    const normalizeCustomAppName = (value) => String(value || '').trim().replace(/\s+/g, ' ').slice(0, 28);
+
+    const getCustomAppIconUrl = (url) => {
+        try {
+            const parsed = new URL(String(url || ''));
+            return `${parsed.origin}/favicon.ico`;
+        } catch (_) {
+            return '';
+        }
+    };
+
+    const getCustomAppBadge = (name, url) => {
+        const label = normalizeCustomAppName(name);
+        if (label) return label.charAt(0).toUpperCase();
+        try {
+            return new URL(String(url || '')).hostname.charAt(0).toUpperCase() || '?';
+        } catch (_) {
+            return '?';
+        }
+    };
+
+    const saveCustomTopApps = () => {
+        try {
+            localStorage.setItem(CUSTOM_TOP_APPS_KEY, JSON.stringify(customTopApps.slice(0, CUSTOM_TOP_APPS_MAX)));
+        } catch (error) {
+            console.warn('[Apps Panel] Failed to save custom apps', error);
+        }
+    };
+
+    const loadCustomTopApps = () => {
+        try {
+            const raw = localStorage.getItem(CUSTOM_TOP_APPS_KEY);
+            const parsed = JSON.parse(raw || '[]');
+            customTopApps = Array.isArray(parsed)
+                ? parsed
+                    .map((entry, index) => {
+                        const name = normalizeCustomAppName(entry?.name || entry?.label || '');
+                        const url = normalizeCustomAppUrl(entry?.url || '');
+                        if (!name || !url) return null;
+                        return {
+                            id: String(entry?.id || `app-${Date.now()}-${index}`),
+                            name,
+                            url
+                        };
+                    })
+                    .filter(Boolean)
+                    .slice(0, CUSTOM_TOP_APPS_MAX)
+                : [];
+        } catch (error) {
+            console.warn('[Apps Panel] Failed to load custom apps', error);
+            customTopApps = [];
+        }
+    };
+
+    const setCustomAppEditorStatus = (message, type = '') => {
+        if (!customAppEditorStatus) return;
+        customAppEditorStatus.textContent = message;
+        customAppEditorStatus.className = `custom-app-editor-status ${type}`.trim();
+    };
+
+    const renderCustomAppsPanel = () => {
+        if (!customAppsGrid) return;
+        const canAddMoreApps = customTopApps.length < CUSTOM_TOP_APPS_MAX;
+        const tiles = customTopApps.map((app) => `
+            <div class="custom-app-item" data-app-id="${escapeHtml(app.id)}">
+                <button class="google-app-launch custom-app-launch" type="button" data-action="open" data-url="${escapeHtml(app.url)}" data-app-id="${escapeHtml(app.id)}" title="${escapeHtml(app.name)}">
+                    <span class="google-app-launch-icon">
+                        <img class="custom-app-favicon" src="${escapeHtml(getCustomAppIconUrl(app.url))}" alt="" aria-hidden="true">
+                        <span class="custom-app-launch-icon-badge">${escapeHtml(getCustomAppBadge(app.name, app.url))}</span>
+                    </span>
+                    <span class="google-app-launch-label">${escapeHtml(app.name)}</span>
+                </button>
+            </div>
+        `);
+
+        if (canAddMoreApps) {
+            tiles.push(`
+                <button class="google-app-launch custom-app-plus" type="button" data-action="add" title="Add app">
+                    <span class="google-app-launch-icon">
+                        <span class="custom-app-plus-icon">+</span>
+                    </span>
+                    <span class="google-app-launch-label">Add App</span>
+                </button>
+            `);
+        }
+
+        customAppsGrid.innerHTML = tiles.join('');
+        customAppsGrid.querySelectorAll('.custom-app-favicon').forEach((img) => {
+            const iconWrap = img.closest('.google-app-launch-icon');
+            const fallback = iconWrap?.querySelector('.custom-app-launch-icon-badge');
+            const showFallback = () => {
+                img.classList.add('is-hidden');
+                fallback?.classList.add('is-visible');
+            };
+            const showFavicon = () => {
+                img.classList.remove('is-hidden');
+                fallback?.classList.remove('is-visible');
+            };
+            img.addEventListener('error', showFallback, { once: true });
+            img.addEventListener('load', showFavicon, { once: true });
+            if (img.complete && (!img.naturalWidth || !img.naturalHeight)) showFallback();
+        });
+    };
+
     const sanitizeBookmarkIcon = (value) => {
         const raw = String(value || '').trim();
         if (!raw) return BOOKMARK_FALLBACK_ICON;
@@ -531,18 +768,47 @@ document.addEventListener('DOMContentLoaded', async () => {
         return getActiveTabState()?.url || '';
     };
 
-    const getPageTypeLabel = (tab) => {
-        if (!tab) return 'Unknown';
-        if (tab.isSystemPage)         return 'System';
-        if (tab.isHistoryPage)        return 'History';
-        if (tab.isHomePage)           return 'Home';
-        if (tab.isDefensePage)        return 'Security Alert';
-        return 'Website';
+    const getTabRuntimeUrl = (tab = null) => {
+        if (tab?.webview) {
+            try {
+                const currentUrl = tab.webview.getURL?.();
+                if (currentUrl) return String(currentUrl).trim();
+            } catch (_) {}
+            const src = String(tab.webview.getAttribute?.('src') || tab.webview.src || '').trim();
+            if (src) return src;
+        }
+        return String(tab?.url || '').trim();
     };
 
-    const formatMs = (value) => {
-        const n = Number(value);
-        return Number.isFinite(n) && n >= 0 ? `${Math.round(n)} ms` : 'N/A';
+    const normalizeWebsiteOrigin = (rawUrl = '') => {
+        const safe = String(rawUrl || '').trim();
+        if (!safe) return '';
+        try {
+            const parsed = new URL(safe, window.location.href);
+            return /^https?:$/i.test(parsed.protocol) ? parsed.origin.toLowerCase() : '';
+        } catch (_) {
+            return '';
+        }
+    };
+
+    const getWebsiteUiPreferences = (settings = cachedSettings) => {
+        const source = settings?.websiteUiPreferences;
+        if (!source || typeof source !== 'object') return {};
+        const normalized = {};
+        for (const [origin, preferences] of Object.entries(source)) {
+            const safeOrigin = normalizeWebsiteOrigin(origin);
+            if (!safeOrigin || !preferences || typeof preferences !== 'object') continue;
+            if (preferences.hideWindowControls === true) {
+                normalized[safeOrigin] = { hideWindowControls: true };
+            }
+        }
+        return normalized;
+    };
+
+    const isWindowControlsHiddenForUrl = (rawUrl = '') => {
+        const origin = normalizeWebsiteOrigin(rawUrl);
+        if (!origin) return false;
+        return getWebsiteUiPreferences()?.[origin]?.hideWindowControls === true;
     };
 
     // ── CONTEXT MENUS ─────────────────────────────────────────────────────────
@@ -574,7 +840,25 @@ document.addEventListener('DOMContentLoaded', async () => {
     contextMenuBackdrop.addEventListener('contextmenu',  (e) => { e.preventDefault(); closeAllContextMenus(); });
 
     // ── SITE-INFO HELPERS ─────────────────────────────────────────────────────
-    const setSiteInfoVisible  = (v) => siteInfoOverlay?.classList.toggle('hidden', !v);
+    const isVisiblePanel = (element) => Boolean(element && !element.classList.contains('hidden'));
+
+    const syncSecondaryTopPanelBackdrop = () => {
+        const shouldShowBackdrop =
+            isVisiblePanel(googleAppsPanel) ||
+            isVisiblePanel(customAppsPanel) ||
+            isVisiblePanel(navigationTopPanel) ||
+            isVisiblePanel(bookmarkTopPanel) ||
+            isVisiblePanel(youtubeAddonPanel) ||
+            isVisiblePanel(duckAiPanel) ||
+            isVisiblePanel(siteInfoOverlay) ||
+            isVisiblePanel(sessionGuardOverlay);
+        secondaryTopPanelBackdrop?.classList.toggle('hidden', !shouldShowBackdrop);
+    };
+
+    const setSiteInfoVisible  = (v) => {
+        siteInfoOverlay?.classList.toggle('hidden', !v);
+        syncSecondaryTopPanelBackdrop();
+    };
     const hideSiteInfoPopup   = ()  => setSiteInfoVisible(false);
 
     const formatBytes = (value = 0) => {
@@ -894,6 +1178,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const openSiteInfoPopup = async () => {
         hideFeaturesHomePopup();
+        setCustomAppsPanelVisible(false);
         setNavigationTopPanelVisible(false);
         setBookmarkPanelVisible(false);
         setBookmarkEditorVisible(false);
@@ -931,11 +1216,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         } else if (!visible && sessionGuardIframe) {
             sessionGuardIframe.src = '';
         }
+        syncSecondaryTopPanelBackdrop();
     };
 
     const toggleSessionGuardPanel = () => {
         hideFeaturesHomePopup();
         const isVisible = !sessionGuardOverlay?.classList.contains('hidden');
+        setCustomAppsPanelVisible(false);
         setNavigationTopPanelVisible(false);
         setYouTubeAddonVisible(false);
         setDuckAiPanelVisible(false);
@@ -960,7 +1247,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 sessionGuardIframe.contentWindow.postMessage({
                     type: 'SESSIONGUARD_DATA',
                     enabled: sessionGuardEnabled,
-                    threatsBlocked: stats?.getThreatsBlocked?.() || 0,
+                    threatsBlocked: stats?.threatsBlocked || 0,
                     tabsCount: tabManager?.tabs?.length || 0,
                     domain: stats?.domain || 'unknown'
                 }, '*');
@@ -1028,11 +1315,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         webviewContextMenu.innerHTML = '';
         const activeWebview  = tabManager.getActiveWebview();
         const sidePanelState = sidePanel?.getState?.() || { isHidden: false, isCollapsed: false };
-
-        if (params.linkURL) {
-            tabManager.createTab(params.linkURL);
-            return;
-        }
 
         const createMenuItem = (targetMenu, label, icon) => {
             const item = document.createElement('div');
@@ -1120,13 +1402,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             { type: 'action', label: 'Back',   icon: 'M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z',  click: () => activeWebview?.goBack()   },
             { type: 'action', label: 'Reload', icon: 'M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z', click: () => activeWebview?.reload() }
         ];
-
-        if (params.linkURL) {
-            pageEntries.push(
-                { type: 'divider', compact: true },
-                { type: 'action', label: 'Open Link in New Tab', icon: 'M19 19H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z', click: () => tabManager.createTab(params.linkURL) }
-            );
-        }
 
         if (params.hasImageContents || params.srcURL) {
             const imageActions = [
@@ -1272,12 +1547,23 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         const tab = tabManager.tabs.find(t => t.id === id);
         if (tab) {
-            const darkModeItem = document.getElementById('ctx-dark-mode');
-            if (darkModeItem) {
+            if (ctxDarkMode) {
                 const isDarkMode = darkModeTabs.has(id);
-                const span = darkModeItem.querySelector('span');
+                const span = ctxDarkMode.querySelector('span');
                 if (span) span.textContent = isDarkMode ? 'Disable Dark Mode' : 'Enable Dark Mode';
-                darkModeItem.style.color = isDarkMode ? '#4fc3f7' : '';
+                ctxDarkMode.style.color = isDarkMode ? '#4fc3f7' : '';
+            }
+
+            if (ctxHideWindowControlsMenuItem) {
+                const tabUrl = getTabRuntimeUrl(tab);
+                const isWebsiteTab = isHttpWebsiteUrl(tabUrl);
+                const span = ctxHideWindowControlsMenuItem.querySelector('span');
+                const isHiddenForSite = isWebsiteTab && isWindowControlsHiddenForUrl(tabUrl);
+                ctxHideWindowControlsMenuItem.classList.toggle('hidden', !isWebsiteTab);
+                if (span) {
+                    span.textContent = isHiddenForSite ? 'Show Window Controls' : 'Hide Window Controls';
+                }
+                ctxHideWindowControlsMenuItem.style.color = isHiddenForSite ? '#ffb74d' : '';
             }
         }
     };
@@ -1408,13 +1694,27 @@ document.addEventListener('DOMContentLoaded', async () => {
         featuresHomePopup?.classList.add('hidden');
     };
 
+    const openUrlInCurrentTab = (url, options = {}) => {
+        const targetUrl = String(url || '').trim();
+        if (!targetUrl) return;
+        hideFeaturesHomePopup();
+        setGoogleAppsPanelVisible(false);
+        setCustomAppsPanelVisible(false);
+        if (typeof tabManager?.navigateTo === 'function') {
+            tabManager.navigateTo(targetUrl, options);
+            return;
+        }
+        openAppTab(targetUrl, options);
+    };
+
     const syncWindowControlsVisibility = () => {
         const controls = document.querySelector('.window-controls');
         if (!controls) return;
         const activeTabId = tabManager?.activeTabId ?? null;
         const hideForOpenWebUi = activeTabId != null && activeTabId === openWebUiTabId;
         const hideForLlamaWebUi = activeTabId != null && activeTabId === llamaWebUiTabId;
-        controls.classList.toggle('hidden', hideForOpenWebUi || hideForLlamaWebUi);
+        const hideForWebsitePreference = isWindowControlsHiddenForUrl(getActiveTabUrl());
+        controls.classList.toggle('hidden', hideForOpenWebUi || hideForLlamaWebUi || hideForWebsitePreference);
     };
 
     const buildOmChatUrl = (host = 'localhost', port = OM_CHAT_DEFAULT_PORT, pathname = '/') => {
@@ -1427,7 +1727,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const openOpenWebUiTab = (url) => {
         const localUrl = String(url || openWebUiTabUrl || '').trim();
         if (!localUrl) return false;
-        openAppTab(localUrl);
+        openAppTab(localUrl, { isOpenWebUi: true });
         setTimeout(() => {
             const activeId = tabManager?.activeTabId ?? null;
             if (activeId != null) {
@@ -1726,9 +2026,420 @@ document.addEventListener('DOMContentLoaded', async () => {
         openWebUiOverlay.classList.toggle('hidden', !visible);
     };
 
+    const OPEN_WEBUI_LOG_TYPE_COLORS = Object.freeze({
+        info: 'rgba(255,255,255,0.82)',
+        warn: '#f59e0b',
+        error: '#f87171',
+        success: '#4ade80'
+    });
+
+    const OPEN_WEBUI_ANSI_FG_COLORS = Object.freeze({
+        30: '#111827',
+        31: '#f87171',
+        32: '#4ade80',
+        33: '#fbbf24',
+        34: '#60a5fa',
+        35: '#f472b6',
+        36: '#22d3ee',
+        37: '#f3f4f6',
+        90: '#9ca3af',
+        91: '#fca5a5',
+        92: '#86efac',
+        93: '#fde68a',
+        94: '#93c5fd',
+        95: '#f9a8d4',
+        96: '#67e8f9',
+        97: '#ffffff'
+    });
+
+    const createOpenWebUiAnsiState = () => ({
+        bold: false,
+        italic: false,
+        dim: false,
+        fg: ''
+    });
+
+    const createOpenWebUiTerminalRenderState = () => ({
+        currentLineEl: null,
+        pendingOverwrite: false,
+        ansiState: createOpenWebUiAnsiState()
+    });
+
+    const createOpenWebUiTimerState = () => ({
+        active: false,
+        startedAt: 0,
+        finishedAt: 0,
+        etaMs: null,
+        stageLabel: '',
+        finalLabel: '',
+        finalType: ''
+    });
+
+    const stripOpenWebUiAnsi = (value = '') => String(value || '').replace(/\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g, '');
+
+    const normalizeOpenWebUiTimerTimestamp = (value) => {
+        const numeric = Number(value);
+        if (Number.isFinite(numeric) && numeric > 0) return numeric;
+        const parsed = Date.parse(String(value || ''));
+        return Number.isFinite(parsed) ? parsed : Date.now();
+    };
+
+    const formatOpenWebUiDuration = (ms = 0) => {
+        const totalSeconds = Math.max(0, Math.round(Number(ms || 0) / 1000));
+        const hours = Math.floor(totalSeconds / 3600);
+        const minutes = Math.floor((totalSeconds % 3600) / 60);
+        const seconds = totalSeconds % 60;
+        if (hours > 0) {
+            return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+        }
+        return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+    };
+
+    const parseOpenWebUiDurationToken = (token = '') => {
+        const normalized = String(token || '').trim().replace(/^\[/, '').replace(/\]$/, '');
+        if (!normalized || normalized.includes('?')) return null;
+        const parts = normalized.split(':').map((piece) => Number.parseInt(piece, 10));
+        if (parts.some((value) => !Number.isFinite(value))) return null;
+        if (parts.length === 3) return ((parts[0] * 3600) + (parts[1] * 60) + parts[2]) * 1000;
+        if (parts.length === 2) return ((parts[0] * 60) + parts[1]) * 1000;
+        return null;
+    };
+
+    const setOpenWebUiTimerMessage = (message = '', type = '') => {
+        if (!openWebUiTimer) return;
+        openWebUiTimer.textContent = message;
+        openWebUiTimer.className = ['openwebui-launch-timer', type].filter(Boolean).join(' ');
+        openWebUiTimer.classList.toggle('hidden-panel', !String(message || '').trim());
+    };
+
+    const stopOpenWebUiTimerTicker = () => {
+        if (openWebUiTimerInterval) {
+            clearInterval(openWebUiTimerInterval);
+            openWebUiTimerInterval = null;
+        }
+    };
+
+    const updateOpenWebUiTimerDisplay = () => {
+        if (!openWebUiTimer) return;
+        if (!openWebUiTimerState.active && !openWebUiTimerState.finishedAt) {
+            setOpenWebUiTimerMessage('');
+            return;
+        }
+
+        const endAt = openWebUiTimerState.finishedAt || Date.now();
+        const startedAt = openWebUiTimerState.startedAt || endAt;
+        const elapsedMs = Math.max(0, endAt - startedAt);
+
+        if (openWebUiTimerState.finishedAt) {
+            const finalLabel = openWebUiTimerState.finalLabel || 'Ready in';
+            setOpenWebUiTimerMessage(`${finalLabel} ${formatOpenWebUiDuration(elapsedMs)}`, openWebUiTimerState.finalType);
+            return;
+        }
+
+        const parts = [`Elapsed ${formatOpenWebUiDuration(elapsedMs)}`];
+        if (Number.isFinite(openWebUiTimerState.etaMs) && openWebUiTimerState.etaMs >= 0) {
+            parts.push(`ETA ${formatOpenWebUiDuration(openWebUiTimerState.etaMs)}`);
+        } else {
+            parts.push('ETA calculating...');
+        }
+        if (openWebUiTimerState.stageLabel) {
+            parts.push(openWebUiTimerState.stageLabel);
+        }
+        setOpenWebUiTimerMessage(parts.join(' | '));
+    };
+
+    const beginOpenWebUiTimer = (stageLabel = 'Preparing Open WebUI...', startedAt = Date.now()) => {
+        openWebUiTimerState = {
+            ...createOpenWebUiTimerState(),
+            active: true,
+            startedAt: normalizeOpenWebUiTimerTimestamp(startedAt),
+            stageLabel: String(stageLabel || '').trim()
+        };
+        if (!openWebUiTimerInterval) {
+            openWebUiTimerInterval = setInterval(updateOpenWebUiTimerDisplay, 1000);
+        }
+        updateOpenWebUiTimerDisplay();
+    };
+
+    const finishOpenWebUiTimer = (finalLabel = 'Ready in', finalType = 'success', finishedAt = Date.now()) => {
+        const normalizedFinishedAt = normalizeOpenWebUiTimerTimestamp(finishedAt);
+        if (!openWebUiTimerState.startedAt) {
+            openWebUiTimerState.startedAt = normalizedFinishedAt;
+        }
+        openWebUiTimerState.active = false;
+        openWebUiTimerState.finishedAt = normalizedFinishedAt;
+        openWebUiTimerState.etaMs = 0;
+        openWebUiTimerState.finalLabel = finalLabel;
+        openWebUiTimerState.finalType = finalType;
+        updateOpenWebUiTimerDisplay();
+        stopOpenWebUiTimerTicker();
+    };
+
+    const resetOpenWebUiTimer = () => {
+        stopOpenWebUiTimerTicker();
+        openWebUiTimerState = createOpenWebUiTimerState();
+        setOpenWebUiTimerMessage('');
+    };
+
+    const ensureOpenWebUiTerminalLine = (type = 'info') => {
+        if (!openWebUiLog) return null;
+        const normalizedType = ['warn', 'error', 'success'].includes(type) ? type : 'info';
+        if (!openWebUiTerminalRenderState.currentLineEl) {
+            const line = document.createElement('div');
+            line.className = `line terminal-line ${normalizedType}`;
+            openWebUiLog.appendChild(line);
+            openWebUiTerminalRenderState.currentLineEl = line;
+        }
+        if (openWebUiTerminalRenderState.pendingOverwrite) {
+            openWebUiTerminalRenderState.currentLineEl.textContent = '';
+            openWebUiTerminalRenderState.currentLineEl.className = `line terminal-line ${normalizedType}`;
+            openWebUiTerminalRenderState.pendingOverwrite = false;
+            openWebUiTerminalRenderState.ansiState = createOpenWebUiAnsiState();
+        }
+        return openWebUiTerminalRenderState.currentLineEl;
+    };
+
+    const appendOpenWebUiBlankLine = (type = 'info') => {
+        if (!openWebUiLog) return;
+        const normalizedType = ['warn', 'error', 'success'].includes(type) ? type : 'info';
+        const line = document.createElement('div');
+        line.className = `line terminal-line ${normalizedType}`;
+        openWebUiLog.appendChild(line);
+    };
+
+    const applyOpenWebUiAnsiCodes = (codes = []) => {
+        const parsedCodes = Array.isArray(codes) && codes.length ? codes : ['0'];
+        for (let index = 0; index < parsedCodes.length; index += 1) {
+            const rawCode = String(parsedCodes[index] || '').trim();
+            const code = rawCode === '' ? 0 : Number.parseInt(rawCode, 10);
+            if (!Number.isFinite(code)) continue;
+
+            if (code === 38 || code === 48) {
+                const mode = Number.parseInt(parsedCodes[index + 1], 10);
+                if (mode === 5) index += 2;
+                else if (mode === 2) index += 4;
+                continue;
+            }
+
+            if (code === 0) {
+                openWebUiTerminalRenderState.ansiState = createOpenWebUiAnsiState();
+                continue;
+            }
+            if (code === 1) {
+                openWebUiTerminalRenderState.ansiState.bold = true;
+                continue;
+            }
+            if (code === 2) {
+                openWebUiTerminalRenderState.ansiState.dim = true;
+                continue;
+            }
+            if (code === 3) {
+                openWebUiTerminalRenderState.ansiState.italic = true;
+                continue;
+            }
+            if (code === 22) {
+                openWebUiTerminalRenderState.ansiState.bold = false;
+                openWebUiTerminalRenderState.ansiState.dim = false;
+                continue;
+            }
+            if (code === 23) {
+                openWebUiTerminalRenderState.ansiState.italic = false;
+                continue;
+            }
+            if (code === 39) {
+                openWebUiTerminalRenderState.ansiState.fg = '';
+                continue;
+            }
+            if (Object.prototype.hasOwnProperty.call(OPEN_WEBUI_ANSI_FG_COLORS, code)) {
+                openWebUiTerminalRenderState.ansiState.fg = OPEN_WEBUI_ANSI_FG_COLORS[code];
+            }
+        }
+    };
+
+    const appendOpenWebUiStyledText = (text = '', type = 'info') => {
+        if (!text) return;
+        const line = ensureOpenWebUiTerminalLine(type);
+        if (!line) return;
+        const span = document.createElement('span');
+        span.className = 'terminal-fragment';
+        if (openWebUiTerminalRenderState.ansiState.bold) span.classList.add('bold');
+        if (openWebUiTerminalRenderState.ansiState.italic) span.classList.add('italic');
+        if (openWebUiTerminalRenderState.ansiState.dim) span.classList.add('dim');
+        const resolvedColor = openWebUiTerminalRenderState.ansiState.fg || OPEN_WEBUI_LOG_TYPE_COLORS[type] || OPEN_WEBUI_LOG_TYPE_COLORS.info;
+        if (resolvedColor) span.style.color = resolvedColor;
+        span.textContent = text;
+        line.appendChild(span);
+    };
+
+    const renderOpenWebUiTerminalText = (text = '', type = 'info') => {
+        const cleaned = String(text || '').replace(/\x1B\[[0-9;?]*[A-LN-Za-ln-z]/g, '');
+        if (!cleaned) return;
+        const sgrPattern = /\x1B\[([0-9;]*)m/g;
+        let cursor = 0;
+        let match;
+        while ((match = sgrPattern.exec(cleaned))) {
+            if (match.index > cursor) {
+                appendOpenWebUiStyledText(cleaned.slice(cursor, match.index), type);
+            }
+            applyOpenWebUiAnsiCodes(String(match[1] || '').split(';'));
+            cursor = sgrPattern.lastIndex;
+        }
+        if (cursor < cleaned.length) {
+            appendOpenWebUiStyledText(cleaned.slice(cursor), type);
+        }
+    };
+
+    const appendOpenWebUiTerminalChunk = (chunk = '', type = 'info') => {
+        if (!openWebUiLog) return;
+        const text = String(chunk ?? '');
+        if (!text) return;
+
+        let buffer = '';
+        for (let index = 0; index < text.length; index += 1) {
+            const char = text[index];
+
+            if (char === '\r' || char === '\n') {
+                if (buffer) {
+                    renderOpenWebUiTerminalText(buffer, type);
+                    buffer = '';
+                }
+
+                if (char === '\r' && text[index + 1] === '\n') {
+                    openWebUiTerminalRenderState.currentLineEl = null;
+                    openWebUiTerminalRenderState.pendingOverwrite = false;
+                    index += 1;
+                    continue;
+                }
+
+                if (char === '\r') {
+                    openWebUiTerminalRenderState.pendingOverwrite = true;
+                    continue;
+                }
+
+                if (!openWebUiTerminalRenderState.currentLineEl) {
+                    appendOpenWebUiBlankLine(type);
+                }
+                openWebUiTerminalRenderState.currentLineEl = null;
+                openWebUiTerminalRenderState.pendingOverwrite = false;
+                continue;
+            }
+
+            buffer += char;
+        }
+
+        if (buffer) {
+            renderOpenWebUiTerminalText(buffer, type);
+        }
+
+        openWebUiLog.scrollTop = openWebUiLog.scrollHeight;
+    };
+
+    const ingestOpenWebUiTimerSignal = (message = '', meta = {}) => {
+        const observedAt = normalizeOpenWebUiTimerTimestamp(meta?.ts);
+        const lines = stripOpenWebUiAnsi(message).split(/\r?\n|\r/);
+
+        lines.forEach((rawLine) => {
+            const line = String(rawLine || '').replace(/^\[[^\]]+\]\s*/, '').trim();
+            if (!line) return;
+
+            if (/^Starting Open WebUI on /i.test(line)) {
+                beginOpenWebUiTimer('Starting Open WebUI', observedAt);
+                return;
+            }
+
+            const progressMatch = line.match(/^([^:]+):\s*(\d+)%\|.*?\|\s*(\d+)\/(\d+)\s*\[([^<\]]+)(?:<([^,\]]+))?/i);
+            if (progressMatch) {
+                const stageBase = String(progressMatch[1] || '').replace(/\s+/g, ' ').trim();
+                const percent = Math.max(0, Math.min(100, Number.parseInt(progressMatch[2], 10) || 0));
+                const elapsedMs = parseOpenWebUiDurationToken(progressMatch[5]);
+                const remainingMs = parseOpenWebUiDurationToken(progressMatch[6]);
+
+                if (!openWebUiTimerState.active || openWebUiTimerState.finishedAt) {
+                    beginOpenWebUiTimer(stageBase || 'Preparing Open WebUI...', observedAt);
+                }
+
+                if (Number.isFinite(elapsedMs)) {
+                    const inferredStart = observedAt - elapsedMs;
+                    if (!openWebUiTimerState.startedAt || inferredStart < openWebUiTimerState.startedAt) {
+                        openWebUiTimerState.startedAt = inferredStart;
+                    }
+                }
+
+                openWebUiTimerState.active = true;
+                openWebUiTimerState.finishedAt = 0;
+                openWebUiTimerState.finalLabel = '';
+                openWebUiTimerState.finalType = '';
+                openWebUiTimerState.stageLabel = stageBase ? `${stageBase} (${percent}%)` : `Progress ${percent}%`;
+                openWebUiTimerState.etaMs = Number.isFinite(remainingMs) ? remainingMs : null;
+                updateOpenWebUiTimerDisplay();
+                return;
+            }
+
+            if (/Waiting for application startup/i.test(line)) {
+                if (!openWebUiTimerState.active || openWebUiTimerState.finishedAt) {
+                    beginOpenWebUiTimer('Waiting for application startup', observedAt);
+                }
+                openWebUiTimerState.stageLabel = 'Waiting for application startup';
+                openWebUiTimerState.etaMs = null;
+                updateOpenWebUiTimerDisplay();
+                return;
+            }
+
+            if (/Started server process/i.test(line)) {
+                if (!openWebUiTimerState.active || openWebUiTimerState.finishedAt) {
+                    beginOpenWebUiTimer('Starting local server', observedAt);
+                }
+                openWebUiTimerState.stageLabel = 'Starting local server';
+                openWebUiTimerState.etaMs = null;
+                updateOpenWebUiTimerDisplay();
+                return;
+            }
+
+            if (/^Activating Miniconda env:/i.test(line)) {
+                if (!openWebUiTimerState.active || openWebUiTimerState.finishedAt) {
+                    beginOpenWebUiTimer('Activating Miniconda environment', observedAt);
+                }
+                openWebUiTimerState.stageLabel = 'Activating Miniconda environment';
+                openWebUiTimerState.etaMs = null;
+                updateOpenWebUiTimerDisplay();
+                return;
+            }
+
+            if (/^First launch can take a few minutes/i.test(line)) {
+                if (!openWebUiTimerState.active || openWebUiTimerState.finishedAt) {
+                    beginOpenWebUiTimer('Preparing first launch', observedAt);
+                }
+                openWebUiTimerState.stageLabel = 'Preparing first launch';
+                openWebUiTimerState.etaMs = null;
+                updateOpenWebUiTimerDisplay();
+                return;
+            }
+
+            if (/Open WebUI is available at /i.test(line) || /^Opened https?:\/\//i.test(line)) {
+                finishOpenWebUiTimer('Ready in', 'success', observedAt);
+                return;
+            }
+
+            if (/Open WebUI stopped\./i.test(line)) {
+                finishOpenWebUiTimer('Stopped after', '', observedAt);
+                return;
+            }
+
+            if (/Open WebUI failed|Open WebUI did not open |exited before it became available|Local URL missing from launcher result/i.test(line)) {
+                finishOpenWebUiTimer('Failed after', 'error', observedAt);
+                return;
+            }
+
+            if (/Open WebUI process exited|Open WebUI exited \(/i.test(line)) {
+                finishOpenWebUiTimer('Exited after', 'error', observedAt);
+            }
+        });
+    };
+
     const resetOpenWebUiLog = () => {
         if (openWebUiLog) openWebUiLog.innerHTML = '';
         openWebUiLogLastCount = 0;
+        openWebUiTerminalRenderState = createOpenWebUiTerminalRenderState();
     };
 
     const setOpenWebUiStatusMessage = (message, type = '') => {
@@ -1737,13 +2448,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         openWebUiStatus.className = `omchat-launch-status ${type}`.trim();
     };
 
-    const appendOpenWebUiLog = (message, type = 'info') => {
-        if (!openWebUiLog) return;
-        const line = document.createElement('div');
-        line.className = `line ${type}`;
-        line.textContent = message;
-        openWebUiLog.appendChild(line);
-        openWebUiLog.scrollTop = openWebUiLog.scrollHeight;
+    const appendOpenWebUiLog = (message, type = 'info', meta = {}) => {
+        ingestOpenWebUiTimerSignal(message, meta);
+        appendOpenWebUiTerminalChunk(message, type);
     };
 
     const setOpenWebUiCommands = (commands = [], note = '') => {
@@ -1792,10 +2499,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             const fresh = logs.slice(openWebUiLogLastCount);
             openWebUiLogLastCount = logs.length;
             fresh.forEach((entry) => {
-                const ts = entry?.ts ? new Date(entry.ts).toLocaleTimeString() : '';
                 const label = entry?.type || 'info';
-                const prefix = ts ? `[${ts}] ` : '';
-                appendOpenWebUiLog(`${prefix}${entry?.message || ''}`, label === 'warn' ? 'warn' : label);
+                appendOpenWebUiLog(String(entry?.message || ''), label === 'warn' ? 'warn' : label, { ts: entry?.ts });
             });
         } catch (_) {}
     };
@@ -1810,9 +2515,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (window.browserAPI?.openWebUI?.onOutput) {
         window.browserAPI.openWebUI.onOutput((payload = {}) => {
-            const msg = String(payload?.data || '').trim();
+            const msg = String(payload?.data ?? '');
             if (!msg) return;
-            appendOpenWebUiLog(msg, payload?.type || 'info');
+            appendOpenWebUiLog(msg, payload?.type || 'info', { ts: Date.now() });
         });
     }
     if (window.browserAPI?.openWebUI?.onExit) {
@@ -1828,13 +2533,17 @@ document.addEventListener('DOMContentLoaded', async () => {
                 localUrl: openWebUiTabUrl || ''
             };
             setOpenWebUiStatusMessage(message, isError ? 'error' : '');
-            appendOpenWebUiLog(message, isError ? 'error' : 'info');
+            if (openWebUiTimerState.active) {
+                finishOpenWebUiTimer(manualStop ? 'Stopped after' : 'Exited after', isError ? 'error' : '', Date.now());
+            }
+            appendOpenWebUiLog(message, isError ? 'error' : 'info', { ts: Date.now() });
         });
     }
 
     const showOpenWebUiCommands = (state = {}) => {
         setOpenWebUiVisible(true);
         resetOpenWebUiLog();
+        resetOpenWebUiTimer();
         setOpenWebUiMode('commands');
         setOpenWebUiStatusMessage(state?.title || 'Open WebUI setup required.', '');
         setOpenWebUiCommands(state?.commands || [], state?.message || '');
@@ -1845,11 +2554,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         setOpenWebUiVisible(true);
         setOpenWebUiCommands([], '');
         resetOpenWebUiLog();
+        resetOpenWebUiTimer();
+        beginOpenWebUiTimer('Checking Open WebUI...');
         setOpenWebUiMode('commands');
         setOpenWebUiStatusMessage('Checking Open WebUI...', '');
 
         if (openWebUiProbeState.checked && openWebUiProbeState.running) {
             if (openOpenWebUiTab(openWebUiProbeState.localUrl)) {
+                resetOpenWebUiTimer();
                 setOpenWebUiVisibleSafe(false);
                 return;
             }
@@ -1858,6 +2570,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const quickProbe = await refreshOpenWebUiProbe();
         if (quickProbe?.running) {
             if (openOpenWebUiTab(quickProbe.localUrl)) {
+                resetOpenWebUiTimer();
                 setOpenWebUiVisibleSafe(false);
                 return;
             }
@@ -1868,6 +2581,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             setOpenWebUiMode('commands');
             setOpenWebUiStatusMessage(status?.error || 'Unable to check Open WebUI status.', 'error');
             setOpenWebUiCommands([], 'Open WebUI status could not be read.');
+            finishOpenWebUiTimer('Failed after', 'error');
             return;
         }
 
@@ -1879,6 +2593,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 localUrl: runningUrl
             };
             if (openOpenWebUiTab(runningUrl)) {
+                resetOpenWebUiTimer();
                 setOpenWebUiVisibleSafe(false);
                 return;
             }
@@ -1891,6 +2606,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         setOpenWebUiMode('logs');
         setOpenWebUiStatusMessage(status.phase === 'running' ? 'Open WebUI is already running. Opening local UI...' : 'Starting Open WebUI...', '');
+        openWebUiTimerState.stageLabel = 'Starting Open WebUI';
+        updateOpenWebUiTimerDisplay();
         startOpenWebUiLogPolling();
 
         try {
@@ -1903,14 +2620,16 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }
                 const message = result?.error || 'Open WebUI failed to start.';
                 setOpenWebUiStatusMessage(message, 'error');
-                appendOpenWebUiLog(message, 'error');
+                finishOpenWebUiTimer('Failed after', 'error');
+                appendOpenWebUiLog(message, 'error', { ts: Date.now() });
                 return;
             }
 
             const localUrl = String(result.localUrl || status.localUrl || '').trim();
             if (!localUrl) {
                 setOpenWebUiStatusMessage('Open WebUI started but no local URL was returned.', 'error');
-                appendOpenWebUiLog('Local URL missing from launcher result.', 'error');
+                finishOpenWebUiTimer('Failed after', 'error');
+                appendOpenWebUiLog('Local URL missing from launcher result.', 'error', { ts: Date.now() });
                 return;
             }
 
@@ -1921,32 +2640,58 @@ document.addEventListener('DOMContentLoaded', async () => {
             };
             openOpenWebUiTab(localUrl);
             setOpenWebUiStatusMessage(result.alreadyRunning ? 'Open WebUI is already online.' : 'Open WebUI is online. Opening local UI...', 'success');
-            appendOpenWebUiLog(`Opened ${localUrl}`, 'success');
+            finishOpenWebUiTimer('Ready in', 'success');
+            appendOpenWebUiLog(`Opened ${localUrl}`, 'success', { ts: Date.now() });
         } catch (error) {
             const message = error?.message || 'Open WebUI failed to start.';
             setOpenWebUiStatusMessage(message, 'error');
-            appendOpenWebUiLog(message, 'error');
+            finishOpenWebUiTimer('Failed after', 'error');
+            appendOpenWebUiLog(message, 'error', { ts: Date.now() });
         }
     };
 
-    const setBookmarkPanelVisible       = (v) => bookmarkTopPanel?.classList.toggle('hidden', !v);
-    const setNavigationTopPanelVisible  = (v) => navigationTopPanel?.classList.toggle('hidden', !v);
+    const setGoogleAppsPanelVisible     = (v) => {
+        googleAppsPanel?.classList.toggle('hidden', !v);
+        quickPanelGoogle?.setAttribute('aria-expanded', v ? 'true' : 'false');
+        syncSecondaryTopPanelBackdrop();
+    };
+    const setCustomAppsPanelVisible     = (v) => {
+        customAppsPanel?.classList.toggle('hidden', !v);
+        quickPanelApps?.setAttribute('aria-expanded', v ? 'true' : 'false');
+        syncSecondaryTopPanelBackdrop();
+    };
+    const setBookmarkPanelVisible       = (v) => {
+        bookmarkTopPanel?.classList.toggle('hidden', !v);
+        syncSecondaryTopPanelBackdrop();
+    };
+    const setNavigationTopPanelVisible  = (v) => {
+        navigationTopPanel?.classList.toggle('hidden', !v);
+        syncSecondaryTopPanelBackdrop();
+    };
     const setBookmarkEditorVisible      = (v) => bookmarkEditorOverlay?.classList.toggle('hidden', !v);
+    const setCustomAppEditorVisible     = (v) => customAppEditorOverlay?.classList.toggle('hidden', !v);
     const setOmChatLaunchVisibleSafe    = (v) => {
         setOmChatLaunchVisible(v);
         if (!v) stopOmChatLogPolling();
     };
     const setOpenWebUiVisibleSafe       = (v) => {
         setOpenWebUiVisible(v);
-        if (!v) stopOpenWebUiLogPolling();
+        if (!v) {
+            stopOpenWebUiLogPolling();
+            resetOpenWebUiTimer();
+        }
     };
 
     const setYouTubeAddonVisible = (visible) => {
         if (!youtubeAddonPanel) return;
         youtubeAddonPanel.classList.toggle('hidden', !visible);
+        syncSecondaryTopPanelBackdrop();
     };
 
-    const setDuckAiPanelVisible = (visible) => duckAiPanel?.classList.toggle('hidden', !visible);
+    const setDuckAiPanelVisible = (visible) => {
+        duckAiPanel?.classList.toggle('hidden', !visible);
+        syncSecondaryTopPanelBackdrop();
+    };
 
     const setFeatureTileAvailability = (button, enabled, activeLabel, inactiveLabel) => {
         if (!button) return;
@@ -1971,7 +2716,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     const getDuckAiChatSettings = (settings = cachedSettings) => ({
-        hideSidebar: settings?.aiChat?.duckAiHideSidebar === true
+        hideSidebar: true
     });
 
     const canShowYouTubeAddon = () => {
@@ -2001,11 +2746,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     const canShowSessionGuardPanel = () => {
-        const t = getActiveTabState();
-        if (!t) return false;
-        if (t.isSystemPage || t.isTextStudio || t.isHistoryPage || t.isGamesPage
-            || t.isDefensePage || t.isHomePage || t.isTodoPage || t.isScraberPage || t.isServerOperatorPage) return false;
-        return isSessionGuardProtectedDomain(getActiveTabUrl());
+        const currentUrl = getActiveTabUrl();
+        if (!currentUrl) return false;
+        if (!tabManager?.isWebsiteUrl?.(currentUrl)) return false;
+        return isSessionGuardProtectedDomain(currentUrl);
     };
 
     // Debounced to prevent repeated reflows when tab navigation fires rapidly.
@@ -2027,7 +2771,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!youtubeAddonPanel) return;
         const yt = getYouTubeAddonSettings(cachedSettings);
         if (!(yt.enabled && isYouTubeUrl(getActiveTabUrl()))) {
-            youtubeAddonPanel.classList.add('hidden');
+            setYouTubeAddonVisible(false);
         }
         if (youtubeAddonToggleHome)     youtubeAddonToggleHome.checked      = !!yt.cleanUi;
         if (youtubeAddonToggleBlur)     youtubeAddonToggleBlur.checked      = !!yt.blurThumbnails;
@@ -2038,7 +2782,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const syncDuckAiPanel = () => {
         if (!duckAiPanel) return;
-        if (!canShowDuckAiPanel()) duckAiPanel.classList.add('hidden');
+        if (!canShowDuckAiPanel()) setDuckAiPanelVisible(false);
         if (duckAiToggleSidebar) duckAiToggleSidebar.checked = !!getDuckAiChatSettings(cachedSettings).hideSidebar;
     };
 
@@ -2057,6 +2801,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const toggleNavigationTopPanel = () => {
         hideFeaturesHomePopup();
+        setGoogleAppsPanelVisible(false);
+        setCustomAppsPanelVisible(false);
         setYouTubeAddonVisible(false);
         setDuckAiPanelVisible(false);
         setBookmarkPanelVisible(false);
@@ -2066,9 +2812,93 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (isHidden) syncNavigationTopPanelButtons();
     };
 
+    const toggleGoogleAppsPanel = () => {
+        hideFeaturesHomePopup();
+        setCustomAppsPanelVisible(false);
+        setNavigationTopPanelVisible(false);
+        setYouTubeAddonVisible(false);
+        setDuckAiPanelVisible(false);
+        setBookmarkPanelVisible(false);
+        setBookmarkEditorVisible(false);
+        const isHidden = googleAppsPanel?.classList.contains('hidden');
+        setGoogleAppsPanelVisible(isHidden);
+    };
+
+    const openCustomAppEditor = () => {
+        if (customTopApps.length >= CUSTOM_TOP_APPS_MAX) {
+            setCustomAppEditorStatus(`You can save up to ${CUSTOM_TOP_APPS_MAX} apps.`, 'error');
+            setCustomAppEditorVisible(true);
+            return;
+        }
+        if (customAppName) customAppName.value = '';
+        if (customAppUrl) customAppUrl.value = '';
+        setCustomAppEditorStatus(`Save up to ${CUSTOM_TOP_APPS_MAX} apps in this panel.`, '');
+        setCustomAppEditorVisible(true);
+        customAppName?.focus();
+    };
+
+    const closeCustomAppEditor = () => {
+        setCustomAppEditorVisible(false);
+        setCustomAppEditorStatus(`Save up to ${CUSTOM_TOP_APPS_MAX} apps in this panel.`, '');
+    };
+
+    const addCustomTopApp = () => {
+        const name = normalizeCustomAppName(customAppName?.value || '');
+        const url = normalizeCustomAppUrl(customAppUrl?.value || '');
+        if (!name) {
+            setCustomAppEditorStatus('Please enter an app name.', 'error');
+            customAppName?.focus();
+            return;
+        }
+        if (!url) {
+            setCustomAppEditorStatus('Please enter a valid http or https URL.', 'error');
+            customAppUrl?.focus();
+            return;
+        }
+        if (customTopApps.length >= CUSTOM_TOP_APPS_MAX) {
+            setCustomAppEditorStatus(`Only ${CUSTOM_TOP_APPS_MAX} apps can be saved here.`, 'error');
+            return;
+        }
+        if (customTopApps.some((entry) => entry.url === url)) {
+            setCustomAppEditorStatus('That app URL is already saved.', 'error');
+            customAppUrl?.focus();
+            return;
+        }
+        customTopApps.push({
+            id: `app-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            name,
+            url
+        });
+        saveCustomTopApps();
+        renderCustomAppsPanel();
+        closeCustomAppEditor();
+    };
+
+    const removeCustomTopApp = (appId) => {
+        const id = String(appId || '').trim();
+        if (!id) return;
+        customTopApps = customTopApps.filter((entry) => entry.id !== id);
+        saveCustomTopApps();
+        renderCustomAppsPanel();
+    };
+
+    const toggleCustomAppsPanel = () => {
+        hideFeaturesHomePopup();
+        setGoogleAppsPanelVisible(false);
+        setNavigationTopPanelVisible(false);
+        setYouTubeAddonVisible(false);
+        setDuckAiPanelVisible(false);
+        setBookmarkPanelVisible(false);
+        setBookmarkEditorVisible(false);
+        const isHidden = customAppsPanel?.classList.contains('hidden');
+        setCustomAppsPanelVisible(isHidden);
+    };
+
     const toggleYouTubeAddonPanel = () => {
         if (!canShowYouTubeAddon()) return;
         setNavigationTopPanelVisible(false);
+        setGoogleAppsPanelVisible(false);
+        setCustomAppsPanelVisible(false);
         setDuckAiPanelVisible(false);
         setSessionGuardVisible(false);
         setBookmarkPanelVisible(false);
@@ -2079,6 +2909,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     const toggleDuckAiPanel = () => {
         if (!canShowDuckAiPanel()) return;
         setNavigationTopPanelVisible(false);
+        setGoogleAppsPanelVisible(false);
+        setCustomAppsPanelVisible(false);
         setYouTubeAddonVisible(false);
         setSessionGuardVisible(false);
         setBookmarkPanelVisible(false);
@@ -2192,6 +3024,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const openBookmarkPanel = async (tab = getActiveTabState()) => {
         hideFeaturesHomePopup();
+        setGoogleAppsPanelVisible(false);
+        setCustomAppsPanelVisible(false);
         setNavigationTopPanelVisible(false);
         setYouTubeAddonVisible(false);
         setDuckAiPanelVisible(false);
@@ -2230,6 +3064,39 @@ document.addEventListener('DOMContentLoaded', async () => {
     const settingsAPI = window.browserAPI?.settings || {
         get: async () => ({}),
         save: async () => false
+    };
+
+    const persistWebsiteUiPreferencesForUrl = async (rawUrl = '', partialPreferences = {}) => {
+        const origin = normalizeWebsiteOrigin(rawUrl);
+        if (!origin) return false;
+        try {
+            if (!cachedSettings) cachedSettings = await settingsAPI.get();
+            const nextWebsiteUiPreferences = {
+                ...getWebsiteUiPreferences(cachedSettings)
+            };
+            const merged = {
+                ...(nextWebsiteUiPreferences[origin] || {}),
+                ...(partialPreferences || {})
+            };
+            if (merged.hideWindowControls === true) {
+                nextWebsiteUiPreferences[origin] = { hideWindowControls: true };
+            } else {
+                delete nextWebsiteUiPreferences[origin];
+            }
+            const nextSettings = {
+                ...(cachedSettings || {}),
+                websiteUiPreferences: nextWebsiteUiPreferences
+            };
+            cachedSettings = nextSettings;
+            tabManager?.updateSettings?.(nextSettings);
+            syncWindowControlsVisibility();
+            const success = await settingsAPI.save(nextSettings);
+            if (!success) console.warn('[Tab Context Menu] Failed to save website UI preferences.');
+            return success;
+        } catch (error) {
+            console.warn('[Tab Context Menu] Failed to persist website UI preferences:', error);
+            return false;
+        }
     };
 
     const persistYouTubeAddonPreferences = async (partialYoutubeAddon = {}, options = {}) => {
@@ -2309,6 +3176,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 syncDuckAiPanel();
                 syncSiteToolQuickLaunchButtons();
                 tabManager?.updateSettings?.(cachedSettings);
+                syncWindowControlsVisibility();
             }
         } catch (e) {
             syncYouTubeAddonPanel();
@@ -2493,11 +3361,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     // ── FILE HANDLING ──────────────────────────────────────────────────────────
     // resolveOpenedFileTarget used to branch on extension but always returned
     // filePath – simplified to a direct pass-through.
-    const resolveOpenedFileTarget = (filePath = '') => filePath;
 
     // ── SIDEBAR NAVIGATION ────────────────────────────────────────────────────
     const handleSidebarHomeAction = () => {
         const willShowFeatures = featuresHomePopup?.classList.contains('hidden') ?? false;
+        setGoogleAppsPanelVisible(false);
+        setCustomAppsPanelVisible(false);
         setYouTubeAddonVisible(false);
         setDuckAiPanelVisible(false);
         setBookmarkPanelVisible(false);
@@ -2521,6 +3390,83 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     // ── DOWNLOADS TOAST ────────────────────────────────────────────────────────
+    const escapeNotificationText = (value = '') => escapeHtml(String(value || ''));
+
+    const removeSiteNotification = (id) => {
+        const index = activeSiteNotifications.findIndex(item => item.id === id);
+        if (index === -1) return;
+        const [entry] = activeSiteNotifications.splice(index, 1);
+        if (entry?.timer) clearTimeout(entry.timer);
+        if (!entry?.element) return;
+        entry.element.classList.add('is-hiding');
+        setTimeout(() => entry.element.remove(), 240);
+    };
+
+    const showSiteNotification = (payload = {}) => {
+        if (!siteNotificationStack) return;
+
+        const title = String(payload.title || '').trim() || 'Notification';
+        const message = String(payload.message ?? payload.body ?? '').trim();
+        const source = String(payload.source || '').trim();
+        const type = String(payload.type || '').trim().toLowerCase() || 'info';
+        const icon = String(payload.icon || '').trim();
+        const notificationId = `site-note-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+        const card = document.createElement('div');
+        card.className = `site-notification-card type-${escapeNotificationText(type)}`;
+        card.tabIndex = 0;
+
+        const iconMarkup = icon
+            ? `<img src="${escapeNotificationText(icon)}" alt="">`
+            : `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a7 7 0 0 0-7 7v3.59L3.29 14.3A1 1 0 0 0 4 16h16a1 1 0 0 0 .71-1.7L19 12.59V9a7 7 0 0 0-7-7zm0 20a3 3 0 0 0 2.83-2H9.17A3 3 0 0 0 12 22z"/></svg>`;
+
+        card.innerHTML = `
+            <div class="site-notification-icon">${iconMarkup}</div>
+            <div class="site-notification-body">
+                <div class="site-notification-title">${escapeNotificationText(title)}</div>
+                ${source ? `<div class="site-notification-source">${escapeNotificationText(source)}</div>` : ''}
+                ${message ? `<div class="site-notification-message">${escapeNotificationText(message)}</div>` : ''}
+            </div>
+            <button class="site-notification-close" type="button" aria-label="Close notification">x</button>
+        `;
+
+        const closeButton = card.querySelector('.site-notification-close');
+        closeButton?.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            removeSiteNotification(notificationId);
+        });
+
+        const activateRelatedTab = () => {
+            const targetTabId = payload?.tabId;
+            if (targetTabId != null && tabManager?.setActiveTab) {
+                tabManager.setActiveTab(targetTabId);
+            } else if (payload?.url) {
+                tabManager?.createTab?.(payload.url);
+            }
+            removeSiteNotification(notificationId);
+        };
+
+        if (payload?.tabId != null || payload?.url) {
+            card.style.cursor = 'pointer';
+            card.addEventListener('click', activateRelatedTab);
+            card.addEventListener('keydown', (event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    activateRelatedTab();
+                }
+            });
+        }
+
+        siteNotificationStack.prepend(card);
+        const timer = setTimeout(() => removeSiteNotification(notificationId), type === 'error' || type === 'warning' ? 7000 : 5600);
+        activeSiteNotifications.unshift({ id: notificationId, element: card, timer });
+
+        while (activeSiteNotifications.length > 4) {
+            const oldest = activeSiteNotifications[activeSiteNotifications.length - 1];
+            removeSiteNotification(oldest?.id);
+        }
+    };
+
     const downloadsBridge = window.browserAPI?.downloads;
 
     if (dlCancelBtn) {
@@ -2530,6 +3476,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (!activeToastDownloadId) return;
             if (!downloadsBridge?.cancel) return;
             dlCancelBtn.disabled = true;
+            if (dlStatus) dlStatus.textContent = 'Cancelling...';
             try {
                 await downloadsBridge.cancel(activeToastDownloadId);
             } catch (error) {
@@ -2592,6 +3539,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     // ── UI COMPONENT INIT ──────────────────────────────────────────────────────
+    if (window.browserAPI?.notifications?.onReceive) {
+        window.browserAPI.notifications.onReceive((payload) => {
+            showSiteNotification(payload || {});
+        });
+    }
+
     let sidePanel = null;
     try { sidePanel = new SidePanel(); } catch (error) { console.error('[Renderer] Failed to initialize SidePanel', error); }
 
@@ -2689,6 +3642,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const ctxBookmarkTab = document.getElementById('ctx-bookmark-tab');
     const ctxCopyUrl     = document.getElementById('ctx-copy-url');
     const ctxDarkMode    = document.getElementById('ctx-dark-mode');
+    const ctxHideWindowControls = ctxHideWindowControlsMenuItem;
 
     if (ctxBookmarkTab) ctxBookmarkTab.onclick = () => {
         const tab = tabManager.tabs.find(t => t.id === currentTabContextId);
@@ -2705,11 +3659,29 @@ document.addEventListener('DOMContentLoaded', async () => {
         closeAllContextMenus();
         if (tabId) toggleDarkModeForTab(tabId);
     };
+    if (ctxHideWindowControls) ctxHideWindowControls.onclick = async () => {
+        const tab = tabManager.tabs.find(t => t.id === currentTabContextId);
+        const tabUrl = getTabRuntimeUrl(tab);
+        closeAllContextMenus();
+        if (!isHttpWebsiteUrl(tabUrl)) return;
+        const nextHiddenState = !isWindowControlsHiddenForUrl(tabUrl);
+        await persistWebsiteUiPreferencesForUrl(tabUrl, { hideWindowControls: nextHiddenState });
+    };
 
     // ── QUICK-PANEL BUTTONS ────────────────────────────────────────────────────
+    googleAppsGrid?.addEventListener('click', (event) => {
+        const button = event.target instanceof Element ? event.target.closest('.google-app-launch') : null;
+        if (!button) return;
+        const targetUrl = String(button.getAttribute('data-url') || '').trim();
+        if (!targetUrl) return;
+        openUrlInCurrentTab(targetUrl);
+    });
+
+    if (quickPanelGoogle)       quickPanelGoogle.onclick       = () => toggleGoogleAppsPanel();
     if (quickPanelBookmarks)    quickPanelBookmarks.onclick    = () => openBookmarkPanel();
     if (quickPanelNavigation)   quickPanelNavigation.onclick   = () => toggleNavigationTopPanel();
     if (quickPanelSessionGuard) quickPanelSessionGuard.onclick = () => { if (canShowSessionGuardPanel()) { hideFeaturesHomePopup(); toggleSessionGuardPanel(); } };
+    if (quickPanelApps)         quickPanelApps.onclick         = () => { hideFeaturesHomePopup(); toggleCustomAppsPanel(); };
     if (quickPanelYoutubeAddon) quickPanelYoutubeAddon.onclick = () => { if (canShowYouTubeAddon()) { hideFeaturesHomePopup(); toggleYouTubeAddonPanel(); } };
     if (quickPanelDuckAi)       quickPanelDuckAi.onclick       = () => { if (canShowDuckAiPanel())  { hideFeaturesHomePopup(); toggleDuckAiPanel();       } };
     if (quickPanelScraper)      quickPanelScraper.onclick      = () => { hideFeaturesHomePopup(); openAppTab(SCRABER_URL); };
@@ -2730,9 +3702,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (event.target === omchatLaunchOverlay) setOmChatLaunchVisibleSafe(false);
     });
     openWebUiClose?.addEventListener('click', () => setOpenWebUiVisibleSafe(false));
-    openWebUiOverlay?.addEventListener('mousedown', (event) => {
-        if (event.target === openWebUiOverlay) setOpenWebUiVisibleSafe(false);
-    });
 
     // ── BOOKMARK EDITOR BINDINGS ───────────────────────────────────────────────
     bookmarkEditorCancel?.addEventListener('click', () => { setBookmarkEditorVisible(false); pendingBookmarkTab = null; });
@@ -2747,6 +3716,36 @@ document.addEventListener('DOMContentLoaded', async () => {
     bookmarkEditorName?.addEventListener('keydown', _saveOnEnter);
     bookmarkEditorIcon?.addEventListener('keydown', _saveOnEnter);
     bookmarkEditorSave?.addEventListener('click',   () => { if (pendingBookmarkTab) saveCurrentTabAsBookmark(pendingBookmarkTab); });
+    customAppEditorCancel?.addEventListener('click', closeCustomAppEditor);
+    customAppEditorOverlay?.addEventListener('mousedown', (event) => {
+        if (event.target === customAppEditorOverlay) closeCustomAppEditor();
+    });
+    const _saveCustomAppOnEnter = (event) => {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            addCustomTopApp();
+        }
+    };
+    customAppName?.addEventListener('keydown', _saveCustomAppOnEnter);
+    customAppUrl?.addEventListener('keydown', _saveCustomAppOnEnter);
+    customAppEditorSave?.addEventListener('click', addCustomTopApp);
+    customAppsGrid?.addEventListener('click', (event) => {
+        const trigger = event.target.closest('[data-action]');
+        const action = String(trigger?.dataset?.action || '');
+        if (!trigger || !action) return;
+        if (action === 'add') {
+            openCustomAppEditor();
+            return;
+        }
+        if (action === 'open') openUrlInCurrentTab(trigger.dataset.url || '');
+    });
+    customAppsGrid?.addEventListener('contextmenu', (event) => {
+        const trigger = event.target.closest('.custom-app-launch[data-app-id]');
+        if (!trigger) return;
+        event.preventDefault();
+        event.stopPropagation();
+        removeCustomTopApp(trigger.dataset.appId || '');
+    });
 
     // ── MERGED KEYDOWN HANDLER ────────────────────────────────────────────────
     // Previously 4 separate keydown listeners; merged into one delegation pass.
@@ -2766,9 +3765,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (e.key === 'Escape') {
             if (searchSystem.isVisible()) searchSystem.hide();
             hideFeaturesHomePopup();
+            setCustomAppsPanelVisible(false);
             setNavigationTopPanelVisible(false);
             setBookmarkPanelVisible(false);
             setBookmarkEditorVisible(false);
+            closeCustomAppEditor();
             setOmChatLaunchVisibleSafe(false);
             setOpenWebUiVisibleSafe(false);
             if (imageDlOverlay) imageDlOverlay.classList.add('hidden');
@@ -2797,6 +3798,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         if (featuresHomePopup && !featuresHomePopup.classList.contains('hidden')) {
             if (!featuresHomePopup.contains(e.target) && !btnNavHome?.contains?.(e.target)) hideFeaturesHomePopup();
+        }
+        if (googleAppsPanel && !googleAppsPanel.classList.contains('hidden')) {
+            if (!googleAppsPanel.contains(e.target) && !quickPanelGoogle?.contains?.(e.target)) setGoogleAppsPanelVisible(false);
+        }
+        if (customAppsPanel && !customAppsPanel.classList.contains('hidden')) {
+            if (!customAppsPanel.contains(e.target) && !quickPanelApps?.contains?.(e.target)) setCustomAppsPanelVisible(false);
         }
         if (navigationTopPanel && !navigationTopPanel.classList.contains('hidden')) {
             if (!navigationTopPanel.contains(e.target) && !quickPanelNavigation?.contains?.(e.target)) setNavigationTopPanelVisible(false);
@@ -2858,7 +3865,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (window.browserAPI.onOpenFile) {
         window.browserAPI.onOpenFile((filePath) => {
-            tabManager.createTab(resolveOpenedFileTarget(filePath));
+            tabManager.createTab(filePath);
             if (searchSystem.isVisible()) searchSystem.hide();
         });
     }
@@ -2894,6 +3901,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     // ── STARTUP ────────────────────────────────────────────────────────────────
+    renderGoogleAppsPanel();
+    loadCustomTopApps();
+    renderCustomAppsPanel();
     setupYouTubeAddonEvents();
     setupDuckAiPanelEvents();
     refreshBookmarks();

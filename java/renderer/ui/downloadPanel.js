@@ -105,9 +105,25 @@ export class DownloadPanel {
     }
     if (item.state === 'paused') return `Paused - ${percent}%`;
     if (item.state === 'completed') return `Completed${sizeLabel ? ` - ${sizeLabel}` : ''}`;
-    if (item.state === 'interrupted' || item.state === 'cancelled') return 'Interrupted';
+    if (item.state === 'cancelled') return item.reason ? `Cancelled - ${item.reason}` : 'Cancelled';
+    if (item.state === 'interrupted') return 'Interrupted';
     if (item.state === 'blocked') return `Blocked${item.reason ? ` - ${item.reason}` : ''}`;
     return 'Pending';
+  }
+
+  applyLocalDownloadUpdate(id, patch = {}) {
+    const targetId = String(id || '').trim();
+    if (!targetId) return;
+
+    if (this.active.has(targetId)) {
+      this.active.set(targetId, { ...this.active.get(targetId), ...patch, id: targetId });
+      return;
+    }
+
+    const index = (this.history || []).findIndex((item) => String(item?.id || '').trim() === targetId);
+    if (index >= 0) {
+      this.history[index] = { ...this.history[index], ...patch, id: targetId };
+    }
   }
 
   shortenPath(pathStr) {
@@ -188,7 +204,11 @@ export class DownloadPanel {
       else if (action === 'folder') await window.browserAPI.downloads.showInFolder(id);
       else if (action === 'pause') await window.browserAPI.downloads.pause(id);
       else if (action === 'resume') await window.browserAPI.downloads.resume(id);
-      else if (action === 'cancel') await window.browserAPI.downloads.cancel(id);
+      else if (action === 'cancel') {
+        this.applyLocalDownloadUpdate(id, { state: 'cancelled', reason: 'Cancelled by user' });
+        this.render();
+        await window.browserAPI.downloads.cancel(id);
+      }
     } catch (err) {
       console.error(`[Downloads] ${action} failed`, err);
     }

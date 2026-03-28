@@ -128,12 +128,14 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "Om-X",
+      "installerIcon": "assets/icons/app.ico",
+      "uninstallerIcon": "assets/icons/app.ico",
+      "installerHeaderIcon": "assets/icons/app.ico",
       "deleteAppDataOnUninstall": false,
       "perMachine": false
     },
     "mac": {
       "target": "dmg",
-      "icon": "assets/icons/app.icns",
       "category": "public.app-category.productivity",
       "extendInfo": {
         "CFBundleURLTypes": [
@@ -149,7 +151,6 @@
     },
     "linux": {
       "target": "AppImage",
-      "icon": "assets/icons/icon.png",
       "category": "WebBrowser",
       "mimeTypes": [
         "text/html",
