@@ -760,6 +760,24 @@ document.addEventListener('DOMContentLoaded', async () => {
         } catch (_) { return false; }
     };
 
+    const resolveSiteInfoTargetUrl = (tab = null, webview = null) => {
+        const candidates = [
+            tab?.siteInfoUrl,
+            tab?.url,
+            webview?.getURL?.()
+        ];
+        for (const candidate of candidates) {
+            const safe = String(candidate || '').trim();
+            if (!safe) continue;
+            if (isHttpWebsiteUrl(safe)) return safe;
+        }
+        for (const candidate of candidates) {
+            const safe = String(candidate || '').trim();
+            if (safe) return safe;
+        }
+        return '';
+    };
+
     const isDuckAiChatUrl = (url = '') => {
         try {
             const parsed = new URL(url);
@@ -1100,7 +1118,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             return;
         }
 
-        const currentUrl = String(activeTab?.url || activeWebview?.getURL?.() || '').trim();
+        const currentUrl = resolveSiteInfoTargetUrl(activeTab, activeWebview);
         latestSiteInfoUrl = currentUrl;
         let hostLabel = 'This site';
         let originLabel = currentUrl || '';

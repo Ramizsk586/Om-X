@@ -512,6 +512,7 @@ export class TabManager {
       this.applySitePermissions(tab.webview, tab.webview.getURL ? tab.webview.getURL() : tab.url);
       if (!tab.domReady) return;
       this.applyGlobalWebsiteCss(tab.webview);
+      this.applyRawResponseViewerTheme(tab.webview);
       this.applyYouTubeAddon(tab.webview);
       this.applyFloatingAdBlocker(tab.webview);
       this.applyDuckAiSidebarPreference(tab.webview);
@@ -807,11 +808,138 @@ body {
     `;
   }
 
+  getRawResponseViewerCss() {
+    return `
+:root,
+html,
+body {
+  background: #0f1117 !important;
+  color: #e6edf3 !important;
+  color-scheme: dark !important;
+}
+
+html,
+body {
+  min-height: 100% !important;
+}
+
+body {
+  margin: 0 !important;
+  padding: 18px 22px !important;
+  font-family: "JetBrains Mono", "Cascadia Code", Consolas, monospace !important;
+  line-height: 1.55 !important;
+}
+
+pre,
+body > pre,
+code {
+  background: transparent !important;
+  color: #e6edf3 !important;
+  font-family: inherit !important;
+}
+
+pre,
+body > pre {
+  margin: 12px 0 0 !important;
+  padding: 0 !important;
+  font-size: 13px !important;
+  white-space: pre !important;
+}
+
+label,
+span,
+div,
+input,
+button,
+table,
+tbody,
+thead,
+tr,
+td,
+th {
+  color: inherit !important;
+}
+
+input[type="checkbox"] {
+  accent-color: #4fc3f7 !important;
+}
+
+a,
+a:visited,
+a:link {
+  color: #7cc7ff !important;
+}
+
+* {
+  scrollbar-width: thin !important;
+  scrollbar-color: rgba(148, 163, 184, 0.38) #0f1117 !important;
+}
+
+::-webkit-scrollbar {
+  width: 10px !important;
+  height: 10px !important;
+  background: #0f1117 !important;
+}
+
+::-webkit-scrollbar-track {
+  background: #0f1117 !important;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.38) !important;
+  border-radius: 999px !important;
+  border: 2px solid #0f1117 !important;
+}
+    `;
+  }
+
   async applyGlobalWebsiteCss(webview) {
     if (!webview) return;
     const currentUrl = webview.getURL ? webview.getURL() : '';
     const cssText = this.isWebsiteUrl(currentUrl) ? this.getGlobalWebsiteCss() : '';
     await this.syncWebviewInsertedCss(webview, '__omxGlobalWebsiteCssKey', cssText);
+  }
+
+  async applyRawResponseViewerTheme(webview) {
+    if (!webview) return;
+    const currentUrl = webview.getURL ? webview.getURL() : '';
+    if (!this.isWebsiteUrl(currentUrl) || this.isPdfUrl(currentUrl)) {
+      await this.syncWebviewInsertedCss(webview, '__omxRawResponseViewerCssKey', '');
+      return;
+    }
+
+    let shouldApply = false;
+    try {
+      shouldApply = await webview.executeJavaScript(`
+        (() => {
+          try {
+            const contentType = String(document.contentType || '').toLowerCase();
+            const title = String(document.title || '').toLowerCase();
+            const body = document.body;
+            const children = Array.from(body?.children || []);
+            const childTags = children.map((node) => String(node?.tagName || '').toUpperCase()).filter(Boolean);
+            const hasPre = !!document.querySelector('pre');
+            const bodyText = String(body?.innerText || '').trim();
+            const prettyPrint = title.includes('pretty-print') || /^pretty-print\\b/i.test(bodyText);
+            const rawContentType = /^(application\\/(json|xml|javascript)|text\\/(plain|xml|json|javascript))\\b/.test(contentType);
+            const looksStructuredApp = !!document.querySelector('main, article, section, nav, header, footer, form, [role="main"]');
+            const simpleChildLayout = childTags.length > 0 && childTags.length <= 4
+              && childTags.every((tag) => ['PRE', 'DIV', 'SPAN', 'LABEL', 'INPUT', 'CODE', 'TABLE', 'TBODY', 'THEAD', 'TR', 'TD', 'TH'].includes(tag));
+            return Boolean(rawContentType || (hasPre && (prettyPrint || (!looksStructuredApp && simpleChildLayout))));
+          } catch (_) {
+            return false;
+          }
+        })();
+      `, true);
+    } catch (_) {
+      shouldApply = false;
+    }
+
+    await this.syncWebviewInsertedCss(
+      webview,
+      '__omxRawResponseViewerCssKey',
+      shouldApply ? this.getRawResponseViewerCss() : ''
+    );
   }
 
   // ── Floating Ad Blocker ────────────────────────────────────────────────────
@@ -5343,6 +5471,7 @@ body[class*="overflow-hidden"]:not([data-legit]) {
       const tab = this.tabs.find(t => t.id === this.activeTabId);
       if (tab) {
         tab.interactiveSearch = options.interactiveSearch || null;
+        if (this.isWebsiteUrl(finalUrl)) tab.siteInfoUrl = finalUrl;
         if (tab.suspended) this.restoreTab(tab);
         if (tab.webview) {
             tab.webview.src = finalUrl;
@@ -5393,6 +5522,7 @@ body[class*="overflow-hidden"]:not([data-legit]) {
     }, finalUrl);
     const tabState = {
       id, webview: null, tabItem, titleEl, iconEl, spinnerEl, url: finalUrl,
+      siteInfoUrl: this.isWebsiteUrl(finalUrl) ? finalUrl : '',
       lastAccessed: Date.now(), suspended: false, isSystemPage,
       isTextStudio, isHistoryPage, isGamesPage, isDefensePage,
       isHomePage, isTodoPage, isDownloadsPage, isScraberPage, isServerOperatorPage, isOpenWebUiPage, isLocalAIPage,
@@ -5588,6 +5718,7 @@ body[class*="overflow-hidden"]:not([data-legit]) {
             tabState.domReady = true;
             await this.applySitePermissions(webview, webview.getURL ? webview.getURL() : tabState.url);
             await this.applyGlobalWebsiteCss(webview);
+            await this.applyRawResponseViewerTheme(webview);
             await this.applyYouTubeAddon(webview);
             await this.applyFloatingAdBlocker(webview);
             await this.applyAdultContentBlocker(webview);
@@ -5721,6 +5852,7 @@ body[class*="overflow-hidden"]:not([data-legit]) {
     });
     webview.addEventListener('did-start-navigation', (e) => {
       if (!e?.isMainFrame) return;
+      if (this.isWebsiteUrl(e.url)) tabState.siteInfoUrl = e.url;
       tabState.isMainFrameLoading = true;
       tabState.isLoading = true;
       this._setTabLoadingVisual(tabState, true);
@@ -5849,6 +5981,7 @@ body[class*="overflow-hidden"]:not([data-legit]) {
       tabState.noSuspend = isOmChatNow;
       if (isOmChatNow) this.applyOmChatTabIcon(tabState);
       if (tabState.isOpenWebUiPage) this.applyOpenWebUiTabIcon(tabState);
+      if (this.isWebsiteUrl(e.url)) tabState.siteInfoUrl = e.url;
       tabState.url = e.url; 
       if (this.isPdfUrl(e.url) && !tabState.customIcon) {
         tabState.titleEl.textContent = webview.getTitle() || 'PDF Viewer';
@@ -5872,6 +6005,7 @@ body[class*="overflow-hidden"]:not([data-legit]) {
       setTimeout(() => {
         this.applySitePermissions(webview, e.url);
         this.applyGlobalWebsiteCss(webview);
+        this.applyRawResponseViewerTheme(webview);
         this.applyYouTubeAddon(webview);
         this.applyFloatingAdBlocker(webview);
       }, 120);
@@ -5891,11 +6025,13 @@ body[class*="overflow-hidden"]:not([data-legit]) {
       tabState.isOmChat = isOmChatNow;
       tabState.noSuspend = isOmChatNow;
       if (isOmChatNow) this.applyOmChatTabIcon(tabState);
+      if (this.isWebsiteUrl(e.url)) tabState.siteInfoUrl = e.url;
       tabState.url = e.url;
       if (this.activeTabId === tabState.id) this.onTabStateChange(e.url, false);
       setTimeout(() => {
         this.applySitePermissions(webview, e.url);
         this.applyGlobalWebsiteCss(webview);
+        this.applyRawResponseViewerTheme(webview);
         this.applyYouTubeAddon(webview);
         this.applyFloatingAdBlocker(webview);
       }, 100);

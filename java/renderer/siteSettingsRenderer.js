@@ -10,8 +10,15 @@ const els = {
   clearData: document.getElementById('site-settings-clear-data'),
   reset: document.getElementById('site-settings-reset'),
   status: document.getElementById('site-settings-status'),
-  list: document.getElementById('site-settings-list')
+  list: document.getElementById('site-settings-list'),
+  dialogBackdrop: document.getElementById('site-settings-dialog-backdrop'),
+  dialogTitle: document.getElementById('site-settings-dialog-title'),
+  dialogMessage: document.getElementById('site-settings-dialog-message'),
+  dialogCancel: document.getElementById('site-settings-dialog-cancel'),
+  dialogConfirm: document.getElementById('site-settings-dialog-confirm')
 };
+
+let pendingConfirmResolver = null;
 
 const PERMISSION_ICONS = {
   notifications: '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M15 17H5l1.4-1.4A2 2 0 0 0 7 14.2V11a5 5 0 1 1 10 0v3.2a2 2 0 0 0 .6 1.4L19 17h-4"/><path d="M10 20a2 2 0 0 0 4 0"/></svg>',
@@ -84,8 +91,55 @@ function setStatus(message = '', tone = '') {
 function setBusy(isBusy = false) {
   if (els.clearData) els.clearData.disabled = isBusy;
   if (els.reset) els.reset.disabled = isBusy;
+  if (els.dialogCancel) els.dialogCancel.disabled = isBusy;
+  if (els.dialogConfirm) els.dialogConfirm.disabled = isBusy;
   els.list?.querySelectorAll('select').forEach((select) => {
     select.disabled = isBusy;
+  });
+}
+
+function closeConfirmDialog(confirmed = false) {
+  if (els.dialogBackdrop) {
+    els.dialogBackdrop.classList.add('hidden');
+    els.dialogBackdrop.setAttribute('aria-hidden', 'true');
+  }
+  if (els.dialogConfirm) {
+    els.dialogConfirm.classList.remove('is-danger');
+    els.dialogConfirm.classList.add('is-filled');
+    els.dialogConfirm.textContent = 'Continue';
+  }
+  if (typeof pendingConfirmResolver === 'function') {
+    const resolve = pendingConfirmResolver;
+    pendingConfirmResolver = null;
+    resolve(confirmed);
+  }
+}
+
+function confirmAction({
+  title = 'Confirm action',
+  message = '',
+  confirmLabel = 'Continue',
+  tone = 'default'
+} = {}) {
+  if (!els.dialogBackdrop || !els.dialogTitle || !els.dialogMessage || !els.dialogConfirm) {
+    return Promise.resolve(window.confirm(message || title));
+  }
+
+  if (typeof pendingConfirmResolver === 'function') {
+    pendingConfirmResolver(false);
+    pendingConfirmResolver = null;
+  }
+
+  els.dialogTitle.textContent = title;
+  els.dialogMessage.textContent = message;
+  els.dialogConfirm.textContent = confirmLabel;
+  els.dialogConfirm.classList.toggle('is-danger', tone === 'danger');
+  els.dialogConfirm.classList.toggle('is-filled', tone !== 'danger');
+  els.dialogBackdrop.classList.remove('hidden');
+  els.dialogBackdrop.setAttribute('aria-hidden', 'false');
+
+  return new Promise((resolve) => {
+    pendingConfirmResolver = resolve;
   });
 }
 
@@ -158,13 +212,17 @@ async function loadSiteSettings() {
     return;
   }
   setStatus('Loading site settings...');
-  const result = await window.browserAPI.security.getSiteSettings({ url: targetUrl });
-  if (!result?.success) {
-    setStatus(result?.error || 'Failed to load site settings.', 'error');
-    return;
+  try {
+    const result = await window.browserAPI.security.getSiteSettings({ url: targetUrl });
+    if (!result?.success) {
+      setStatus(result?.error || 'Failed to load site settings.', 'error');
+      return;
+    }
+    renderSite(result);
+    setStatus('Permissions apply for future requests. Some site APIs may need a reload.');
+  } catch (error) {
+    setStatus(error?.message || 'Failed to load site settings.', 'error');
   }
-  renderSite(result);
-  setStatus('Permissions apply for future requests. Some site APIs may need a reload.');
 }
 
 els.back?.addEventListener('click', () => {
@@ -200,7 +258,12 @@ els.list?.addEventListener('change', async (event) => {
 });
 
 els.reset?.addEventListener('click', async () => {
-  if (!window.confirm('Reset all permissions for this site back to Ask (default)?')) return;
+  const confirmed = await confirmAction({
+    title: 'Reset permissions?',
+    message: 'Reset all saved permissions for this site back to Ask (default).',
+    confirmLabel: 'Reset permissions'
+  });
+  if (!confirmed) return;
   setBusy(true);
   setStatus('Resetting permissions...');
   try {
@@ -219,7 +282,13 @@ els.reset?.addEventListener('click', async () => {
 });
 
 els.clearData?.addEventListener('click', async () => {
-  if (!window.confirm('Delete cookies and stored site data for this website?')) return;
+  const confirmed = await confirmAction({
+    title: 'Delete site data?',
+    message: 'Delete cookies and stored site data for this website. You may need to sign in again afterward.',
+    confirmLabel: 'Delete data',
+    tone: 'danger'
+  });
+  if (!confirmed) return;
   setBusy(true);
   setStatus('Deleting site data...');
   try {
@@ -237,4 +306,20 @@ els.clearData?.addEventListener('click', async () => {
   }
 });
 
-loadSiteSettings();
+els.dialogBackdrop?.addEventListener('click', (event) => {
+  if (event.target === els.dialogBackdrop) closeConfirmDialog(false);
+});
+
+els.dialogCancel?.addEventListener('click', () => closeConfirmDialog(false));
+els.dialogConfirm?.addEventListener('click', () => closeConfirmDialog(true));
+
+window.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && !els.dialogBackdrop?.classList.contains('hidden')) {
+    event.preventDefault();
+    closeConfirmDialog(false);
+  }
+});
+
+loadSiteSettings().catch((error) => {
+  setStatus(error?.message || 'Failed to load site settings.', 'error');
+});

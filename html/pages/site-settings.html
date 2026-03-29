@@ -184,6 +184,55 @@
       color: #9aa0a6;
       font-size: 13px;
     }
+    .site-settings-dialog-backdrop {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      background: rgba(7, 10, 15, 0.72);
+      backdrop-filter: blur(12px);
+      z-index: 20;
+    }
+    .site-settings-dialog-backdrop.hidden {
+      display: none;
+    }
+    .site-settings-dialog {
+      width: min(420px, 100%);
+      border-radius: 18px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: linear-gradient(180deg, rgba(33, 36, 42, 0.98) 0%, rgba(24, 26, 31, 0.98) 100%);
+      box-shadow: 0 22px 60px rgba(0, 0, 0, 0.45);
+      padding: 22px;
+    }
+    .site-settings-dialog-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: #e8eaed;
+    }
+    .site-settings-dialog-message {
+      margin-top: 10px;
+      font-size: 12px;
+      line-height: 1.6;
+      color: #bdc1c6;
+    }
+    .site-settings-dialog-actions {
+      margin-top: 18px;
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .site-settings-btn.is-filled {
+      background: rgba(138, 180, 248, 0.18);
+      color: #d2e3fc;
+    }
+    .site-settings-btn.is-danger {
+      border-color: rgba(242, 139, 130, 0.9);
+      background: rgba(242, 139, 130, 0.14);
+      color: #f28b82;
+    }
     @media (max-width: 900px) {
       .site-settings-page {
         padding: 14px 14px 22px;
@@ -238,5 +287,15 @@
   </div>
 
   <script type="module" src="../../java/renderer/siteSettingsRenderer.js"></script>
+  <div id="site-settings-dialog-backdrop" class="site-settings-dialog-backdrop hidden" aria-hidden="true">
+    <div class="site-settings-dialog" role="dialog" aria-modal="true" aria-labelledby="site-settings-dialog-title">
+      <div id="site-settings-dialog-title" class="site-settings-dialog-title">Confirm action</div>
+      <div id="site-settings-dialog-message" class="site-settings-dialog-message"></div>
+      <div class="site-settings-dialog-actions">
+        <button id="site-settings-dialog-cancel" class="site-settings-btn" type="button">Cancel</button>
+        <button id="site-settings-dialog-confirm" class="site-settings-btn is-filled" type="button">Continue</button>
+      </div>
+    </div>
+  </div>
 </body>
 </html>
