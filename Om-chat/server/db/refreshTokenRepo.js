@@ -1,10 +1,9 @@
-const RefreshToken = require('../models/RefreshToken.model');
 const { createLogger } = require('../utils/logger');
 const { getModel } = require('./getModel');
 
 const logger = createLogger('refresh-token-repo');
 
-function getRefreshTokenCollection() { return getModel('refreshTokens', RefreshToken); }
+function getRefreshTokenCollection() { return getModel('refreshTokens'); }
 
 function mapRefreshToken(row) {
   if (!row) return null;

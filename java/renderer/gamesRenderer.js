@@ -416,7 +416,12 @@
 
     // --- NEURO-MEMORY ---
     const memGame = {
-        cards: [], flipped: [], matches: 0, lock: false, icons: ['âš¡','ðŸ§ ','ðŸ§¬','ðŸ’¾','ðŸ”‹','ðŸ“¡','ðŸ›°ï¸','ðŸ”Œ'],
+        cards: [],
+        flipped: [],
+        matches: 0,
+        lock: false,
+        // Use Unicode escapes so symbols render correctly across file encodings.
+        icons: ['\u26A1', '\u{1F9E0}', '\u{1F9EC}', '\u{1F4BE}', '\u{1F50B}', '\u{1F4E1}', '\u{1F6F0}\uFE0F', '\u{1F50C}'],
         init() { this.reset(); },
         reset() {
             this.cards = [...this.icons, ...this.icons].sort(() => Math.random() - 0.5); this.flipped = []; this.matches = 0; this.lock = false;
@@ -3203,6 +3208,7 @@
         if (tetrisGame.gameLoop) clearInterval(tetrisGame.gameLoop);
         if (breakoutGame.gameLoop) clearInterval(breakoutGame.gameLoop);
         if (racerGame.loop) cancelAnimationFrame(racerGame.loop);
+        if (els.gameFrame) els.gameFrame.src = '';
 
         activeGame = null; els.menu.classList.remove('hidden'); els.btnBack.classList.add('hidden');
         document.body.classList.remove('game-active');

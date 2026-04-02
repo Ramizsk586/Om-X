@@ -17,18 +17,13 @@ function isLocalMode() {
 
 /**
  * Get a model for the given collection.
- * In local mode, returns a local DB model.
- * In mongo mode, requires the Mongoose model to be passed.
+ * Returns a local DB model.
  * @param {string} collectionName Local collection name.
- * @param {any} mongooseModel Mongoose model to use in mongo mode.
  * @returns {any} The appropriate model.
  */
-function getModel(collectionName, mongooseModel) {
-  if (isLocalMode()) {
-    ensureLocalDb();
-    return getLocalModel(collectionName);
-  }
-  return mongooseModel;
+function getModel(collectionName) {
+  ensureLocalDb();
+  return getLocalModel(collectionName);
 }
 
 module.exports = { getModel, isLocalMode, ensureLocalDb };

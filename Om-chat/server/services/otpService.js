@@ -2,14 +2,13 @@ const bcrypt = require('bcryptjs');
 const { randomInt } = require('crypto');
 
 const config = require('../config');
-const OtpCode = require('../models/OtpCode.model');
 const { createLogger } = require('../utils/logger');
 const { normalizeEmail } = require('../utils/validate');
 const { getModel } = require('../db/getModel');
 
 const logger = createLogger('otp-service');
 
-function getOtpCodeCollection() { return getModel('otpCodes', OtpCode); }
+function getOtpCodeCollection() { return getModel('otpCodes'); }
 
 const OTP_SALT_ROUNDS = 10;
 const OTP_EXPIRY_MINUTES = config.otp.expiryMinutes;

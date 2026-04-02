@@ -1,7 +1,6 @@
 const express = require('express');
 const requireAuth = require('../middleware/requireAuth');
-const UploadBlob = require('../models/UploadBlob.model');
-const { getModel, isLocalMode } = require('../db/getModel');
+const { getModel } = require('../db/getModel');
 
 const router = express.Router();
 const SAFE_INLINE_MIME_PREFIXES = ['image/', 'audio/', 'video/', 'text/plain'];
@@ -12,7 +11,7 @@ const SAFE_INLINE_MIME_TYPES = new Set([
 
 router.use(requireAuth);
 
-function getUploadBlobCollection() { return getModel('uploadBlobs', UploadBlob); }
+function getUploadBlobCollection() { return getModel('uploadBlobs'); }
 
 function toNodeBuffer(value) {
   if (!value) return null;
@@ -25,11 +24,7 @@ function toNodeBuffer(value) {
 }
 
 function isValidObjectId(id) {
-  if (isLocalMode()) return typeof id === 'string' && id.length > 0;
-  try {
-    const { Types } = require('mongoose');
-    return Types.ObjectId.isValid(id);
-  } catch (_) { return typeof id === 'string' && id.length > 0; }
+  return typeof id === 'string' && id.length > 0;
 }
 
 router.get('/:id', async (req, res) => {
@@ -38,16 +33,11 @@ router.get('/:id', async (req, res) => {
     return res.status(404).end();
   }
 
-  let file;
-  if (isLocalMode()) {
-    file = await getUploadBlobCollection().findOne({ _id: id }).lean();
-  } else {
-    file = await getUploadBlobCollection().findById(id).lean();
-  }
+  const file = await getUploadBlobCollection().findOne({ _id: id }).lean();
   const body = toNodeBuffer(file?.data);
   if (!file || !body) {
     const accept = String(req.headers.accept || '');
-    if (isLocalMode() && accept.includes('image/')) {
+    if (accept.includes('image/')) {
       const safeId = id.replace(/[^a-zA-Z0-9]/g, '');
       const svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360">

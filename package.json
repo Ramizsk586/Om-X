@@ -42,9 +42,7 @@
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.3",
     "jspdf": "^4.2.0",
-    "mongodb": "^7.1.1",
     "archiver": "^7.0.1",
-    "mongoose": "^9.3.1",
     "multer": "^2.1.1",
     "nanoid": "^5.0.7",
     "nodemailer": "^8.0.3",
@@ -119,7 +117,6 @@
     "win": {
       "target": "nsis",
       "icon": "assets/icons/app.ico",
-      "signAndEditExecutable": false,
       "legalTrademarks": "Om-X"
     },
     "nsis": {

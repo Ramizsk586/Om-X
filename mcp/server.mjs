@@ -672,7 +672,27 @@ function buildServer() {
   return server;
 }
 
-const app = express();
+const app = express()
+
+// ✅ Added MCP spec endpoint for UI compatibility
+app.get('/mcp', (req, res) => {
+  try {
+    const tools = Object.entries(TOOL_REGISTRY || {}).map(([name, tool]) => ({
+      name,
+      description: tool.description || "",
+      input_schema: tool.openAiSchema || {}
+    }));
+
+    res.json({
+      name: "Om-X MCP Server",
+      version: "1.0.0",
+      tools
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+;
 app.disable("x-powered-by");
 
 app.use((req, res, next) => {

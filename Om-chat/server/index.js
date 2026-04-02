@@ -18,7 +18,6 @@ const { createExpressRateLimit } = require('./middleware/rateLimit');
 const { ValidationError } = require('./utils/validation');
 const { sanitizeAccessInfo } = require('./utils/serializers');
 const { initDb } = require('./db');
-const connectMongo = require('./db/mongo');
 const { readRequestCookie } = require('./utils/requestCookies');
 
 const { authApiRouter, authCompatibilityRouter } = require('./routes/auth');
@@ -909,9 +908,6 @@ async function startServer(config = {}) {
   const host = String(firstDefinedValue(config.host, readEnv('HOST', 'SERVE_HOST'), DEFAULT_HOST)).trim() || DEFAULT_HOST;
   const sessionSecret = String(firstDefinedValue(config.sessionSecret, readEnv('SESSION_SECRET'), appConfig.session.secret));
 
-  if (appConfig.db.mode === 'mongo') {
-    await connectMongo();
-  }
   await initDb();
 
   const tlsOptions = resolveTlsOptions();

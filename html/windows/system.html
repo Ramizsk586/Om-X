@@ -28,33 +28,6 @@
       color: #fff;
     }
 
-    /* OmChat DB Mode Buttons */
-    .omchat-db-mode-group {
-      display: flex;
-      gap: 4px;
-      background: #27272a;
-      border-radius: 8px;
-      padding: 3px;
-    }
-    .omchat-db-mode-btn {
-      padding: 6px 16px;
-      border: none;
-      border-radius: 6px;
-      font-size: 13px;
-      font-weight: 600;
-      cursor: pointer;
-      background: transparent;
-      color: #a1a1aa;
-      transition: all 0.2s;
-    }
-    .omchat-db-mode-btn.active {
-      background: #6366f1;
-      color: #fff;
-    }
-    .omchat-db-mode-btn:hover:not(.active) {
-      color: #fff;
-      background: rgba(255,255,255,0.06);
-    }
     .omchat-db-section {
       padding: 16px;
       border-radius: 12px;
@@ -142,136 +115,10 @@
     .omchat-db-info-text strong {
       color: #c4b5fd;
     }
-    .omchat-db-action-row {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      flex-wrap: wrap;
-    }
-    .omchat-db-action-btn {
-      min-height: 40px;
-      padding: 10px 16px;
-      background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
-      border: 1px solid rgba(99, 102, 241, 0.35);
-      border-radius: 10px;
-      color: #fff;
-      font-size: 13px;
-      font-weight: 700;
-      cursor: pointer;
-      transition: all 0.2s ease;
-    }
-    .omchat-db-action-btn:hover {
-      transform: translateY(-1px);
-      box-shadow: 0 10px 18px rgba(79, 70, 229, 0.25);
-    }
-    .omchat-db-action-btn:disabled {
-      cursor: not-allowed;
-      opacity: 0.6;
-      transform: none;
-      box-shadow: none;
-    }
-    .omchat-db-action-btn.secondary {
-      background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%);
-      border-color: rgba(14, 165, 233, 0.35);
-    }
-    .omchat-db-action-btn.danger {
-      background: linear-gradient(135deg, #ef4444 0%, #b91c1c 100%);
-      border-color: rgba(239, 68, 68, 0.35);
-    }
-    .omchat-mongo-stats {
-      margin-top: 12px;
-    }
-    .omchat-mongo-stats .omchat-db-info-text {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-    }
     @media (max-width: 960px) {
       .omchat-db-path-row {
         flex-direction: column;
       }
-    }
-    .omchat-sync-modal {
-      position: fixed;
-      inset: 0;
-      background: rgba(0, 0, 0, 0.6);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      z-index: 2000;
-    }
-    .omchat-sync-modal.hidden {
-      display: none;
-    }
-    .omchat-sync-card {
-      width: min(680px, 90vw);
-      background: #111827;
-      border: 1px solid rgba(148, 163, 184, 0.2);
-      border-radius: 14px;
-      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
-      overflow: hidden;
-    }
-    .omchat-sync-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 14px 18px;
-      background: rgba(15, 23, 42, 0.9);
-      border-bottom: 1px solid rgba(148, 163, 184, 0.15);
-      color: #e2e8f0;
-      font-weight: 600;
-      font-size: 14px;
-    }
-    .omchat-sync-close {
-      background: transparent;
-      border: 1px solid rgba(148, 163, 184, 0.35);
-      color: #cbd5f5;
-      border-radius: 6px;
-      padding: 6px 10px;
-      cursor: pointer;
-      font-size: 12px;
-      font-weight: 600;
-      transition: all 0.2s ease;
-    }
-    .omchat-sync-close:hover {
-      background: rgba(148, 163, 184, 0.15);
-    }
-    .omchat-sync-body {
-      padding: 16px 18px 18px;
-      color: #e2e8f0;
-    }
-    .omchat-sync-status {
-      font-size: 13px;
-      color: #cbd5f5;
-      margin-bottom: 12px;
-    }
-    .omchat-sync-progress {
-      width: 100%;
-      height: 8px;
-      background: rgba(148, 163, 184, 0.15);
-      border-radius: 999px;
-      overflow: hidden;
-      margin-bottom: 14px;
-    }
-    .omchat-sync-bar {
-      height: 100%;
-      width: 0%;
-      background: linear-gradient(90deg, #22c55e, #4ade80);
-      transition: width 0.2s ease;
-    }
-    .omchat-sync-log {
-      max-height: 260px;
-      overflow-y: auto;
-      background: #0b1120;
-      border: 1px solid rgba(148, 163, 184, 0.15);
-      border-radius: 10px;
-      padding: 12px;
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 12px;
-      color: #94a3b8;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
     }
     .env-actions-row {
       display: flex;
@@ -631,54 +478,25 @@
       <div id="panel-omchat" class="settings-panel">
         <div class="panel-header">
           <h2>OmChat Server</h2>
-          <p>Choose where OmChat stores local data and back it up to MongoDB.</p>
+          <p>Choose where OmChat stores its local database files.</p>
         </div>
         <div class="settings-section-card omchat-panel">
           <div id="omchat-local-section" class="omchat-db-section">
             <div class="omchat-db-field">
               <label class="omchat-db-label">Local Database Folder</label>
-              <p class="omchat-db-desc">Choose where OmChat stores its local database files. This folder is required for pushing a backup to MongoDB.</p>
+              <p class="omchat-db-desc">Choose where OmChat stores its local database files. OmChat now runs fully from this folder.</p>
               <div class="omchat-db-path-row">
                 <input type="text" id="omchat-local-db-path" class="omchat-db-input" placeholder="Select a folder path" readonly />
                 <button type="button" id="omchat-browse-local-db" class="omchat-db-browse-btn">Browse</button>
               </div>
             </div>
-          </div>
-          <div class="omchat-db-section">
-            <div class="omchat-db-field">
-              <label class="omchat-db-label">MongoDB Backup Actions</label>
-              <p class="omchat-db-desc">Upload your local OmChat data to MongoDB, download a ZIP export of the cloud backup, or permanently delete the MongoDB backup data.</p>
-              <div class="omchat-db-action-row">
-                <button type="button" id="omchat-sync-btn" class="omchat-db-action-btn">Backup Now</button>
-                <button type="button" id="omchat-import-btn" class="omchat-db-action-btn secondary">Download Zip</button>
-                <button type="button" id="omchat-delete-btn" class="omchat-db-action-btn danger">Delete Backup</button>
-                <span id="omchat-sync-hint" class="omchat-db-desc" style="margin: 0;">Each action opens a live progress window.</span>
+            <div class="omchat-db-info-card">
+              <div class="omchat-db-info-icon">DB</div>
+              <div class="omchat-db-info-text">
+                <strong>Local-only mode</strong>
+                OmChat stores its data in the folder above. You can also set the startup folder in <code>.env</code> with <code>LOCAL_DB_PATH</code>.
               </div>
             </div>
-            <p class="omchat-db-desc" style="margin-top: 16px;">Backup overwrites matching MongoDB records. Delete Backup removes OmChat collections from MongoDB after confirmation.</p>
-          </div>
-          <div id="omchat-mongo-stats" class="omchat-db-info-card omchat-mongo-stats">
-            <div class="omchat-db-info-icon">DB</div>
-            <div class="omchat-db-info-text">
-              <div id="omchat-mongo-stats-line">MongoDB storage: --</div>
-              <div id="omchat-mongo-stats-sub">Free: --</div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div id="omchat-sync-modal" class="omchat-sync-modal hidden" aria-hidden="true" role="dialog">
-        <div class="omchat-sync-card">
-          <div class="omchat-sync-header">
-            <span>OmChat Database Backup</span>
-            <button type="button" id="omchat-sync-close" class="omchat-sync-close">Close</button>
-          </div>
-          <div class="omchat-sync-body">
-            <div id="omchat-sync-status" class="omchat-sync-status">Preparing backup...</div>
-            <div class="omchat-sync-progress">
-              <div id="omchat-sync-bar" class="omchat-sync-bar"></div>
-            </div>
-            <div id="omchat-sync-log" class="omchat-sync-log"></div>
           </div>
         </div>
       </div>

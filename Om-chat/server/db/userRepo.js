@@ -1,10 +1,9 @@
-const User = require('../models/User.model');
 const { createLogger } = require('../utils/logger');
 const { getModel } = require('./getModel');
 
 const logger = createLogger('user-repo');
 
-function getUserCollection() { return getModel('users', User); }
+function getUserCollection() { return getModel('users'); }
 
 /**
  * Escape a value before embedding it inside a regular expression.
@@ -31,8 +30,8 @@ function normalizeCustomStatus(value) {
 }
 
 /**
- * Normalize a Mongo user document into the Om Chat auth shape.
- * @param {Record<string, unknown>|undefined|null} row Mongo user row.
+ * Normalize a stored user document into the Om Chat auth shape.
+ * @param {Record<string, unknown>|undefined|null} row Stored user row.
  * @returns {null|{id: string, username: string, email: string, passwordHash: string, role: string, avatarColor: string, avatarUrl: string, phone: string, aboutMe: string, isVerified: boolean, isBanned: boolean, status: string, customStatus: string, createdAt: string, updatedAt: string}} Normalized user record.
  */
 function mapUser(row) {

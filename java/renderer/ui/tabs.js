@@ -515,7 +515,6 @@ export class TabManager {
       this.applyRawResponseViewerTheme(tab.webview);
       this.applyYouTubeAddon(tab.webview);
       this.applyFloatingAdBlocker(tab.webview);
-      this.applyDuckAiSidebarPreference(tab.webview);
       this.applyVyntrSearchCleanup(tab.webview);
     });
   }
@@ -2119,7 +2118,10 @@ body[class*="overflow-hidden"]:not([data-legit]) {
           clip: rect(0,0,0,0) !important;
         }
       \`;
-      (document.head || document.documentElement).appendChild(s);
+      const styleHost = document.head || document.documentElement || document.body;
+      if (styleHost && typeof styleHost.appendChild === 'function') {
+        styleHost.appendChild(s);
+      }
     }
 
     // ════════════════════════════════════════════════════════════════
@@ -4076,6 +4078,7 @@ body[class*="overflow-hidden"]:not([data-legit]) {
       const isWebsite = this.isWebsiteUrl(url);
       const isYT      = this.isYouTubeUrl(url);
       const isInsta   = this.isInstagramUrl(url);
+      const isHostedAi = this.isLocalOrHostedAiUrl(url);
       const isSearchEngine = this.isSearchEngineUrl(url);
 
       // If ad blocker is completely disabled, clear everything
@@ -4093,7 +4096,7 @@ body[class*="overflow-hidden"]:not([data-legit]) {
       }
 
       // Skip on YouTube and Instagram (they have their own handling)
-      if (isYT || isInsta) {
+      if (isYT || isInsta || isHostedAi) {
         await this.syncWebviewInsertedCss(webview, '__omxFloatAdBlockerCssKey', '');
         return;
       }
@@ -4348,22 +4351,6 @@ body[class*="overflow-hidden"]:not([data-legit]) {
       const host = new URL(url).hostname.toLowerCase();
       return host === 'instagram.com' || host.endsWith('.instagram.com');
     } catch (e) {
-      return false;
-    }
-  }
-
-  getDuckAiChatConfig() {
-    return {
-      hideSidebar: true
-    };
-  }
-
-  isDuckAiChatUrl(url = '') {
-    try {
-      const parsed = new URL(url);
-      const host = String(parsed.hostname || '').toLowerCase();
-      return (host === 'duck.ai' || host.endsWith('.duck.ai')) && parsed.pathname.startsWith('/chat');
-    } catch (_) {
       return false;
     }
   }
@@ -4739,240 +4726,6 @@ body[class*="overflow-hidden"]:not([data-legit]) {
       await webview.executeJavaScript(script, true);
     } catch (e) {
       console.warn('[YouTube Addon] Script execution failed:', e?.message);
-    }
-  }
-
-  getDuckAiSidebarScript(config = {}) {
-    const cfg = config;
-    return `
-      (function() {
-        try {
-          const shouldHide = ${cfg.hideSidebar ? 'true' : 'false'};
-          const host = String(location.hostname || '').toLowerCase();
-          if (!(host === 'duck.ai' || host.endsWith('.duck.ai'))) return false;
-          if (!String(location.pathname || '').startsWith('/chat')) return false;
-
-          const stateKey = '__omxDuckAiSidebarState';
-          const hiddenAttr = 'data-omx-duck-hidden';
-          const layoutAttr = 'data-omx-duck-layout';
-          const state = window[stateKey] || (window[stateKey] = {});
-
-          if (state.observer) {
-            state.observer.disconnect();
-            state.observer = null;
-          }
-          if (state.raf) {
-            cancelAnimationFrame(state.raf);
-            state.raf = 0;
-          }
-
-          const propKey = (prop) => prop.replace(/-([a-z])/g, (_, ch) => ch.toUpperCase()).replace(/[^a-zA-Z0-9]/g, '');
-          const rememberStyle = (node, prop, value) => {
-            if (!node || !node.style) return;
-            const key = 'omxDuck' + propKey(prop);
-            const priKey = key + 'Priority';
-            if (!(key in node.dataset)) node.dataset[key] = node.style.getPropertyValue(prop) || '';
-            if (!(priKey in node.dataset)) node.dataset[priKey] = node.style.getPropertyPriority(prop) || '';
-            node.style.setProperty(prop, value, 'important');
-          };
-          const restoreStyle = (node, prop) => {
-            if (!node || !node.style) return;
-            const key = 'omxDuck' + propKey(prop);
-            const priKey = key + 'Priority';
-            const previous = node.dataset[key];
-            const priority = node.dataset[priKey] || '';
-            if (typeof previous === 'undefined') {
-              node.style.removeProperty(prop);
-              return;
-            }
-            if (previous) node.style.setProperty(prop, previous, priority);
-            else node.style.removeProperty(prop);
-            delete node.dataset[key];
-            delete node.dataset[priKey];
-          };
-
-          const sidebarProps = [
-            'display',
-            'width',
-            'min-width',
-            'max-width',
-            'flex',
-            'flex-basis',
-            'margin',
-            'margin-left',
-            'margin-right',
-            'padding',
-            'padding-left',
-            'padding-right',
-            'border',
-            'border-left',
-            'border-right',
-            'opacity',
-            'overflow',
-            'pointer-events'
-          ];
-          const layoutProps = ['grid-template-columns', 'grid-template-areas', 'gap', 'padding-left', 'margin-left'];
-
-          const restoreAll = () => {
-            document.querySelectorAll('[' + hiddenAttr + '="1"]').forEach((node) => {
-              sidebarProps.forEach((prop) => restoreStyle(node, prop));
-              node.removeAttribute(hiddenAttr);
-            });
-            document.querySelectorAll('[' + layoutAttr + '="1"]').forEach((node) => {
-              layoutProps.forEach((prop) => restoreStyle(node, prop));
-              node.removeAttribute(layoutAttr);
-            });
-          };
-
-          const scoreNode = (node) => {
-            if (!node || node === document.body || node === document.documentElement) return 0;
-            const rect = node.getBoundingClientRect();
-            if (rect.width < 40 || rect.width > Math.min(window.innerWidth * 0.35, 340)) return 0;
-            if (rect.height < Math.min(window.innerHeight * 0.45, 260)) return 0;
-            if (rect.left > Math.max(48, window.innerWidth * 0.08)) return 0;
-
-            const computed = window.getComputedStyle(node);
-            const interactiveCount = node.querySelectorAll('button, a, [role="button"]').length;
-            const svgCount = node.querySelectorAll('svg').length;
-            if (interactiveCount < 3 && svgCount < 3) return 0;
-
-            const signature = String(node.className || '') + ' ' + String(node.id || '');
-            let score = interactiveCount * 20 + Math.min(svgCount, 10) * 8;
-            if (node.matches('aside, nav, [role="navigation"]')) score += 60;
-            if (/(sidebar|side|rail|drawer|nav|menu|panel)/i.test(signature)) score += 50;
-            if (computed.position === 'sticky' || computed.position === 'fixed') score += 24;
-            if (computed.display === 'flex' || computed.display === 'grid') score += 16;
-            score += Math.max(0, Math.round(160 - rect.left));
-            score += Math.max(0, Math.round(160 - rect.width));
-            return score;
-          };
-
-          const collectCandidates = () => {
-            const nodes = new Set();
-            const selectors = [
-              'aside',
-              'nav',
-              '[role="navigation"]',
-              '[class*="sidebar"]',
-              '[class*="side-bar"]',
-              '[class*="side_nav"]',
-              '[class*="side-nav"]',
-              '[class*="sidenav"]',
-              '[class*="rail"]',
-              '[class*="drawer"]',
-              '[class*="panel"]'
-            ].join(', ');
-
-            document.querySelectorAll(selectors).forEach((node) => nodes.add(node));
-            const buttonNodes = Array.from(document.querySelectorAll('button, a, [role="button"]'))
-              .filter((node) => {
-                const rect = node.getBoundingClientRect();
-                return rect.left < Math.max(80, window.innerWidth * 0.1) && rect.top < window.innerHeight * 0.95;
-              })
-              .slice(0, 40);
-
-            buttonNodes.forEach((node) => {
-              let current = node;
-              let depth = 0;
-              while (current && current !== document.body && depth < 6) {
-                nodes.add(current);
-                current = current.parentElement;
-                depth += 1;
-              }
-            });
-
-            return Array.from(nodes);
-          };
-
-          const findSidebar = () => {
-            let bestNode = null;
-            let bestScore = 0;
-            collectCandidates().forEach((node) => {
-              const score = scoreNode(node);
-              if (score > bestScore) {
-                bestScore = score;
-                bestNode = node;
-              }
-            });
-            return bestNode;
-          };
-
-          const adjustLayout = (node) => {
-            let current = node?.parentElement || null;
-            let hops = 0;
-            while (current && current !== document.body && hops < 5) {
-              const computed = window.getComputedStyle(current);
-              if (computed.display === 'grid') {
-                current.setAttribute(layoutAttr, '1');
-                rememberStyle(current, 'grid-template-columns', 'minmax(0, 1fr)');
-                rememberStyle(current, 'gap', '0');
-                rememberStyle(current, 'padding-left', '0');
-              } else if (computed.display === 'flex' && String(computed.flexDirection || '').startsWith('row')) {
-                current.setAttribute(layoutAttr, '1');
-                rememberStyle(current, 'gap', '0');
-                rememberStyle(current, 'margin-left', '0');
-              }
-              current = current.parentElement;
-              hops += 1;
-            }
-          };
-
-          const hideSidebar = () => {
-            const sidebar = findSidebar();
-            if (!sidebar) return false;
-            sidebar.setAttribute(hiddenAttr, '1');
-            rememberStyle(sidebar, 'display', 'none');
-            rememberStyle(sidebar, 'width', '0');
-            rememberStyle(sidebar, 'min-width', '0');
-            rememberStyle(sidebar, 'max-width', '0');
-            rememberStyle(sidebar, 'flex', '0 0 0');
-            rememberStyle(sidebar, 'flex-basis', '0');
-            rememberStyle(sidebar, 'margin', '0');
-            rememberStyle(sidebar, 'padding', '0');
-            rememberStyle(sidebar, 'border', '0');
-            rememberStyle(sidebar, 'opacity', '0');
-            rememberStyle(sidebar, 'overflow', 'hidden');
-            rememberStyle(sidebar, 'pointer-events', 'none');
-            adjustLayout(sidebar);
-            return true;
-          };
-
-          restoreAll();
-          if (!shouldHide) return true;
-
-          const run = () => {
-            state.raf = 0;
-            hideSidebar();
-          };
-
-          run();
-          state.observer = new MutationObserver(() => {
-            if (state.raf) return;
-            state.raf = requestAnimationFrame(run);
-          });
-          state.observer.observe(document.documentElement || document.body, {
-            childList: true,
-            subtree: true,
-            attributes: true
-          });
-          return true;
-        } catch (error) {
-          console.warn('[Duck AI Panel] Script execution failed:', error);
-          return false;
-        }
-      })();
-    `;
-  }
-
-  async applyDuckAiSidebarPreference(webview) {
-    try {
-      if (!webview || !webview.getURL) return;
-      const url = webview.getURL();
-      if (!this.isDuckAiChatUrl(url)) return;
-      const script = this.getDuckAiSidebarScript(this.getDuckAiChatConfig());
-      await webview.executeJavaScript(script, true);
-    } catch (e) {
-      console.warn('[Duck AI Panel] Script execution failed:', e?.message);
     }
   }
 
@@ -5660,14 +5413,6 @@ body[class*="overflow-hidden"]:not([data-legit]) {
     tabState.domReady = false;
     tabState.tabItem.classList.remove('suspended');
 
-    // Dev tools no longer open automatically - user can open manually if needed
-    // if (this.settings && this.settings.openDevToolsOnStart) {
-    //     webview.addEventListener('dom-ready', () => {
-    //         webview.openDevTools({ mode: 'detach' });
-    //     });
-    // }
-    // DevTools disabled
-
     // ── Early injection: override browser APIs before page scripts run ──────
     // did-start-loading fires as soon as navigation begins — the document
     // exists but no page scripts have executed yet, so our API overrides
@@ -5678,6 +5423,7 @@ body[class*="overflow-hidden"]:not([data-legit]) {
         await this.applySitePermissions(webview, url);
         const isWebsite = this.isWebsiteUrl(url);
         const isYT = this.isYouTubeUrl(url);
+        const isHostedAi = this.isLocalOrHostedAiUrl(url);
         const isSearchEngine = this.isSearchEngineUrl(url);
         const sessionGuardEnabled = this.settings?.security?.sessionGuard?.enabled !== false;
         const ab = this.getAdBlockerSettings();
@@ -5694,14 +5440,14 @@ body[class*="overflow-hidden"]:not([data-legit]) {
         if (!ab.enabled) return;
 
         // Early injection for floating ad blocker (before page scripts)
-        if (isWebsite && !isYT && !this.isInstagramUrl(url)) {
+        if (isWebsite && !isYT && !this.isInstagramUrl(url) && !isHostedAi) {
           if (ab.blockFloating) {
             await webview.executeJavaScript(this.getFloatingAdBlockerScript(), true);
           }
         }
 
         // Early injection for popup blocker
-        if (isWebsite && ab.blockPopups && !this.areSessionPopupsAllowed(url)) {
+        if (isWebsite && !isHostedAi && ab.blockPopups && !this.areSessionPopupsAllowed(url)) {
           await webview.executeJavaScript(this.getPopupOnlyBlockerScript(), true);
         }
 
@@ -5723,9 +5469,6 @@ body[class*="overflow-hidden"]:not([data-legit]) {
             await this.applyFloatingAdBlocker(webview);
             await this.applyAdultContentBlocker(webview);
             const currentUrl = webview.getURL ? webview.getURL() : '';
-            if (this.isDuckAiChatUrl(currentUrl)) {
-                await this.applyDuckAiSidebarPreference(webview);
-            }
             if (this.isDuckDuckGoSearchUrl(currentUrl)) {
                 await this.applyDuckDuckGoSearchCleanup(webview);
             }
@@ -6009,11 +5752,6 @@ body[class*="overflow-hidden"]:not([data-legit]) {
         this.applyYouTubeAddon(webview);
         this.applyFloatingAdBlocker(webview);
       }, 120);
-      if (this.isDuckAiChatUrl(e.url)) {
-        setTimeout(() => {
-          this.applyDuckAiSidebarPreference(webview);
-        }, 120);
-      }
       if (this.isVyntrSearchUrl(e.url)) {
         setTimeout(() => {
           this.applyVyntrSearchCleanup(webview);
@@ -6035,11 +5773,6 @@ body[class*="overflow-hidden"]:not([data-legit]) {
         this.applyYouTubeAddon(webview);
         this.applyFloatingAdBlocker(webview);
       }, 100);
-      if (this.isDuckAiChatUrl(e.url)) {
-        setTimeout(() => {
-          this.applyDuckAiSidebarPreference(webview);
-        }, 100);
-      }
       if (this.isDuckDuckGoSearchUrl(e.url)) {
         setTimeout(() => {
           this.applyDuckDuckGoSearchCleanup(webview);
@@ -6495,3 +6228,5 @@ body[class*="overflow-hidden"]:not([data-legit]) {
     return tab ? tab.webview : null;
   }
 }
+
+

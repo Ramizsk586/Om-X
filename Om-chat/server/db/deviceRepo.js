@@ -1,13 +1,12 @@
-const DeviceToken = require('../models/DeviceToken.model');
 const { createLogger } = require('../utils/logger');
 const { getModel } = require('./getModel');
 
 const logger = createLogger('device-repo');
 
-function getDeviceTokenCollection() { return getModel('deviceTokens', DeviceToken); }
+function getDeviceTokenCollection() { return getModel('deviceTokens'); }
 
 /**
- * Normalize a raw Mongo device token row.
+ * Normalize a raw device token row.
  */
 function mapDeviceToken(row) {
   if (!row) return null;

@@ -6,7 +6,7 @@ function getHeaderDeviceToken() {
 }
 
 /**
- * Restore a request/session from the server-side session log or Mongo-backed device token.
+ * Restore a request/session from the server-side session log.
  * @param {Record<string, unknown>} session Cookie-session payload.
  * @param {string} deviceToken Raw device token.
  * @param {import('express').Request|{session: Record<string, unknown>, headers?: Record<string, unknown>, get?: (name: string) => string, ip?: string, socket?: {remoteAddress?: string}}} [reqLike] Request-like context.

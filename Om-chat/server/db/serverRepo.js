@@ -1,23 +1,17 @@
-const Server = require('../models/Server.model');
-const Channel = require('../models/Channel.model');
-const Role = require('../models/Role.model');
-const Member = require('../models/Member.model');
-const Invite = require('../models/Invite.model');
-const Ban = require('../models/Ban.model');
 const { createLogger } = require('../utils/logger');
 const { getModel } = require('./getModel');
 
 const logger = createLogger('server-repo');
 
-function getServerCollection() { return getModel('servers', Server); }
-function getChannelCollection() { return getModel('channels', Channel); }
-function getRoleCollection() { return getModel('roles', Role); }
-function getMemberCollection() { return getModel('members', Member); }
-function getInviteCollection() { return getModel('invites', Invite); }
-function getBanCollection() { return getModel('bans', Ban); }
+function getServerCollection() { return getModel('servers'); }
+function getChannelCollection() { return getModel('channels'); }
+function getRoleCollection() { return getModel('roles'); }
+function getMemberCollection() { return getModel('members'); }
+function getInviteCollection() { return getModel('invites'); }
+function getBanCollection() { return getModel('bans'); }
 
 /**
- * Clone a lean Mongo object into plain JSON data.
+ * Clone a persisted object into plain JSON data.
  * @param {Record<string, unknown>|null|undefined} value Source object.
  * @returns {Record<string, unknown>|null} Plain clone.
  */
@@ -617,7 +611,7 @@ async function findBansByServerId(serverId) {
 }
 
 /**
- * Import a legacy JSON-backed server into MongoDB.
+ * Import a legacy JSON-backed server into the local database.
  * @param {Record<string, unknown>} legacyServer Legacy server snapshot.
  * @returns {Promise<Record<string, unknown>|null>} Imported server.
  */

@@ -6,10 +6,8 @@ const { spawn, execFile } = require('child_process');
 const https = require('https');
 const net = require('net');
 const os = require('os');
-const { MongoClient } = require('mongodb');
 const { pathToFileURL, fileURLToPath } = require('url');
 const dotenv = require('dotenv');
-const { applyMongoDnsOverrides } = require('../utils/mongoDns');
 
 function getBundledOmxEnvCandidates() {
   return [
@@ -79,7 +77,7 @@ function resolvePrimaryOmxEnvPath() {
 
 let primaryOmxEnvPath = resolvePrimaryOmxEnvPath();
 let primaryOmxEnvKeys = new Set();
-const REQUIRED_ENV_TEMPLATE_KEYS = Object.freeze(['SESSION_SECRET', 'MONGODB_URI']);
+const REQUIRED_ENV_TEMPLATE_KEYS = Object.freeze(['SESSION_SECRET']);
 
 function parseEnvText(raw = '') {
   try {
@@ -167,9 +165,13 @@ function loadSessionGuardMasterKey() {
 loadSessionGuardMasterKey();
 
 function isAdultContentBlockEnabledFromEnv() {
-  const raw = String(process.env.Adult_Content || process.env.ADULT_CONTENT || '').trim().toLowerCase();
-  if (raw === 'on') return false;
-  if (raw === 'off') return true;
+  const raw = String(process.env.Adult_Content || process.env.ADULT_CONTENT || '')
+    .split('//')[0]
+    .split('#')[0]
+    .trim()
+    .toLowerCase();
+  if (raw === 'on' || raw === 'true' || raw === '1') return false;
+  if (raw === 'off' || raw === 'false' || raw === '0') return true;
   return true;
 }
 
@@ -754,9 +756,14 @@ let openWebUiManualStop = false;
 let lanServerInstance = global.omxLanServer || null;
 const SERVER_LOG_LIMIT = 500;
 const OPEN_WEBUI_ENV_NAME = 'omx-open-webui';
-const OPEN_WEBUI_PYTHON_VERSION = '3.10';
+const OPEN_WEBUI_PYTHON_VERSION = '3.12';
 const OPEN_WEBUI_HOST = '127.0.0.1';
 const OPEN_WEBUI_PORT = 8081;
+const OPEN_WEBUI_CONDA_TOS_CHANNELS = [
+  'https://repo.anaconda.com/pkgs/main',
+  'https://repo.anaconda.com/pkgs/r',
+  'https://repo.anaconda.com/pkgs/msys2'
+];
 const OPEN_WEBUI_START_TIMEOUT_MS = 3 * 60 * 1000;
 const OPEN_WEBUI_START_IDLE_GRACE_MS = 45 * 1000;
 const OPEN_WEBUI_START_MAX_TIMEOUT_MS = 10 * 60 * 1000;
@@ -783,8 +790,6 @@ const serverConfigs = {
 };
 let mcpModule = null;
 let omChatModule = null;
-let isServerShutdownInProgress = false;
-let hasCompletedServerShutdown = false;
 
 function configureOmChatStorageEnvironment() {
   const existing = String(process.env.OMX_OMCHAT_DATA_DIR || process.env.OMCHAT_DATA_DIR || '').trim();
@@ -1538,14 +1543,52 @@ function resolveCondaActivationScript(condaExe = '') {
   return '';
 }
 
-async function detectPython310Installed() {
+async function resolveOpenWebUiPythonExecutable() {
+  const candidatePaths = [
+    process.env.PYTHON_EXECUTABLE,
+    process.env.PYTHON_HOME ? path.join(process.env.PYTHON_HOME, 'python.exe') : '',
+    process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'Programs', 'Python', 'Python312', 'python.exe') : '',
+    process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'Programs', 'Python', 'Python312-32', 'python.exe') : '',
+    process.env.ProgramFiles ? path.join(process.env.ProgramFiles, 'Python312', 'python.exe') : '',
+    process.env.ProgramFiles ? path.join(process.env.ProgramFiles, 'Python', 'Python312', 'python.exe') : '',
+    process.env['ProgramFiles(x86)'] ? path.join(process.env['ProgramFiles(x86)'], 'Python312-32', 'python.exe') : '',
+    process.env['ProgramFiles(x86)'] ? path.join(process.env['ProgramFiles(x86)'], 'Python', 'Python312-32', 'python.exe') : '',
+    process.env.USERPROFILE ? path.join(process.env.USERPROFILE, 'AppData', 'Local', 'Programs', 'Python', 'Python312', 'python.exe') : ''
+  ]
+    .map((value) => unwrapWrappedQuotes(value))
+    .filter(Boolean);
+
+  for (const candidate of candidatePaths) {
+    try {
+      if (fs.existsSync(candidate)) return candidate;
+    } catch (_) {}
+  }
+
+  const whereRes = await execFileAsync('where', ['python']);
+  if (!whereRes.ok) return '';
+  const found = whereRes.stdout
+    .split(/\r?\n/)
+    .map((line) => unwrapWrappedQuotes(line))
+    .find((line) => line && /\.exe$/i.test(line));
+  return found || '';
+}
+
+async function detectOpenWebUiPythonInstalled() {
   const versionPattern = OPEN_WEBUI_PYTHON_VERSION.replace(/\./g, '\\.');
   const pyRes = await execFileAsync('py', [`-${OPEN_WEBUI_PYTHON_VERSION}`, '--version']);
   if (pyRes.ok && new RegExp(`Python\\s+${versionPattern}(\\.|$)`, 'i').test(`${pyRes.stdout}\n${pyRes.stderr}`)) {
     return true;
   }
+
   const pythonRes = await execFileAsync('python', ['--version']);
-  return pythonRes.ok && new RegExp(`Python\\s+${versionPattern}(\\.|$)`, 'i').test(`${pythonRes.stdout}\n${pythonRes.stderr}`);
+  if (pythonRes.ok && new RegExp(`Python\\s+${versionPattern}(\\.|$)`, 'i').test(`${pythonRes.stdout}\n${pythonRes.stderr}`)) {
+    return true;
+  }
+
+  const pythonExe = await resolveOpenWebUiPythonExecutable();
+  if (!pythonExe) return false;
+  const absolutePythonRes = await execFileAsync(pythonExe, ['--version']);
+  return absolutePythonRes.ok && new RegExp(`Python\\s+${versionPattern}(\\.|$)`, 'i').test(`${absolutePythonRes.stdout}\n${absolutePythonRes.stderr}`);
 }
 
 async function listCondaEnvs(condaExe) {
@@ -1554,9 +1597,170 @@ async function listCondaEnvs(condaExe) {
   return res.stdout.split(/\r?\n/).map((line) => String(line || '').trim()).filter(Boolean);
 }
 
+function getOpenWebUiCondaTosRoots(condaExe = '') {
+  const roots = [
+    os.homedir ? path.join(os.homedir(), '.conda', 'tos') : '',
+    process.env.USERPROFILE ? path.join(process.env.USERPROFILE, '.conda', 'tos') : '',
+    process.env.CONDA_PREFIX ? path.join(process.env.CONDA_PREFIX, 'conda-meta', 'tos') : '',
+    process.env.ProgramData ? path.join(process.env.ProgramData, 'conda', 'tos') : 'C:\\ProgramData\\conda\\tos'
+  ];
+
+  const exePath = unwrapWrappedQuotes(condaExe);
+  if (exePath) {
+    try {
+      const scriptsDir = path.dirname(exePath);
+      const condaRoot = path.dirname(scriptsDir);
+      roots.push(path.join(condaRoot, 'conda-meta', 'tos'));
+    } catch (_) {}
+  }
+
+  return [...new Set(
+    roots
+      .map((value) => unwrapWrappedQuotes(value))
+      .filter(Boolean)
+      .map((value) => path.resolve(value))
+  )];
+}
+
+function readOpenWebUiCondaTosRecords(condaExe = '') {
+  const records = [];
+  const visit = (dirPath, depth = 0) => {
+    if (!dirPath || depth > 2) return;
+
+    let entries = [];
+    try {
+      if (!fs.existsSync(dirPath)) return;
+      entries = fs.readdirSync(dirPath, { withFileTypes: true });
+    } catch (_) {
+      return;
+    }
+
+    for (const entry of entries) {
+      const fullPath = path.join(dirPath, entry.name);
+      if (entry.isDirectory()) {
+        visit(fullPath, depth + 1);
+        continue;
+      }
+
+      if (!entry.isFile() || !/\.json$/i.test(entry.name)) continue;
+
+      try {
+        const stat = fs.statSync(fullPath);
+        const payload = JSON.parse(fs.readFileSync(fullPath, 'utf8'));
+        records.push({
+          ...payload,
+          __file: fullPath,
+          __mtimeMs: Number(stat?.mtimeMs || 0)
+        });
+      } catch (_) {}
+    }
+  };
+
+  for (const root of getOpenWebUiCondaTosRoots(condaExe)) {
+    visit(root, 0);
+  }
+
+  return records;
+}
+
+async function getOpenWebUiCondaTosStatus(condaExe) {
+  const acceptedByChannel = Object.fromEntries(
+    OPEN_WEBUI_CONDA_TOS_CHANNELS.map((channel) => [channel, false])
+  );
+
+  const storedRecords = readOpenWebUiCondaTosRecords(condaExe);
+  if (storedRecords.length > 0) {
+    const latestByChannel = new Map();
+
+    for (const record of storedRecords) {
+      const channel = String(record?.base_url || record?.channel || record?.url || '').trim();
+      if (!channel || !(channel in acceptedByChannel)) continue;
+
+      const sortKey = Math.max(
+        Number(record?.__mtimeMs || 0),
+        Number(Date.parse(String(record?.acceptance_timestamp || '')) || 0),
+        Number(Date.parse(String(record?.updated_at || '')) || 0),
+        Number(Date.parse(String(record?.created_at || '')) || 0)
+      );
+      const accepted = Boolean(record?.tos_accepted === true || record?.accepted === true);
+      const previous = latestByChannel.get(channel);
+      if (!previous || sortKey >= previous.sortKey) {
+        latestByChannel.set(channel, { accepted, sortKey });
+      }
+    }
+
+    for (const channel of OPEN_WEBUI_CONDA_TOS_CHANNELS) {
+      if (latestByChannel.has(channel)) {
+        acceptedByChannel[channel] = latestByChannel.get(channel).accepted === true;
+      }
+    }
+
+    const foundKnownChannelRecord = OPEN_WEBUI_CONDA_TOS_CHANNELS.some((channel) => latestByChannel.has(channel));
+    if (foundKnownChannelRecord) return acceptedByChannel;
+  }
+
+  if (!condaExe) return acceptedByChannel;
+
+  const jsonRes = await execFileAsync(condaExe, ['tos', '--json'], { timeout: 20000 });
+  if (jsonRes.ok) {
+    try {
+      const payload = JSON.parse(String(jsonRes.stdout || '{}'));
+      const records = []
+        .concat(Array.isArray(payload) ? payload : [])
+        .concat(Array.isArray(payload?.channels) ? payload.channels : [])
+        .concat(Array.isArray(payload?.data) ? payload.data : [])
+        .concat(Array.isArray(payload?.tos) ? payload.tos : []);
+
+      for (const record of records) {
+        const channel = String(
+          record?.base_url
+          || record?.channel
+          || record?.url
+          || record?.name
+          || record?.channel_url
+          || ''
+        ).trim();
+        if (!channel || !(channel in acceptedByChannel)) continue;
+
+        const acceptedValue = record?.tos_accepted ?? record?.accepted ?? record?.accepted_at ?? record?.accepted_on ?? record?.status ?? '';
+        const normalizedAccepted = String(acceptedValue || '').trim().toLowerCase();
+        acceptedByChannel[channel] = Boolean(
+          record?.tos_accepted === true
+          || record?.accepted === true
+          || record?.accepted_at
+          || record?.accepted_on
+          || (normalizedAccepted && normalizedAccepted !== 'false' && normalizedAccepted !== 'no' && normalizedAccepted !== 'rejected' && normalizedAccepted !== 'null')
+        );
+      }
+
+      return acceptedByChannel;
+    } catch (_) {}
+  }
+
+  const textRes = await execFileAsync(condaExe, ['tos'], { timeout: 20000 });
+  const output = `${textRes.stdout || ''}\n${textRes.stderr || ''}`;
+  for (const channel of OPEN_WEBUI_CONDA_TOS_CHANNELS) {
+    const escapedChannel = channel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const line = output
+      .split(/\r?\n/)
+      .find((entry) => new RegExp(escapedChannel, 'i').test(entry));
+    if (!line) continue;
+
+    const normalizedLine = line.trim().toLowerCase();
+    acceptedByChannel[channel] = !(
+      !normalizedLine
+      || /\brejected\b/i.test(normalizedLine)
+      || /\bnot accepted\b/i.test(normalizedLine)
+      || /\bpending\b/i.test(normalizedLine)
+    );
+  }
+
+  return acceptedByChannel;
+}
+
 async function getOpenWebUiSetupState() {
   const condaExe = await resolveCondaExecutable();
-  const python310Installed = await detectPython310Installed();
+  const pythonInstalled = await detectOpenWebUiPythonInstalled();
   const minicondaInstalled = Boolean(condaExe);
   const ffmpegInstalled = Boolean(resolveFfmpegExecutable());
   const localUrl = getOpenWebUiLocalUrl();
@@ -1566,7 +1770,11 @@ async function getOpenWebUiSetupState() {
 
   let envExists = false;
   let packageInstalled = false;
+  let tosAcceptedByChannel = Object.fromEntries(
+    OPEN_WEBUI_CONDA_TOS_CHANNELS.map((channel) => [channel, false])
+  );
   if (!running && condaExe) {
+    tosAcceptedByChannel = await getOpenWebUiCondaTosStatus(condaExe);
     const envs = await listCondaEnvs(condaExe);
     envExists = envs.some((line) => new RegExp(`(^|\\s|[\\\\/])${OPEN_WEBUI_ENV_NAME}(\\s|$)`, 'i').test(line));
     if (envExists) {
@@ -1579,33 +1787,67 @@ async function getOpenWebUiSetupState() {
   let title = 'Open WebUI is ready to launch.';
   let message = 'Click launch to start Open WebUI in the managed Miniconda environment.';
   let commands = [];
+  let incompleteItems = [];
 
-  if (!python310Installed || !minicondaInstalled || !ffmpegInstalled) {
+  if (!pythonInstalled || !minicondaInstalled || !ffmpegInstalled) {
     phase = 'install-prereqs';
-    title = `Install Open WebUI prerequisites first.`;
-    message = 'Run these commands in Command Prompt or PowerShell, then open the icon again.';
-    commands = [];
-    if (!python310Installed) {
-      commands.push(`winget install -e --id Python.Python.${OPEN_WEBUI_PYTHON_VERSION}`);
+    const missingPrereqs = [];
+    if (!pythonInstalled) {
+      missingPrereqs.push({
+        label: `Python ${OPEN_WEBUI_PYTHON_VERSION}`,
+        command: `winget install -e --id Python.Python.${OPEN_WEBUI_PYTHON_VERSION}`
+      });
     }
     if (!minicondaInstalled) {
-      commands.push('winget install -e --id Anaconda.Miniconda3');
+      missingPrereqs.push({
+        label: 'Miniconda',
+        command: 'winget install -e --id Anaconda.Miniconda3'
+      });
     }
     if (!ffmpegInstalled) {
-      commands.push('winget install -e --id Gyan.FFmpeg');
+      missingPrereqs.push({
+        label: 'FFmpeg',
+        command: 'winget install -e --id Gyan.FFmpeg'
+      });
     }
+    incompleteItems = missingPrereqs.map((item) => item.label);
+    commands = missingPrereqs.map((item) => item.command);
+    title = missingPrereqs.length === 1
+      ? 'Install the remaining Open WebUI prerequisite.'
+      : `Complete ${missingPrereqs.length} remaining Open WebUI prerequisites.`;
+    message = 'Om-X scanned this device and only these missing prerequisites still need attention. Run them in order, then click the Open WebUI icon again.';
   } else if (!envExists || !packageInstalled) {
     phase = 'setup-env';
-    title = 'Finish the Open WebUI environment setup.';
-    message = 'Run these commands, then reopen the icon. Restarting the app is recommended after setup.';
-    commands = [
-      'conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main',
-      'conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r',
-      'conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/msys2',
-      `conda create -n ${OPEN_WEBUI_ENV_NAME} python=${OPEN_WEBUI_PYTHON_VERSION} -y`,
-      `conda activate ${OPEN_WEBUI_ENV_NAME}`,
-      'pip install open-webui'
-    ];
+    const missingTosCommands = OPEN_WEBUI_CONDA_TOS_CHANNELS
+      .filter((channel) => !tosAcceptedByChannel[channel])
+      .map((channel) => `conda tos accept --override-channels --channel ${channel}`);
+
+    if (missingTosCommands.length > 0) {
+      incompleteItems = missingTosCommands.map((command) => {
+        const channel = command.split('--channel ')[1] || '';
+        return `Conda Terms of Service: ${channel}`;
+      });
+      title = missingTosCommands.length === 1
+        ? 'Accept the remaining Conda Terms of Service.'
+        : `Accept ${missingTosCommands.length} remaining Conda Terms of Service entries.`;
+      message = 'Om-X scanned this device and only these incomplete Conda setup steps are still required. Run them in order, then click the Open WebUI icon again.';
+      commands = missingTosCommands;
+    } else if (!envExists) {
+      incompleteItems = ['Create the Open WebUI Conda environment'];
+      title = 'Create the Open WebUI Conda environment.';
+      message = 'Om-X scanned this device and the remaining step is to create the managed Conda environment. Run this command, then click the Open WebUI icon again.';
+      commands = [
+        `conda create -n ${OPEN_WEBUI_ENV_NAME} python=${OPEN_WEBUI_PYTHON_VERSION} -y`
+      ];
+    } else if (!packageInstalled) {
+      incompleteItems = ['Activate the Conda environment', 'Install Open WebUI'];
+      title = 'Install Open WebUI in the Conda environment.';
+      message = 'Om-X scanned this device and only these final setup steps remain. Run them in order, then click the Open WebUI icon again.';
+      commands = [
+        `conda activate ${OPEN_WEBUI_ENV_NAME}`,
+        'pip install open-webui'
+      ];
+    }
   } else if (running) {
     phase = 'running';
     title = 'Open WebUI is already running.';
@@ -1621,6 +1863,12 @@ async function getOpenWebUiSetupState() {
     running,
     managedRunning,
     ffmpegInstalled,
+    pythonInstalled,
+    minicondaInstalled,
+    packageInstalled,
+    envExists,
+    tosAcceptedByChannel,
+    incompleteItems,
     ready: running,
     localUrl,
     envName: OPEN_WEBUI_ENV_NAME
@@ -1915,45 +2163,6 @@ function syncLanRuntimeState() {
     addresses: status.serverInfo?.addresses || []
   };
   return status;
-}
-
-async function startLanServerInternal() {
-  invalidateServerStatusCache('lan');
-  const LanServer = loadLanServerClass();
-  if (!(lanServerInstance instanceof LanServer)) {
-    lanServerInstance = global.omxLanServer instanceof LanServer
-      ? global.omxLanServer
-      : new LanServer(mainWindow);
-  }
-
-  global.lanServer = lanServerInstance;
-  global.omxLanServer = lanServerInstance;
-  attachLanHostWindow(mainWindow);
-
-  const info = await lanServerInstance.start();
-  const status = syncLanRuntimeState();
-  ensureFirewallRules([OMX_LAN_DEFAULT_PORT]);
-  pushServerLog('lan', 'success', `LAN server listening at ${info?.url || status?.serverInfo?.url || 'unavailable'}`);
-  emitResolvedLanIp();
-  return status;
-}
-
-async function stopLanServerInternal() {
-  invalidateServerStatusCache('lan');
-  if (!lanServerInstance?.getStatus?.().isRunning) {
-    syncLanRuntimeState();
-    return false;
-  }
-
-  try {
-    lanServerInstance.stop();
-    pushServerLog('lan', 'info', 'LAN server stopped.');
-  } finally {
-    syncLanRuntimeState();
-    emitResolvedLanIp();
-  }
-
-  return true;
 }
 
 function normalizeOmChatUrl(value) {
@@ -2434,40 +2643,6 @@ function isMcpBackgroundRunning() {
   }
 }
 
-async function startMcpBackground(config = {}) {
-  const host = String(config.host || '127.0.0.1').trim() || '127.0.0.1';
-  const port = Number(config.port || 3000) || 3000;
-  const enabledTools = (config.enabledTools && typeof config.enabledTools === 'object') ? config.enabledTools : {};
-  const llm = (config.llm && typeof config.llm === 'object') ? config.llm : {};
-
-  if (isMcpBackgroundRunning()) {
-    writeMcpBackgroundMetadata(fs.readFileSync(OMX_MCP_BG_PID_FILE, 'utf-8').trim(), { host, port, enabledTools, llm });
-    return { success: true, host, port, alreadyRunning: true, pid: Number(fs.readFileSync(OMX_MCP_BG_PID_FILE, 'utf-8').trim()) || null };
-  }
-
-  return await new Promise((resolve) => {
-    try {
-      const childEnv = {
-        ...process.env,
-        MCP_TRANSPORT: 'http',
-        MCP_SERVER_OPTIONS: JSON.stringify({ host, port, enabledTools, llm })
-      };
-      const child = spawn(process.execPath, [OMX_MCP_BOOTSTRAP, 'mcp'], {
-        detached: true,
-        stdio: 'ignore',
-        windowsHide: true,
-        env: childEnv
-      });
-      child.unref();
-      writeMcpBackgroundMetadata(child.pid, { host, port, enabledTools, llm });
-      setTimeout(() => resolve({ success: true, host, port, pid: child.pid }), 400);
-    } catch (error) {
-      clearMcpBackgroundMetadata();
-      resolve({ success: false, error: error?.message || 'Failed to spawn MCP background server.' });
-    }
-  });
-}
-
 async function stopMcpBackground() {
   try {
     if (!fs.existsSync(OMX_MCP_BG_PID_FILE)) {
@@ -2487,6 +2662,154 @@ async function stopMcpBackground() {
   } catch (_) {}
   clearMcpBackgroundMetadata();
   return true;
+}
+
+function resolveMcpEnabledTools(inputTools = {}) {
+  return {
+    wiki: inputTools?.wiki !== false,
+    webSearch: inputTools?.webSearch !== false,
+    duckduckgo: inputTools?.duckduckgo !== false,
+    tavily: inputTools?.tavily !== false,
+    news: inputTools?.news !== false,
+    diagramGeneration: inputTools?.diagram === false ? false : inputTools?.diagramGeneration !== false,
+    diagramModification: inputTools?.diagram === false ? false : inputTools?.diagramModification !== false,
+    diagramValidation: inputTools?.diagram === false ? false : inputTools?.diagramValidation !== false,
+    diagramLayout: inputTools?.diagram === false ? false : inputTools?.diagramLayout !== false,
+    diagramAnalysis: inputTools?.diagram === false ? false : inputTools?.diagramAnalysis !== false,
+    diagramUtilities: inputTools?.diagram === false ? false : inputTools?.diagramUtilities !== false
+  };
+}
+
+function resolveMcpLlmConfig(settings = cachedSettings || DEFAULT_SETTINGS) {
+  const runtimeSettings = settings || DEFAULT_SETTINGS;
+  const activeProvider = String(runtimeSettings?.activeProvider || runtimeSettings?.llm?.provider || 'google').trim() || 'google';
+  const providerConfig = runtimeSettings?.providers?.[activeProvider] || {};
+  const llmBaseUrl = String(
+    providerConfig?.baseUrl
+    || (activeProvider === 'openai-compatible' ? runtimeSettings?.aiConfig?.openaiCompatible?.baseUrl : '')
+    || ''
+  ).trim();
+  const llmModel = String(
+    providerConfig?.model
+    || runtimeSettings?.llm?.model
+    || getSharedLlmModelForProvider(activeProvider)
+    || ''
+  ).trim();
+  const llmApiKey = String(
+    providerConfig?.key
+    || runtimeSettings?.llm?.key
+    || getSharedLlmApiKeyFromEnv(activeProvider)
+    || ''
+  ).trim();
+
+  return {
+    provider: activeProvider,
+    baseUrl: llmBaseUrl,
+    apiKey: llmApiKey,
+    model: llmModel
+  };
+}
+
+function buildMcpRuntimeConfig(config = {}) {
+  const existingConfig = serverConfigs.mcp || {};
+  const host = String(config.host || existingConfig.host || '127.0.0.1').trim() || '127.0.0.1';
+  const port = Number(config.port || existingConfig.port || 3000);
+  const enabledTools = resolveMcpEnabledTools(config?.enabledTools || existingConfig?.enabledTools || {});
+  return { host, port, enabledTools };
+}
+
+async function startMcpBackground(config = {}) {
+  const host = String(config.host || '127.0.0.1').trim() || '127.0.0.1';
+  const port = Number(config.port || 3000) || 3000;
+  const enabledTools = resolveMcpEnabledTools(config.enabledTools || {});
+
+  if (!fs.existsSync(OMX_MCP_BOOTSTRAP)) {
+    return { success: false, error: 'MCP bootstrap entry not found.' };
+  }
+
+  if (isMcpBackgroundRunning()) {
+    const bgConfig = readMcpBackgroundConfig();
+    return {
+      success: true,
+      alreadyRunning: true,
+      host: String(bgConfig?.host || host).trim() || host,
+      port: Number(bgConfig?.port || port) || port,
+      enabledTools: bgConfig?.enabledTools || enabledTools
+    };
+  }
+
+  clearMcpBackgroundMetadata();
+
+  const webApiKeys = getScraperWebApiKeysFromEnv();
+  const llm = resolveMcpLlmConfig();
+  const childEnv = {
+    ...process.env,
+    MCP_SERVER_OPTIONS: JSON.stringify({
+      host,
+      port,
+      enabledTools,
+      apiKeys: {
+        serpApiKey: webApiKeys.serpapi,
+        tavilyApiKey: webApiKeys.tavily,
+        newsApiKey: webApiKeys.newsapi
+      },
+      llm
+    })
+  };
+
+  return await new Promise((resolve) => {
+    let settled = false;
+    const child = spawn(process.execPath, [OMX_MCP_BOOTSTRAP, 'mcp'], {
+      detached: true,
+      stdio: 'ignore',
+      cwd: OMX_APP_ROOT,
+      env: childEnv
+    });
+
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      resolve(result);
+    };
+
+    child.once('error', (error) => {
+      clearMcpBackgroundMetadata();
+      finish({ success: false, error: error?.message || 'Failed to spawn MCP background server.' });
+    });
+
+    const waitStart = Date.now();
+    const timeoutMs = 15000;
+    const pollReady = async () => {
+      if (settled) return;
+      const ready = await checkTcpPort(host, port, 900);
+      if (ready) {
+        writeMcpBackgroundMetadata(child.pid, { host, port, enabledTools });
+        child.unref();
+        finish({ success: true, host, port, enabledTools, pid: child.pid, alwaysOnBackground: true });
+        return;
+      }
+
+      const hasExited = child.exitCode != null || child.signalCode != null;
+      if (hasExited) {
+        clearMcpBackgroundMetadata();
+        finish({ success: false, error: 'MCP background process exited before server became ready.' });
+        return;
+      }
+
+      if ((Date.now() - waitStart) >= timeoutMs) {
+        clearMcpBackgroundMetadata();
+        try {
+          process.kill(child.pid, 'SIGTERM');
+        } catch (_) {}
+        finish({ success: false, error: `MCP server did not become ready at http://${host}:${port}/mcp` });
+        return;
+      }
+
+      setTimeout(() => { void pollReady(); }, 400);
+    };
+
+    void pollReady();
+  });
 }
 
 function getBackgroundServerUrl() {
@@ -2611,7 +2934,10 @@ async function startOmChatServerInternal(config = {}) {
   const existingConfig = serverConfigs.omchat || {};
   const port = Number(config.port || existingConfig.port || OMX_OMCHAT_DEFAULT_PORT);
   const host = String(config.host || existingConfig.host || '0.0.0.0').trim() || '0.0.0.0';
-  const useNgrok = config.useNgrok === true;
+  const preferredUseNgrok = !Boolean(cachedSettings?.omchat?.useLocalIpOnly);
+  const useNgrok = Object.prototype.hasOwnProperty.call(config, 'useNgrok')
+    ? config.useNgrok === true
+    : preferredUseNgrok;
   const alwaysOn = Boolean(cachedSettings?.omchat?.alwaysOn);
 
   if (!fs.existsSync(OMX_OMCHAT_ENTRY)) {
@@ -2627,8 +2953,12 @@ async function startOmChatServerInternal(config = {}) {
         return { success: true, url, alreadyRunning: true, alwaysOn: true, publicUrl: url };
       }
     }
-    pushServerLog('omchat', 'info', 'Starting OmChat in background mode (Always On with ngrok)...');
-    const result = await startOmChatBackground({ port, host, useNgrok: true });
+    pushServerLog(
+      'omchat',
+      'info',
+      `Starting OmChat in background mode (Always On${useNgrok ? ' with ngrok' : ' local-only'})...`
+    );
+    const result = await startOmChatBackground({ port, host, useNgrok });
     if (result?.success) {
       serverStarts.omchat = Date.now();
       syncOmChatServerConfig({ host, port, accessInfo: null });
@@ -2761,564 +3091,8 @@ async function stopOmChatServerInternal() {
   return { success: true };
 }
 
-let omchatSyncRunning = false;
-
-function resolveOmChatLocalDbPath() {
-  const configured = String(cachedSettings?.omchat?.localDbPath || '').trim();
-  if (configured) return configured;
-  const envPath = String(process.env.LOCAL_DB_PATH || '').trim();
-  if (envPath) return envPath;
-  return path.join(process.cwd(), 'omchat-local-db');
-}
-
-function readJsonArray(filePath) {
-  try {
-    if (!fs.existsSync(filePath)) return [];
-    const raw = fs.readFileSync(filePath, 'utf8');
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch (error) {
-    return [];
-  }
-}
-
-function writeJsonArray(filePath, data = []) {
-  const safe = Array.isArray(data) ? data : [];
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, JSON.stringify(safe, null, 0), 'utf8');
-}
-
-function buildKeyFromFields(doc, fields) {
-  if (!doc || typeof doc !== 'object') return null;
-  const parts = fields.map((field) => String(doc[field] ?? '').trim());
-  if (parts.some((part) => !part)) return null;
-  return parts.join('|');
-}
-
-function extractComparableTimestamp(doc) {
-  if (!doc || typeof doc !== 'object') return null;
-  const candidates = [
-    doc.updatedAt,
-    doc.lastActiveAt,
-    doc.createdAt,
-    doc.joinedAt,
-    doc.bannedAt,
-    doc.expiresAt
-  ];
-  for (const value of candidates) {
-    if (!value) continue;
-    const stamp = value instanceof Date ? value.getTime() : Date.parse(String(value));
-    if (Number.isFinite(stamp)) return stamp;
-  }
-  return null;
-}
-
-function stripMongoId(doc) {
-  if (!doc || typeof doc !== 'object') return doc;
-  const clone = { ...doc };
-  delete clone._id;
-  return clone;
-}
-
-function resolveSyncConflict(localDoc, mongoDoc) {
-  if (localDoc && !mongoDoc) return localDoc;
-  if (mongoDoc && !localDoc) return mongoDoc;
-  if (!localDoc || !mongoDoc) return localDoc || mongoDoc;
-
-  const localStamp = extractComparableTimestamp(localDoc);
-  const mongoStamp = extractComparableTimestamp(mongoDoc);
-  if (localStamp != null && mongoStamp != null) {
-    return localStamp >= mongoStamp ? localDoc : mongoDoc;
-  }
-  if (localStamp != null && mongoStamp == null) return localDoc;
-  if (mongoStamp != null && localStamp == null) return mongoDoc;
-  return mongoDoc;
-}
-
-function getMongoUriHostLabel(mongoUri = '') {
-  const value = String(mongoUri || '').trim();
-  if (!value) return '';
-  const normalized = value.replace(/^mongodb(\+srv)?:\/\//i, '');
-  const afterAuth = normalized.includes('@') ? normalized.split('@').pop() : normalized;
-  const hostPart = String(afterAuth || '').split('/')[0].split('?')[0].trim();
-  return hostPart;
-}
-
-function normalizeMongoConnectionError(error, mongoUri = '') {
-  const raw = String(error?.message || error || '').trim();
-  if (!raw) {
-    return 'Could not connect to MongoDB.';
-  }
-
-  const host = getMongoUriHostLabel(mongoUri);
-  const isSrvUri = /^mongodb\+srv:\/\//i.test(String(mongoUri || '').trim());
-  const lower = raw.toLowerCase();
-  const isDnsSrvFailure =
-    lower.includes('querysrv') ||
-    lower.includes('enotfound') ||
-    lower.includes('eservfail') ||
-    lower.includes('erefused') ||
-    lower.includes('dns') ||
-    lower.includes('srv');
-
-  if (isSrvUri && isDnsSrvFailure) {
-    return `MongoDB DNS lookup failed for ${host || 'the cluster host'}. The app could not resolve the SRV records for your mongodb+srv address. Check your internet/DNS settings, or replace MONGODB_URI with a standard mongodb:// host list from MongoDB Atlas.`;
-  }
-
-  if (lower.includes('authentication failed')) {
-    return 'MongoDB authentication failed. Check the username, password, and database user permissions in MONGODB_URI.';
-  }
-
-  if (lower.includes('server selection timed out')) {
-    return `MongoDB server selection timed out${host ? ` for ${host}` : ''}. Check network access, Atlas IP allowlist, and the connection string in MONGODB_URI.`;
-  }
-
-  return raw;
-}
-
-async function syncOmChatDatabases(event) {
-  if (omchatSyncRunning) {
-    return { success: false, error: 'A backup is already running.' };
-  }
-  omchatSyncRunning = true;
-
-  const sendProgress = (payload) => {
-    try {
-      event?.sender?.send('omchat-sync-progress', payload);
-    } catch (_) {}
-  };
-
-  const sendDone = (payload) => {
-    try {
-      event?.sender?.send('omchat-sync-done', payload);
-    } catch (_) {}
-  };
-
-  const localDbDir = resolveOmChatLocalDbPath();
-  const mongoUri = String(process.env.MONGODB_URI || '').trim();
-  applyMongoDnsOverrides(mongoUri);
-  if (!mongoUri) {
-    const error = 'MongoDB URI is not configured in .env.';
-    sendDone({ success: false, error });
-    omchatSyncRunning = false;
-    return { success: false, error };
-  }
-
-  const collections = [
-    { local: 'users', mongo: 'users', key: ['email'] },
-    { local: 'servers', mongo: 'servers', key: ['id'] },
-    { local: 'channels', mongo: 'channels', key: ['id'] },
-    { local: 'roles', mongo: 'roles', key: ['id'] },
-    { local: 'members', mongo: 'members', key: ['userId', 'serverId'] },
-    { local: 'invites', mongo: 'invites', key: ['code'] },
-    { local: 'bans', mongo: 'bans', key: ['userId', 'serverId'] },
-    { local: 'chatMessages', mongo: 'chat_messages', key: ['id'] },
-    { local: 'dmConversations', mongo: 'dm_conversations', key: ['id'] },
-    { local: 'uploadBlobs', mongo: 'upload_blobs', key: ['sha256'] },
-    { local: 'refreshTokens', mongo: 'refresh_tokens', key: ['token'] },
-    { local: 'deviceTokens', mongo: 'device_tokens', key: ['token'] },
-    { local: 'sessionLogs', mongo: 'session_log', key: ['id'] },
-    { local: 'otpCodes', mongo: 'otpcodes', key: ['email'] }
-  ];
-
-  const client = new MongoClient(mongoUri, { ignoreUndefined: true });
-
-  try {
-    sendProgress({ status: 'Connecting to MongoDB...', percent: 2, message: 'Connecting to MongoDB...' });
-    await client.connect();
-    const db = client.db('omchat');
-    sendProgress({ status: 'MongoDB connected.', percent: 6, message: 'MongoDB connected.' });
-
-    const totalCollections = collections.length;
-    let completedCollections = 0;
-
-    for (const entry of collections) {
-      const percentBase = 6 + Math.round((completedCollections / totalCollections) * 88);
-      sendProgress({
-        status: `Backing up ${entry.local}...`,
-        percent: percentBase,
-        message: `Uploading ${entry.local} -> ${entry.mongo}`
-      });
-
-      const localPath = path.join(localDbDir, `${entry.local}.json`);
-      const localRows = readJsonArray(localPath);
-
-      const mongoCollection = db.collection(entry.mongo);
-      let upserted = 0;
-      for (const row of localRows) {
-        const key = buildKeyFromFields(row, entry.key);
-        if (!key) continue;
-        await mongoCollection.replaceOne(
-          buildMongoFilter(entry.key, row),
-          stripMongoId(row),
-          { upsert: true }
-        );
-        upserted += 1;
-      }
-
-      completedCollections += 1;
-      sendProgress({
-        status: `Backed up ${entry.local}.`,
-        percent: 6 + Math.round((completedCollections / totalCollections) * 88),
-        message: `${entry.local}: ${upserted} records uploaded`
-      });
-    }
-
-    sendProgress({ status: 'Finalizing backup...', percent: 98, message: 'Finalizing backup...' });
-    sendDone({ success: true, mode: 'backup' });
-    return { success: true };
-  } catch (error) {
-    const message = normalizeMongoConnectionError(error, mongoUri) || 'Database backup failed.';
-    sendDone({ success: false, error: message, mode: 'backup' });
-    return { success: false, error: message };
-  } finally {
-    try {
-      await client.close();
-    } catch (_) {}
-    omchatSyncRunning = false;
-  }
-}
-
-async function deleteOmChatMongoBackup(event) {
-  if (omchatSyncRunning) {
-    return { success: false, error: 'Another MongoDB operation is already running.' };
-  }
-  omchatSyncRunning = true;
-
-  const sendProgress = (payload) => {
-    try {
-      event?.sender?.send('omchat-sync-progress', payload);
-    } catch (_) {}
-  };
-
-  const sendDone = (payload) => {
-    try {
-      event?.sender?.send('omchat-sync-done', payload);
-    } catch (_) {}
-  };
-
-  const mongoUri = String(process.env.MONGODB_URI || '').trim();
-  applyMongoDnsOverrides(mongoUri);
-  if (!mongoUri) {
-    const error = 'MongoDB URI is not configured in .env.';
-    sendDone({ success: false, error, mode: 'delete' });
-    omchatSyncRunning = false;
-    return { success: false, error };
-  }
-
-  const collections = [
-    'users',
-    'servers',
-    'channels',
-    'roles',
-    'members',
-    'invites',
-    'bans',
-    'chat_messages',
-    'dm_conversations',
-    'upload_blobs',
-    'refresh_tokens',
-    'device_tokens',
-    'session_log',
-    'otpcodes'
-  ];
-
-  const client = new MongoClient(mongoUri, { ignoreUndefined: true });
-
-  try {
-    sendProgress({ status: 'Connecting to MongoDB...', percent: 2, message: 'Connecting to MongoDB...' });
-    await client.connect();
-    const db = client.db('omchat');
-    sendProgress({ status: 'MongoDB connected.', percent: 8, message: 'MongoDB connected.' });
-
-    let completedCollections = 0;
-    let removedCollections = 0;
-    const totalCollections = collections.length;
-
-    for (const collectionName of collections) {
-      const percentBase = 8 + Math.round((completedCollections / totalCollections) * 84);
-      sendProgress({
-        status: `Removing ${collectionName}...`,
-        percent: percentBase,
-        message: `Deleting MongoDB backup collection ${collectionName}`
-      });
-
-      try {
-        await db.collection(collectionName).drop();
-        removedCollections += 1;
-        sendProgress({
-          status: `Removed ${collectionName}.`,
-          percent: 8 + Math.round(((completedCollections + 1) / totalCollections) * 84),
-          message: `${collectionName} deleted`
-        });
-      } catch (error) {
-        const codeName = String(error?.codeName || '').toLowerCase();
-        const message = String(error?.message || '').toLowerCase();
-        const isMissing =
-          error?.code === 26 ||
-          codeName === 'namespacenotfound' ||
-          message.includes('ns not found') ||
-          message.includes('namespace not found');
-        if (!isMissing) throw error;
-        sendProgress({
-          status: `Skipped ${collectionName}.`,
-          percent: 8 + Math.round(((completedCollections + 1) / totalCollections) * 84),
-          message: `${collectionName} was already empty`
-        });
-      }
-
-      completedCollections += 1;
-    }
-
-    sendProgress({ status: 'Finalizing cleanup...', percent: 98, message: 'Finalizing cleanup...' });
-    sendDone({ success: true, mode: 'delete' });
-    return { success: true, removedCollections };
-  } catch (error) {
-    const message = normalizeMongoConnectionError(error, mongoUri) || 'Failed to delete MongoDB backup.';
-    sendDone({ success: false, error: message, mode: 'delete' });
-    return { success: false, error: message };
-  } finally {
-    try {
-      await client.close();
-    } catch (_) {}
-    omchatSyncRunning = false;
-  }
-}
-
-async function importOmChatDatabases(event) {
-  if (omchatSyncRunning) {
-    return { success: false, error: 'A download is already running.' };
-  }
-  omchatSyncRunning = true;
-
-  const sendProgress = (payload) => {
-    try {
-      event?.sender?.send('omchat-sync-progress', payload);
-    } catch (_) {}
-  };
-
-  const sendDone = (payload) => {
-    try {
-      event?.sender?.send('omchat-sync-done', payload);
-    } catch (_) {}
-  };
-
-  const localDbDir = resolveOmChatLocalDbPath();
-  const mongoUri = String(process.env.MONGODB_URI || '').trim();
-  applyMongoDnsOverrides(mongoUri);
-  if (!mongoUri) {
-    const error = 'MongoDB URI is not configured in .env.';
-    sendDone({ success: false, error, mode: 'import' });
-    omchatSyncRunning = false;
-    return { success: false, error };
-  }
-
-  const collections = [
-    { local: 'users', mongo: 'users' },
-    { local: 'servers', mongo: 'servers' },
-    { local: 'channels', mongo: 'channels' },
-    { local: 'roles', mongo: 'roles' },
-    { local: 'members', mongo: 'members' },
-    { local: 'invites', mongo: 'invites' },
-    { local: 'bans', mongo: 'bans' },
-    { local: 'chatMessages', mongo: 'chat_messages' },
-    { local: 'dmConversations', mongo: 'dm_conversations' },
-    { local: 'uploadBlobs', mongo: 'upload_blobs' },
-    { local: 'refreshTokens', mongo: 'refresh_tokens' },
-    { local: 'deviceTokens', mongo: 'device_tokens' },
-    { local: 'sessionLogs', mongo: 'session_log' },
-    { local: 'otpCodes', mongo: 'otpcodes' }
-  ];
-
-  const client = new MongoClient(mongoUri, { ignoreUndefined: true });
-
-  try {
-    sendProgress({ status: 'Connecting to MongoDB...', percent: 2, message: 'Connecting to MongoDB...' });
-    await client.connect();
-    const db = client.db('omchat');
-    sendProgress({ status: 'MongoDB connected.', percent: 6, message: 'MongoDB connected.' });
-
-    const defaultName = `omchat-backup-${new Date().toISOString().replace(/[:.]/g, '-')}.zip`;
-    const saveResult = await dialog.showSaveDialog(mainWindow, {
-      title: 'Save OmChat Backup Zip',
-      defaultPath: path.join(app.getPath('downloads'), defaultName),
-      filters: [{ name: 'Zip Archive', extensions: ['zip'] }]
-    });
-    if (saveResult.canceled || !saveResult.filePath) {
-      const error = 'Download canceled.';
-      sendDone({ success: false, error, mode: 'import' });
-      return { success: false, error };
-    }
-
-    const output = fs.createWriteStream(saveResult.filePath);
-    const archive = require('archiver')('zip', { zlib: { level: 9 } });
-    const downloadId = `dl-omchat-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const downloadStart = Date.now();
-    const zipPromise = new Promise((resolve, reject) => {
-      output.on('close', resolve);
-      output.on('error', reject);
-      archive.on('error', reject);
-    });
-    archive.pipe(output);
-
-    const totalCollections = collections.length;
-    let completedCollections = 0;
-
-    for (const entry of collections) {
-      const percentBase = 6 + Math.round((completedCollections / totalCollections) * 88);
-      sendProgress({
-        status: `Downloading ${entry.local}...`,
-        percent: percentBase,
-        message: `Adding ${entry.mongo} -> ${entry.local}.json`
-      });
-
-      const mongoCollection = db.collection(entry.mongo);
-      const mongoRows = await mongoCollection.find({}).toArray();
-      const cleaned = Array.isArray(mongoRows)
-        ? mongoRows.map((row) => stripMongoId(row))
-        : [];
-      const payload = JSON.stringify(cleaned, null, 0);
-      archive.append(payload, { name: `${entry.local}.json` });
-
-      completedCollections += 1;
-      sendProgress({
-        status: `Added ${entry.local}.`,
-        percent: 6 + Math.round((completedCollections / totalCollections) * 88),
-        message: `${entry.local}: ${cleaned.length} records`
-      });
-    }
-
-    sendProgress({ status: 'Finalizing zip...', percent: 98, message: 'Finalizing zip...' });
-    await archive.finalize();
-    await zipPromise;
-
-    try {
-      const stat = fs.statSync(saveResult.filePath);
-      const data = {
-        id: downloadId,
-        filename: path.basename(saveResult.filePath),
-        totalBytes: stat.size,
-        receivedBytes: stat.size,
-        state: 'completed',
-        startTime: downloadStart,
-        url: 'omchat://backup',
-        speed: 0,
-        savePath: saveResult.filePath,
-        saveDir: path.dirname(saveResult.filePath)
-      };
-      const list = getStoredDownloads();
-      list.unshift(data);
-      downloadsStore.set(list);
-      downloadsStore.scheduleFlush();
-      broadcast('download-update', data);
-    } catch (_) {}
-    sendDone({ success: true, mode: 'import' });
-    return { success: true };
-  } catch (error) {
-    const message = normalizeMongoConnectionError(error, mongoUri) || 'Database download failed.';
-    sendDone({ success: false, error: message, mode: 'import' });
-    return { success: false, error: message };
-  } finally {
-    try {
-      await client.close();
-    } catch (_) {}
-    omchatSyncRunning = false;
-  }
-}
-
-function buildMongoFilter(fields, doc) {
-  const filter = {};
-  for (const field of fields) {
-    filter[field] = doc?.[field];
-  }
-  return filter;
-}
-
-async function getOmChatMongoStats() {
-  const mongoUri = String(process.env.MONGODB_URI || '').trim();
-  applyMongoDnsOverrides(mongoUri);
-  if (!mongoUri) {
-    return { success: false, error: 'MongoDB URI is not configured in .env.' };
-  }
-  const client = new MongoClient(mongoUri, { ignoreUndefined: true });
-  try {
-    await client.connect();
-    const targetDbName = 'omchat';
-    const db = client.db(targetDbName);
-    const stats = await db.command({ dbStats: 1, scale: 1 });
-    const fsUsedSize = Number.isFinite(stats.fsUsedSize) ? stats.fsUsedSize : null;
-    const fsTotalSize = Number.isFinite(stats.fsTotalSize) ? stats.fsTotalSize : null;
-    const freeBytes = fsUsedSize != null && fsTotalSize != null ? Math.max(0, fsTotalSize - fsUsedSize) : null;
-    let clusterStats = null;
-    try {
-      const admin = client.db().admin();
-      const list = await admin.listDatabases();
-      const dbNames = (list?.databases || [])
-        .map((entry) => entry?.name)
-        .filter((name) => typeof name === 'string' && name && !['admin', 'local', 'config'].includes(name));
-      if (dbNames.length) {
-        let totalData = 0;
-        let totalStorage = 0;
-        let totalIndex = 0;
-        for (const name of dbNames) {
-          try {
-            const entryStats = await client.db(name).command({ dbStats: 1, scale: 1 });
-            if (Number.isFinite(entryStats.dataSize)) totalData += entryStats.dataSize;
-            if (Number.isFinite(entryStats.storageSize)) totalStorage += entryStats.storageSize;
-            if (Number.isFinite(entryStats.indexSize)) totalIndex += entryStats.indexSize;
-          } catch (_) {}
-        }
-        clusterStats = {
-          dataSize: totalData,
-          storageSize: totalStorage,
-          indexSize: totalIndex,
-          dbCount: dbNames.length
-        };
-      }
-    } catch (_) {}
-    return {
-      success: true,
-      stats: {
-        dataSize: Number.isFinite(stats.dataSize) ? stats.dataSize : null,
-        storageSize: Number.isFinite(stats.storageSize) ? stats.storageSize : null,
-        indexSize: Number.isFinite(stats.indexSize) ? stats.indexSize : null,
-        fsUsedSize,
-        fsTotalSize,
-        freeBytes,
-        dbName: targetDbName,
-        cluster: clusterStats
-      }
-    };
-  } catch (error) {
-    return { success: false, error: normalizeMongoConnectionError(error, mongoUri) || 'Failed to read MongoDB stats.' };
-  } finally {
-    try {
-      await client.close();
-    } catch (_) {}
-  }
-}
-
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function resolveNodeExecutable() {
-  const candidates = [
-    String(process.env.OMX_NODE_EXECUTABLE || '').trim(),
-    String(process.env.NODE || '').trim(),
-    String(process.argv0 || '').trim()
-  ].filter(Boolean);
-
-  for (const candidate of candidates) {
-    try {
-      const normalized = candidate.replace(/^"+|"+$/g, '');
-      if (!normalized) continue;
-      if (fs.existsSync(normalized)) return normalized;
-      if (/node(?:\.exe)?$/i.test(path.basename(normalized))) return normalized;
-    } catch (_) {}
-  }
-
-  return process.platform === 'win32' ? 'node.exe' : 'node';
 }
 
 function checkTcpPort(host, port, timeoutMs = 800) {
@@ -3510,78 +3284,6 @@ function startLlamaMemoryGuard() {
 }
 
 
-async function shutdownManagedServers() {
-  if (hasCompletedServerShutdown) return;
-  if (isServerShutdownInProgress) return;
-  isServerShutdownInProgress = true;
-  const masterDeadline = new Promise((resolve) => setTimeout(resolve, 12000));
-
-  try {
-    const shutdownTasks = [];
-
-    if (isServerProcessActive(omChatServerProcess) || isServerProcessActive(omChatNgrokProcess)) {
-      const alwaysOn = Boolean(cachedSettings?.omchat?.alwaysOn);
-      if (alwaysOn) {
-        pushServerLog('omchat', 'info', 'Om-X is closing. Always On enabled — keeping server running in background.');
-        try { await stopOmChatNgrokTunnelInternal(); } catch (_) {}
-        try {
-          const moduleRef = await loadOmChatModule();
-          const omChatApi = moduleRef?.default || moduleRef;
-          const status = omChatApi.getStatus?.();
-          if (status?.isRunning) {
-            await startOmChatBackground({
-              port: serverConfigs.omchat?.port || OMX_OMCHAT_DEFAULT_PORT,
-              host: serverConfigs.omchat?.host || '0.0.0.0'
-            });
-            try { omChatApi.stopServer(); } catch (_) {}
-          }
-        } catch (_) {}
-        try { omChatServerProcess.kill(); } catch (_) {}
-        omChatServerProcess = null;
-        omChatNgrokProcess = null;
-      } else {
-        pushServerLog('omchat', 'info', 'Om-X is closing. Stopping Om Chat server.');
-        try {
-          await stopOmChatNgrokTunnelInternal();
-        } catch (_) {}
-        if (isServerProcessActive(omChatServerProcess)) {
-          try {
-            const moduleRef = await loadOmChatModule();
-            const omChatApi = moduleRef?.default || moduleRef;
-            await omChatApi.stopServer();
-          } catch (_) {}
-          try {
-            omChatServerProcess.kill();
-          } catch (_) {}
-        }
-        omChatServerProcess = null;
-        serverStarts.omchat = null;
-        serverConfigs.omchat = null;
-      }
-    } else {
-      const alwaysOn = Boolean(cachedSettings?.omchat?.alwaysOn);
-      if (!alwaysOn) {
-        killBackgroundServer();
-      }
-    }
-
-    if (isServerProcessActive(openWebUiProcess) || await checkTcpPort(OPEN_WEBUI_HOST, OPEN_WEBUI_PORT)) {
-      pushServerLog('openwebui', 'info', 'Om-X is closing. Stopping Open WebUI.');
-      shutdownTasks.push(
-        stopOpenWebUiInternal()
-          .catch((e) => console.warn('[Shutdown] OpenWebUI kill error:', e?.message))
-      );
-    }
-
-    await Promise.race([
-      Promise.allSettled(shutdownTasks),
-      masterDeadline
-    ]);
-  } finally {
-    hasCompletedServerShutdown = true;
-    isServerShutdownInProgress = false;
-  }
-}
 // Temporary debugging aid for main window only.
 const TEMP_MAIN_AUTO_OPEN_DEVTOOLS = false;
 const trustedFolders = new Set();  // Track user-selected trusted folders
@@ -3817,7 +3519,8 @@ const VT_SITE_CACHE_FILES = Object.freeze({
 const SCRAPES_DIR = path.join(os.homedir(), 'Desktop', 'Om-X Scrapes');
 
 if (process.platform === 'win32') {
-  app.setAppUserModelId('com.omx.browser');
+  app.setAppUserModelId('com.omx');
+  app.setName('Om-X');
 }
 
 const ICONS_DIR = path.resolve(__dirname, '../../assets/icons');
@@ -3986,9 +3689,6 @@ const DEFAULT_SETTINGS = {
     key: '',
     model: 'gemini-3-flash-preview'
   },
-  aiChat: {
-    duckAiHideSidebar: true
-  },
   youtubeAddon: {
     enabled: true,
     hideShorts: true,
@@ -4014,7 +3714,6 @@ const DEFAULT_SETTINGS = {
     'quit-app': 'Ctrl+Shift+Q'
   },
   omchat: {
-    dbMode: 'local',
     localDbPath: '',
     useLocalIpOnly: false,
     alwaysOn: false
@@ -4048,10 +3747,7 @@ function normalizeYouTubeAddonSettings(youtubeAddon = {}) {
 function normalizeAiChatSettings(aiChat = {}) {
   const nextAiChat = aiChat && typeof aiChat === 'object' ? aiChat : {};
   return {
-    ...DEFAULT_SETTINGS.aiChat,
-    ...nextAiChat,
-    // Duck AI cleanup is now always-on and not user-toggleable.
-    duckAiHideSidebar: true
+    ...nextAiChat
   };
 }
 
@@ -5555,28 +5251,38 @@ ipcMain.handle('mcp:start-server', withAuthorizedRendererPages(AUTHORIZED_RENDER
     return { success: false, error: 'MCP server is already running.' };
   }
 
-  const port = Number(config.port || 3000);
-  const host = String(config.host || '127.0.0.1').trim() || '127.0.0.1';
-  const webApiKeys = getScraperWebApiKeysFromEnv();
-  const enabledTools = {
-    wiki: config?.enabledTools?.wiki !== false,
-    webSearch: config?.enabledTools?.webSearch !== false,
-    duckduckgo: config?.enabledTools?.duckduckgo !== false,
-    tavily: config?.enabledTools?.tavily !== false,
-    news: config?.enabledTools?.news !== false,
-    diagramGeneration: config?.enabledTools?.diagram === false ? false : config?.enabledTools?.diagramGeneration !== false,
-    diagramModification: config?.enabledTools?.diagram === false ? false : config?.enabledTools?.diagramModification !== false,
-    diagramValidation: config?.enabledTools?.diagram === false ? false : config?.enabledTools?.diagramValidation !== false,
-    diagramLayout: config?.enabledTools?.diagram === false ? false : config?.enabledTools?.diagramLayout !== false,
-    diagramAnalysis: config?.enabledTools?.diagram === false ? false : config?.enabledTools?.diagramAnalysis !== false,
-    diagramUtilities: config?.enabledTools?.diagram === false ? false : config?.enabledTools?.diagramUtilities !== false
-  };
+  const { host, port, enabledTools } = buildMcpRuntimeConfig(config);
   if (!Object.values(enabledTools).some(Boolean)) {
     return { success: false, error: 'Enable at least one MCP tool before starting the server.' };
   }
 
   if (!fs.existsSync(OMX_MCP_MODULE)) {
     return { success: false, error: 'MCP server entry not found.' };
+  }
+
+  const alwaysOn = Boolean(cachedSettings?.mcp?.alwaysOn);
+  if (alwaysOn) {
+    const backgroundResult = await startMcpBackground({ host, port, enabledTools });
+    if (!backgroundResult?.success) {
+      return backgroundResult;
+    }
+    serverStarts.mcp = serverStarts.mcp || Date.now();
+    serverConfigs.mcp = {
+      host: backgroundResult.host || host,
+      port: backgroundResult.port || port,
+      enabledTools: backgroundResult.enabledTools || enabledTools
+    };
+    pushServerLog('mcp', 'success', `MCP background server listening at http://${serverConfigs.mcp.host}:${serverConfigs.mcp.port}/mcp`);
+    pushServerLog('mcp', 'info', 'MCP started in Always On background mode.');
+    return {
+      success: true,
+      pid: backgroundResult.pid || null,
+      host: serverConfigs.mcp.host,
+      port: serverConfigs.mcp.port,
+      enabledTools: serverConfigs.mcp.enabledTools,
+      alwaysOnBackground: true,
+      alreadyRunning: Boolean(backgroundResult.alreadyRunning)
+    };
   }
 
   if (isMcpBackgroundRunning()) {
@@ -5600,26 +5306,8 @@ ipcMain.handle('mcp:start-server', withAuthorizedRendererPages(AUTHORIZED_RENDER
   }
 
   try {
-    const runtimeSettings = cachedSettings || DEFAULT_SETTINGS;
-    const activeProvider = String(runtimeSettings?.activeProvider || runtimeSettings?.llm?.provider || 'google').trim() || 'google';
-    const providerConfig = runtimeSettings?.providers?.[activeProvider] || {};
-    const llmBaseUrl = String(
-      providerConfig?.baseUrl
-      || (activeProvider === 'openai-compatible' ? runtimeSettings?.aiConfig?.openaiCompatible?.baseUrl : '')
-      || ''
-    ).trim();
-    const llmModel = String(
-      providerConfig?.model
-      || runtimeSettings?.llm?.model
-      || getSharedLlmModelForProvider(activeProvider)
-      || ''
-    ).trim();
-    const llmApiKey = String(
-      providerConfig?.key
-      || runtimeSettings?.llm?.key
-      || getSharedLlmApiKeyFromEnv(activeProvider)
-      || ''
-    ).trim();
+    const webApiKeys = getScraperWebApiKeysFromEnv();
+    const llm = resolveMcpLlmConfig();
 
     const moduleRef = await loadMcpModule();
     await moduleRef.startServer({
@@ -5632,10 +5320,10 @@ ipcMain.handle('mcp:start-server', withAuthorizedRendererPages(AUTHORIZED_RENDER
         newsApiKey: webApiKeys.newsapi
       },
       llm: {
-        provider: activeProvider,
-        baseUrl: llmBaseUrl,
-        apiKey: llmApiKey,
-        model: llmModel
+        provider: llm.provider,
+        baseUrl: llm.baseUrl,
+        apiKey: llm.apiKey,
+        model: llm.model
       }
     });
     mcpServerProcess = {
@@ -5652,9 +5340,9 @@ ipcMain.handle('mcp:start-server', withAuthorizedRendererPages(AUTHORIZED_RENDER
       port,
       enabledTools,
       llm: {
-        provider: activeProvider,
-        baseUrl: llmBaseUrl,
-        model: llmModel
+        provider: llm.provider,
+        baseUrl: llm.baseUrl,
+        model: llm.model
       }
     };
     pushServerLog('mcp', 'info', `MCP HTTP server listening at http://${host}:${port}/mcp`);
@@ -5733,30 +5421,8 @@ ipcMain.handle('omchat:get-db-config', withAuthorizedRendererPages(AUTHORIZED_RE
   const settings = cachedSettings || {};
   const omchat = settings.omchat || {};
   return {
-    dbMode: omchat.dbMode || 'local',
-    localDbPath: omchat.localDbPath || '',
-    hasMongoUri: Boolean(process.env.MONGODB_URI && process.env.MONGODB_URI.trim())
+    localDbPath: omchat.localDbPath || ''
   };
-}));
-
-ipcMain.handle('omchat:sync-db', withAuthorizedRendererPages(AUTHORIZED_RENDERER_PAGES.system, 'omchat:sync-db', async (event) => {
-  ensureTrustedServerControlSender(event);
-  return syncOmChatDatabases(event);
-}));
-
-ipcMain.handle('omchat:import-db', withAuthorizedRendererPages(AUTHORIZED_RENDERER_PAGES.system, 'omchat:import-db', async (event) => {
-  ensureTrustedServerControlSender(event);
-  return importOmChatDatabases(event);
-}));
-
-ipcMain.handle('omchat:delete-mongo-backup', withAuthorizedRendererPages(AUTHORIZED_RENDERER_PAGES.system, 'omchat:delete-mongo-backup', async (event) => {
-  ensureTrustedServerControlSender(event);
-  return deleteOmChatMongoBackup(event);
-}));
-
-ipcMain.handle('omchat:get-mongo-stats', withAuthorizedRendererPages(AUTHORIZED_RENDERER_PAGES.system, 'omchat:get-mongo-stats', async (event) => {
-  ensureTrustedServerControlSender(event);
-  return getOmChatMongoStats();
 }));
 
 ipcMain.handle('openwebui:get-status', withAuthorizedRendererPages(AUTHORIZED_RENDERER_PAGES.mainWindow, 'openwebui:get-status', async (event) => {
@@ -6610,60 +6276,6 @@ async function downloadBuffer(url) {
     });
 }
 
-function crxToZip(buffer) {
-    if (buffer.slice(0, 4).toString() !== 'Cr24') throw new Error('Invalid CRX');
-    const version = buffer.readUInt32LE(4);
-    if (version !== 2 && version !== 3) throw new Error(`Unsupported CRX version ${version}`);
-    const headerSize = buffer.readUInt32LE(8);
-    const zipStart = 12 + headerSize;
-    return buffer.slice(zipStart);
-}
-
-async function extractZipToDir(zipBuffer, destDir) {
-    // Security: Validate destination path to prevent directory traversal
-    const abs = path.resolve(String(destDir || ''));
-    if (!isPathInSafeDirectories(abs)) throw new Error('Invalid destination directory');
-    
-    try { 
-        await fs.promises.rm(abs, { recursive: true, force: true }); 
-    } catch (e) {}
-    
-    await fs.promises.mkdir(abs, { recursive: true });
-    const tmpZip = path.join(os.tmpdir(), `omx-extract-${Date.now()}.zip`);
-    await fs.promises.writeFile(tmpZip, zipBuffer);
-    
-    return new Promise((resolve, reject) => {
-        // Security: Use safe parameter passing instead of string interpolation
-        const ps = spawn('powershell.exe', [
-            '-NoProfile',
-            '-Command',
-            '$ProgressPreference="SilentlyContinue"; Expand-Archive -Path $args[0] -DestinationPath $args[1] -Force',
-            tmpZip,
-            abs
-        ], { windowsHide: true });
-        
-        ps.on('exit', async (code) => {
-            try { await fs.promises.unlink(tmpZip); } catch (e) {}
-            if (code === 0) resolve(true); 
-            else reject(new Error(`Expand-Archive failed with code ${code}`));
-        });
-        
-        ps.on('error', (err) => {
-            try { fs.unlinkSync(tmpZip); } catch (e) {}
-            reject(err);
-        });
-    });
-}
-
-async function fileExists(targetPath) {
-    try {
-        await fs.promises.access(targetPath);
-        return true;
-    } catch (_) {
-        return false;
-    }
-}
-
 function getExtensionsBaseDir() {
     const candidates = [];
     try {
@@ -6825,88 +6437,6 @@ function configureSecurity(settings, win) {
   }
 }
 
-function ensureChesslyIpcHandlers() {
-  if (!chesslyApp) return;
-
-  const hasHandler = (channel) => {
-    try {
-      return Boolean(ipcMain._invokeHandlers && ipcMain._invokeHandlers.has(channel));
-    } catch (_) {
-      return false;
-    }
-  };
-
-  // Let Chessly register its own handlers if possible.
-  if (!hasHandler("engines-save") || !hasHandler("engines-get-all")) {
-    try {
-      if (typeof chesslyApp.initApp === 'function') {
-        chesslyApp.initApp({ embedded: true });
-      }
-    } catch (e) {
-      console.error("[Main] Chessly initApp failed (IPC fallback will be used):", e);
-    }
-  }
-
-  const registerIfMissing = (channel, handler) => {
-    if (!hasHandler(channel)) {
-      try { ipcMain.handle(channel, handler); } catch (e) {
-        console.error(`[Main] Failed to register handler ${channel}:`, e);
-      }
-    }
-  };
-
-  const chesslyEnginesFile = path.join(app.getPath("userData"), "engines.json");
-  const chesslyEnginesDir = path.join(__dirname, "../../game/electron/chessly electron/engines");
-
-  const loadEngines = () => {
-    try { return JSON.parse(fs.readFileSync(chesslyEnginesFile, "utf8")); } catch { return []; }
-  };
-  const saveEngines = (list) => {
-    try { fs.writeFileSync(chesslyEnginesFile, JSON.stringify(list, null, 2)); } catch (_) {}
-  };
-
-  registerIfMissing("engines-get-all", () => loadEngines());
-  registerIfMissing("engines-save", (_event, engineData) => {
-    if (!engineData || typeof engineData !== "object") return loadEngines();
-    const engines = loadEngines();
-    if (!engineData.id) engineData.id = "eng-" + Date.now();
-    const idx = engines.findIndex(e => e.id === engineData.id);
-    if (idx >= 0) engines[idx] = engineData; else engines.push(engineData);
-    saveEngines(engines);
-    return engines;
-  });
-  registerIfMissing("engines-delete", (_event, id) => {
-    const engines = loadEngines().filter(e => e.id !== id);
-    saveEngines(engines);
-    return engines;
-  });
-  registerIfMissing("engines-browse", async () => {
-    const result = await dialog.showOpenDialog({ title: "Select engine executable", properties: ["openFile"] });
-    return (result.canceled || !result.filePaths.length) ? null : result.filePaths[0];
-  });
-  registerIfMissing("dialog-browse-image", async () => {
-    const result = await dialog.showOpenDialog({ title: "Select Avatar", properties: ["openFile"], filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "webp", "svg"] }] });
-    return (result.canceled || !result.filePaths.length) ? null : result.filePaths[0];
-  });
-  registerIfMissing("scan-engines-dir", async () => {
-    if (!fs.existsSync(chesslyEnginesDir)) return [];
-    const getAllFiles = (dirPath, arrayOfFiles) => {
-      const files = fs.readdirSync(dirPath);
-      arrayOfFiles = arrayOfFiles || [];
-      files.forEach((file) => {
-        const full = path.join(dirPath, file);
-        if (fs.statSync(full).isDirectory()) {
-          getAllFiles(full, arrayOfFiles);
-        } else if (file.endsWith('.exe') || (!file.includes('.') && process.platform !== 'win32')) {
-          arrayOfFiles.push(full);
-        }
-      });
-      return arrayOfFiles;
-    };
-    try { return getAllFiles(chesslyEnginesDir); } catch (e) { console.error("Scanning error", e); return []; }
-  });
-}
-
 function registerGlobalShortcuts(contents) {
   contents.on('before-input-event', (event, input) => {
     if (input.type !== 'keyDown') return;
@@ -6956,112 +6486,52 @@ function openMainBrowserWindow() {
   mainWindow.focus();
 }
 
-function attachMiniAppContextMenu(hostWindow, options = {}) {
-  if (!hostWindow || hostWindow.isDestroyed()) return;
-  const getPageContents = typeof options.getPageContents === 'function'
-    ? options.getPageContents
-    : () => hostWindow.webContents;
-  const includeNavigation = options.includeNavigation !== false;
-  const includeDeveloper = options.includeDeveloper !== false;
+let alwaysOnStartupPromise = null;
+function bootstrapAlwaysOnServices() {
+  if (alwaysOnStartupPromise) return alwaysOnStartupPromise;
 
-  const bindMenu = (sourceContents) => {
-    if (!sourceContents || sourceContents.isDestroyed?.()) return;
-    sourceContents.on('context-menu', (event, params = {}) => {
-      event.preventDefault();
-      const pageContents = getPageContents();
-      const template = [];
+  alwaysOnStartupPromise = (async () => {
+    const omchatAlwaysOn = Boolean(cachedSettings?.omchat?.alwaysOn);
+    const mcpAlwaysOn = Boolean(cachedSettings?.mcp?.alwaysOn);
+    if (!omchatAlwaysOn && !mcpAlwaysOn) {
+      return;
+    }
 
-      template.push({
-        label: 'System',
-        submenu: [
-          { label: 'Open Main Om-X Browser', click: () => openMainBrowserWindow() },
-          {
-            label: 'Minimize',
-            enabled: !!hostWindow && !hostWindow.isDestroyed?.(),
-            click: () => {
-              try { hostWindow?.minimize?.(); } catch (_) {}
-            }
-          },
-          {
-            label: hostWindow?.isMaximized?.() ? 'Restore' : 'Maximize',
-            enabled: !!hostWindow && !hostWindow.isDestroyed?.(),
-            click: () => {
-              try {
-                if (hostWindow?.isMaximized?.()) hostWindow.unmaximize();
-                else hostWindow?.maximize?.();
-              } catch (_) {}
-            }
-          },
-          {
-            label: 'Close',
-            enabled: !!hostWindow && !hostWindow.isDestroyed?.(),
-            click: () => {
-              try { hostWindow?.close?.(); } catch (_) {}
-            }
-          }
-        ]
-      });
+    if (omchatAlwaysOn) {
+      const useNgrok = !Boolean(cachedSettings?.omchat?.useLocalIpOnly);
+      const omchatResult = await startOmChatServerInternal({ useNgrok });
+      if (!omchatResult?.success) {
+        pushServerLog('omchat', 'error', `Always On startup failed: ${omchatResult?.error || 'Unknown error'}`);
+      } else {
+        pushServerLog('omchat', 'info', 'Always On startup: OmChat is running.');
+      }
+    }
 
-      template.push({
-        label: 'Page',
-        submenu: [
-          {
-            label: 'Back',
-            enabled: includeNavigation && !!pageContents && pageContents.canGoBack?.(),
-            click: () => {
-              if (includeNavigation && pageContents?.canGoBack?.()) pageContents.goBack();
-            }
-          },
-          {
-            label: 'Forward',
-            enabled: includeNavigation && !!pageContents && pageContents.canGoForward?.(),
-            click: () => {
-              if (includeNavigation && pageContents?.canGoForward?.()) pageContents.goForward();
-            }
-          },
-          {
-            label: 'Reload',
-            enabled: !!pageContents,
-            click: () => {
-              try { pageContents?.reload?.(); } catch (_) {}
-            }
-          }
-        ]
-      });
-
-      if (includeDeveloper) {
-        template.push({
-          label: 'Developer',
-          submenu: [
-            {
-              label: 'Toggle DevTools',
-              click: () => {
-                try { toggleDevTools(hostWindow); } catch (_) {}
-              }
-            },
-            {
-              label: 'Inspect Element',
-              click: () => {
-                try {
-                  const x = Number(params.x) || 0;
-                  const y = Number(params.y) || 0;
-                  sourceContents.inspectElement(x, y);
-                } catch (_) {}
-              }
-            }
-          ]
-        });
+    if (mcpAlwaysOn) {
+      const { host, port, enabledTools } = buildMcpRuntimeConfig({});
+      if (!Object.values(enabledTools).some(Boolean)) {
+        pushServerLog('mcp', 'error', 'Always On startup skipped because all MCP tools are disabled.');
+        return;
       }
 
-      const menu = Menu.buildFromTemplate(template);
-      menu.popup({ window: hostWindow });
-    });
-  };
+      const mcpResult = await startMcpBackground({ host, port, enabledTools });
+      if (!mcpResult?.success) {
+        pushServerLog('mcp', 'error', `Always On startup failed: ${mcpResult?.error || 'Unknown error'}`);
+      } else {
+        serverStarts.mcp = serverStarts.mcp || Date.now();
+        serverConfigs.mcp = {
+          host: mcpResult.host || host,
+          port: mcpResult.port || port,
+          enabledTools: mcpResult.enabledTools || enabledTools
+        };
+        pushServerLog('mcp', 'info', `Always On startup: MCP ready at http://${serverConfigs.mcp.host}:${serverConfigs.mcp.port}/mcp`);
+      }
+    }
+  })().catch((error) => {
+    pushServerLog('mcp', 'error', error?.stack || error?.message || String(error));
+  });
 
-  bindMenu(hostWindow.webContents);
-  if (Array.isArray(options.extraContents)) {
-    options.extraContents.forEach((wc) => bindMenu(wc));
-  }
+  return alwaysOnStartupPromise;
 }
 
 function createMainWindow() {
@@ -7093,6 +6563,9 @@ function createMainWindow() {
   if (!shortsHideWebContentsHookBound) {
     shortsHideWebContentsHookBound = true;
     app.on('web-contents-created', (_event, contents) => {
+      if (contents && typeof contents.setMaxListeners === 'function') {
+        contents.setMaxListeners(50);
+      }
       attachShortsHideToContents(contents);
       attachGlobalScrollbarToContents(contents);
       attachExternalPopupAllowance(contents);
@@ -7901,11 +7374,16 @@ ipcMain.handle('env:replace-file', withAuthorizedRendererPages(AUTHORIZED_RENDER
     }
     fs.writeFileSync(targetPath, nextContent, 'utf8');
     const reload = reloadPrimaryOmxEnvFile();
+    const secureNormalizedSettings = normalizeLockedSecuritySettings(cachedSettings);
+    cachedSettings = secureNormalizedSettings;
+    configureSecurity(secureNormalizedSettings, mainWindow);
+    broadcast('settings-updated', secureNormalizedSettings);
     return {
       success: true,
       sourcePath,
       targetPath,
-      keyCount: reload.keys.length
+      keyCount: reload.keys.length,
+      enableAdultContentBlock: secureNormalizedSettings?.features?.enableAdultContentBlock === true
     };
   } catch (error) {
     return {
@@ -7968,7 +7446,6 @@ ipcMain.handle('settings-save', async (e, s) => {
       ...DEFAULT_SETTINGS.omchat,
       ...(cachedSettings?.omchat || {}),
       ...(incoming?.omchat || {}),
-      dbMode: String(incoming?.omchat?.dbMode ?? cachedSettings?.omchat?.dbMode ?? 'local') === 'mongo' ? 'mongo' : 'local',
       localDbPath: String(incoming?.omchat?.localDbPath ?? cachedSettings?.omchat?.localDbPath ?? '').trim(),
       useLocalIpOnly: Boolean(incoming?.omchat?.useLocalIpOnly ?? cachedSettings?.omchat?.useLocalIpOnly ?? DEFAULT_SETTINGS.omchat.useLocalIpOnly),
       alwaysOn: Boolean(incoming?.omchat?.alwaysOn ?? cachedSettings?.omchat?.alwaysOn ?? DEFAULT_SETTINGS.omchat.alwaysOn)
@@ -8764,6 +8241,7 @@ if (!isStandaloneLikeLaunch) {
     });
     await initialExtensionsPromise;
     createMainWindow();
+    void bootstrapAlwaysOnServices();
   }).catch(err => {
     console.error('[Om-X] Startup Error:', err);
   });

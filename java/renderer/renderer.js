@@ -291,14 +291,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     const featuresHomePopup             = document.getElementById('features-home-popup');
     const quickPanelGoogle              = document.getElementById('quick-panel-google');
     const quickPanelApps                = document.getElementById('quick-panel-apps');
-    const quickPanelYoutubeAddon        = document.getElementById('quick-panel-youtube-addon');
-    const quickPanelDuckAi              = document.getElementById('quick-panel-duck-ai');
+    const quickPanelTools               = document.getElementById('quick-panel-tools');
     const quickPanelNavigation          = document.getElementById('quick-panel-navigation');
     const quickPanelSessionGuard        = document.getElementById('quick-panel-sessionguard');
     const quickPanelBookmarks           = document.getElementById('quick-panel-bookmarks');
-    const quickPanelScraper             = document.getElementById('quick-panel-scraper');
-    const quickPanelTodoStation         = document.getElementById('quick-panel-todo-station');
-    const quickPanelGames               = document.getElementById('quick-panel-games');
+    const quickToolsScraper             = document.getElementById('quick-tools-scraper');
+    const quickToolsTodoStation         = document.getElementById('quick-tools-todo-station');
+    const quickToolsGames               = document.getElementById('quick-tools-games');
+    const quickToolsYoutubeAddon        = document.getElementById('quick-tools-youtube-addon');
     const quickPanelLlamaServer         = document.getElementById('quick-panel-llama-server');
     const quickPanelMcpServer           = document.getElementById('quick-panel-mcp-server');
     const quickPanelDiscord             = document.getElementById('quick-panel-discord');
@@ -313,6 +313,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const customAppEditorCancel         = document.getElementById('custom-app-editor-cancel');
     const customAppEditorSave           = document.getElementById('custom-app-editor-save');
     const navigationTopPanel            = document.getElementById('navigation-top-panel');
+    const toolsTopPanel                 = document.getElementById('tools-top-panel');
     const btnTopNavBack                 = document.getElementById('btn-top-nav-back');
     const btnTopNavForward              = document.getElementById('btn-top-nav-forward');
     const bookmarkTopPanel              = document.getElementById('bookmark-top-panel');
@@ -345,8 +346,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     const youtubeAddonToggleChat        = document.getElementById('youtube-addon-toggle-chat');
     const youtubeAddonToggleBw          = document.getElementById('youtube-addon-toggle-bw');
     const youtubeAddonToggleAdSkipper   = document.getElementById('youtube-addon-toggle-adskipper');
-    const duckAiPanel                   = document.getElementById('duck-ai-panel');
-    const duckAiToggleSidebar           = document.getElementById('duck-ai-toggle-sidebar');
     const omchatLaunchOverlay           = document.getElementById('omchat-launch-overlay');
     const omchatLaunchClose             = document.getElementById('omchat-launch-close');
     const omchatLaunchStatus            = document.getElementById('omchat-launch-status');
@@ -414,11 +413,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     let openWebUiTabUrl       = '';
     let llamaWebUiTabId       = null;
     let llamaWebUiTabUrl      = '';
+    const OPENWEBUI_BACKGROUND_AUTO_CLOSE_MS = 60 * 1000;
+    const openWebUiAutoCloseTimers = new Map();
     let openWebUiProbeState   = { checked: false, running: false, localUrl: '' };
     const hasOpenWebUiLiveOutput = Boolean(window.browserAPI?.openWebUI?.onOutput);
     let _settingsLoading      = false;   // guard against parallel loadSettings calls
     let _ytSavePending        = false;   // guard against concurrent persist calls
-    let _duckSavePending      = false;
 
     // ── DYNAMICALLY CREATED CONTEXT-MENU ELEMENTS ─────────────────────────────
     const MENU_STYLE = 'position:fixed;background:var(--glass-bg);backdrop-filter:var(--glass-blur);'
@@ -531,29 +531,28 @@ document.addEventListener('DOMContentLoaded', async () => {
                 indexLabel.textContent = `${index + 1}.`;
 
                 const linkLabel = document.createElement('span');
-                linkLabel.style.cssText = 'flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+                linkLabel.style.cssText = 'flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;text-decoration:underline;';
                 linkLabel.title = String(link || '');
                 linkLabel.textContent = String(link || '');
-
-                const copyButton = document.createElement('button');
-                copyButton.type = 'button';
-                copyButton.textContent = 'Copy';
-                copyButton.style.cssText = `
-                    background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.1);
-                    color:rgba(255,255,255,0.8);padding:4px 8px;border-radius:6px;cursor:pointer;font-size:10px;`;
-                copyButton.addEventListener('click', async () => {
-                    try {
-                        await navigator.clipboard.writeText(String(link || ''));
-                        copyButton.textContent = 'Copied!';
-                    } catch (_) {
-                        copyButton.textContent = 'Error';
-                    }
-                    setTimeout(() => {
-                        copyButton.textContent = 'Copy';
-                    }, 1500);
+                linkLabel.addEventListener('click', () => {
+                    if (!link || !tabManager?.createTab) return;
+                    tabManager.createTab(String(link));
+                    hideMp4LinksPopup();
                 });
 
-                row.append(indexLabel, linkLabel, copyButton);
+                const openButton = document.createElement('button');
+                openButton.type = 'button';
+                openButton.textContent = 'Open';
+                openButton.style.cssText = `
+                    background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.1);
+                    color:rgba(255,255,255,0.8);padding:4px 8px;border-radius:6px;cursor:pointer;font-size:10px;`;
+                openButton.addEventListener('click', () => {
+                    if (!link || !tabManager?.createTab) return;
+                    tabManager.createTab(String(link));
+                    hideMp4LinksPopup();
+                });
+
+                row.append(indexLabel, linkLabel, openButton);
                 fragment.appendChild(row);
             });
             mp4LinksList.replaceChildren(fragment);
@@ -778,15 +777,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         return '';
     };
 
-    const isDuckAiChatUrl = (url = '') => {
-        try {
-            const parsed = new URL(url);
-            const host   = String(parsed.hostname || '').toLowerCase();
-            return (host === 'duck.ai' || host.endsWith('.duck.ai'))
-                && parsed.pathname.startsWith('/chat');
-        } catch (_) { return false; }
-    };
-
     const getActiveTabState = () => {
         if (!tabManager?.tabs?.length || !tabManager?.activeTabId) return null;
         return tabManager.tabs.find(t => t.id === tabManager.activeTabId) || null;
@@ -873,13 +863,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     const isVisiblePanel = (element) => Boolean(element && !element.classList.contains('hidden'));
 
     const syncSecondaryTopPanelBackdrop = () => {
+        // Keep backdrop blur for heavy overlays, but not for lightweight
+        // top strips like Navigation/Tools so page content stays clear.
         const shouldShowBackdrop =
             isVisiblePanel(googleAppsPanel) ||
             isVisiblePanel(customAppsPanel) ||
-            isVisiblePanel(navigationTopPanel) ||
             isVisiblePanel(bookmarkTopPanel) ||
             isVisiblePanel(youtubeAddonPanel) ||
-            isVisiblePanel(duckAiPanel) ||
             isVisiblePanel(siteInfoOverlay) ||
             isVisiblePanel(sessionGuardOverlay);
         secondaryTopPanelBackdrop?.classList.toggle('hidden', !shouldShowBackdrop);
@@ -1213,7 +1203,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         setBookmarkPanelVisible(false);
         setBookmarkEditorVisible(false);
         setYouTubeAddonVisible(false);
-        setDuckAiPanelVisible(false);
         setSessionGuardVisible(false);
         setSiteInfoVisible(true);
         await refreshSiteInfoPopup();
@@ -1255,7 +1244,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         setCustomAppsPanelVisible(false);
         setNavigationTopPanelVisible(false);
         setYouTubeAddonVisible(false);
-        setDuckAiPanelVisible(false);
         setBookmarkPanelVisible(false);
         setBookmarkEditorVisible(false);
         setSiteInfoVisible(false);
@@ -1778,9 +1766,58 @@ document.addEventListener('DOMContentLoaded', async () => {
                 openWebUiTabId = activeId;
                 openWebUiTabUrl = localUrl;
                 syncWindowControlsVisibility();
+                syncOpenWebUiAutoCloseTimers();
             }
         }, 0);
         return true;
+    };
+
+    const clearOpenWebUiAutoCloseTimer = (tabId) => {
+        if (tabId == null) return;
+        const timer = openWebUiAutoCloseTimers.get(tabId);
+        if (timer) {
+            clearTimeout(timer);
+            openWebUiAutoCloseTimers.delete(tabId);
+        }
+    };
+
+    const scheduleOpenWebUiAutoCloseTimer = (tabId) => {
+        if (tabId == null || openWebUiAutoCloseTimers.has(tabId)) return;
+        const timer = setTimeout(() => {
+            openWebUiAutoCloseTimers.delete(tabId);
+            const tab = Array.isArray(tabManager?.tabs)
+                ? tabManager.tabs.find((candidate) => candidate?.id === tabId)
+                : null;
+            if (!tab || tab.isOpenWebUiPage !== true) return;
+            if (tabManager?.activeTabId === tabId) return;
+            try {
+                tabManager.closeTab(tabId);
+            } catch (error) {
+                console.warn('[Renderer] Failed to auto-close background Open WebUI tab:', error);
+            }
+        }, OPENWEBUI_BACKGROUND_AUTO_CLOSE_MS);
+        openWebUiAutoCloseTimers.set(tabId, timer);
+    };
+
+    const syncOpenWebUiAutoCloseTimers = () => {
+        if (!Array.isArray(tabManager?.tabs)) return;
+        const activeTabId = tabManager.activeTabId;
+        const openWebUiTabs = tabManager.tabs.filter((tab) => tab?.isOpenWebUiPage === true);
+        const openWebUiTabIds = new Set(openWebUiTabs.map((tab) => tab.id));
+
+        for (const tabId of openWebUiAutoCloseTimers.keys()) {
+            if (!openWebUiTabIds.has(tabId) || tabId === activeTabId) {
+                clearOpenWebUiAutoCloseTimer(tabId);
+            }
+        }
+
+        for (const tab of openWebUiTabs) {
+            if (tab.id === activeTabId) {
+                clearOpenWebUiAutoCloseTimer(tab.id);
+            } else {
+                scheduleOpenWebUiAutoCloseTimer(tab.id);
+            }
+        }
     };
 
     const openLlamaWebUiTab = (url = '') => {
@@ -2508,10 +2545,44 @@ document.addEventListener('DOMContentLoaded', async () => {
         commands.forEach((command, index) => {
             const card = document.createElement('div');
             card.className = 'setup-command-card';
-            card.innerHTML = `
-                <div class="setup-command-step">Step ${index + 1}</div>
-                <div class="setup-command-code">${escapeHtml(command)}</div>
-            `;
+            const header = document.createElement('div');
+            header.className = 'setup-command-header';
+
+            const step = document.createElement('div');
+            step.className = 'setup-command-step';
+            step.textContent = `Step ${index + 1}`;
+
+            const copyButton = document.createElement('button');
+            copyButton.type = 'button';
+            copyButton.className = 'setup-command-copy';
+            copyButton.title = 'Copy command';
+            copyButton.setAttribute('aria-label', `Copy command for step ${index + 1}`);
+            copyButton.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>';
+            copyButton.addEventListener('click', async () => {
+                try {
+                    await navigator.clipboard.writeText(String(command || ''));
+                    copyButton.classList.add('copied');
+                    copyButton.title = 'Copied';
+                    copyButton.setAttribute('aria-label', `Copied command for step ${index + 1}`);
+                    setTimeout(() => {
+                        copyButton.classList.remove('copied');
+                        copyButton.title = 'Copy command';
+                        copyButton.setAttribute('aria-label', `Copy command for step ${index + 1}`);
+                    }, 1200);
+                } catch (_) {
+                    copyButton.title = 'Copy failed';
+                    setTimeout(() => {
+                        copyButton.title = 'Copy command';
+                    }, 1200);
+                }
+            });
+
+            const code = document.createElement('div');
+            code.className = 'setup-command-code';
+            code.textContent = String(command || '');
+
+            header.append(step, copyButton);
+            card.append(header, code);
             fragment.appendChild(card);
         });
         openWebUiCommands.appendChild(fragment);
@@ -2599,9 +2670,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         setOpenWebUiCommands([], '');
         resetOpenWebUiLog();
         resetOpenWebUiTimer();
-        beginOpenWebUiTimer('Checking Open WebUI...');
+        beginOpenWebUiTimer('Scanning device for Open WebUI requirements...');
         setOpenWebUiMode('commands');
-        setOpenWebUiStatusMessage('Checking Open WebUI...', '');
+        setOpenWebUiStatusMessage('Scanning device for Open WebUI requirements...', '');
 
         if (openWebUiProbeState.checked && openWebUiProbeState.running) {
             if (openOpenWebUiTab(openWebUiProbeState.localUrl)) {
@@ -2712,6 +2783,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         navigationTopPanel?.classList.toggle('hidden', !v);
         syncSecondaryTopPanelBackdrop();
     };
+    const setToolsTopPanelVisible       = (v) => {
+        toolsTopPanel?.classList.toggle('hidden', !v);
+        quickPanelTools?.setAttribute('aria-expanded', v ? 'true' : 'false');
+        syncSecondaryTopPanelBackdrop();
+    };
     const setBookmarkEditorVisible      = (v) => bookmarkEditorOverlay?.classList.toggle('hidden', !v);
     const setCustomAppEditorVisible     = (v) => customAppEditorOverlay?.classList.toggle('hidden', !v);
     const setOmChatLaunchVisibleSafe    = (v) => {
@@ -2729,11 +2805,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     const setYouTubeAddonVisible = (visible) => {
         if (!youtubeAddonPanel) return;
         youtubeAddonPanel.classList.toggle('hidden', !visible);
-        syncSecondaryTopPanelBackdrop();
-    };
-
-    const setDuckAiPanelVisible = (visible) => {
-        duckAiPanel?.classList.toggle('hidden', !visible);
         syncSecondaryTopPanelBackdrop();
     };
 
@@ -2759,16 +2830,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         };
     };
 
-    const getDuckAiChatSettings = (settings = cachedSettings) => ({
-        hideSidebar: true
-    });
-
     const canShowYouTubeAddon = () => {
         const yt = getYouTubeAddonSettings(cachedSettings);
         return yt.enabled && isYouTubeUrl(getActiveTabUrl());
     };
-
-    const canShowDuckAiPanel = () => isDuckAiChatUrl(getActiveTabUrl());
 
     // SessionGuard protected domains (must match extension's domain_manager.js)
     const SESSIONGUARD_DOMAINS = new Set([
@@ -2798,8 +2863,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Debounced to prevent repeated reflows when tab navigation fires rapidly.
     const syncSiteToolQuickLaunchButtons = debounce(() => {
-        setFeatureTileAvailability(quickPanelYoutubeAddon, canShowYouTubeAddon(), 'YouTube Addon', 'Open YouTube to use');
-        setFeatureTileAvailability(quickPanelDuckAi,       canShowDuckAiPanel(),  'Duck AI',       'Open Duck AI chat to use');
+        setFeatureTileAvailability(quickToolsYoutubeAddon, canShowYouTubeAddon(), 'YouTube Addon', 'Open YouTube to use');
         setFeatureTileAvailability(quickPanelSessionGuard, canShowSessionGuardPanel(), 'SessionGuard',  'Open a protected site (YouTube, Discord, etc.)');
     }, 16);
 
@@ -2824,12 +2888,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (youtubeAddonToggleAdSkipper) youtubeAddonToggleAdSkipper.checked = !!yt.adSkipper;
     };
 
-    const syncDuckAiPanel = () => {
-        if (!duckAiPanel) return;
-        if (!canShowDuckAiPanel()) setDuckAiPanelVisible(false);
-        if (duckAiToggleSidebar) duckAiToggleSidebar.checked = !!getDuckAiChatSettings(cachedSettings).hideSidebar;
-    };
-
     // ── NAVIGATION TOP PANEL ──────────────────────────────────────────────────
     const handleNavigationTopAction = (action) => {
         const wv = tabManager?.getActiveWebview?.();
@@ -2847,8 +2905,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         hideFeaturesHomePopup();
         setGoogleAppsPanelVisible(false);
         setCustomAppsPanelVisible(false);
+        setToolsTopPanelVisible(false);
         setYouTubeAddonVisible(false);
-        setDuckAiPanelVisible(false);
         setBookmarkPanelVisible(false);
         setBookmarkEditorVisible(false);
         const isHidden = navigationTopPanel?.classList.contains('hidden');
@@ -2856,12 +2914,24 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (isHidden) syncNavigationTopPanelButtons();
     };
 
+    const toggleToolsTopPanel = () => {
+        hideFeaturesHomePopup();
+        setGoogleAppsPanelVisible(false);
+        setCustomAppsPanelVisible(false);
+        setNavigationTopPanelVisible(false);
+        setYouTubeAddonVisible(false);
+        setBookmarkPanelVisible(false);
+        setBookmarkEditorVisible(false);
+        const isHidden = toolsTopPanel?.classList.contains('hidden');
+        setToolsTopPanelVisible(isHidden);
+    };
+
     const toggleGoogleAppsPanel = () => {
         hideFeaturesHomePopup();
         setCustomAppsPanelVisible(false);
         setNavigationTopPanelVisible(false);
+        setToolsTopPanelVisible(false);
         setYouTubeAddonVisible(false);
-        setDuckAiPanelVisible(false);
         setBookmarkPanelVisible(false);
         setBookmarkEditorVisible(false);
         const isHidden = googleAppsPanel?.classList.contains('hidden');
@@ -2930,8 +3000,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         hideFeaturesHomePopup();
         setGoogleAppsPanelVisible(false);
         setNavigationTopPanelVisible(false);
+        setToolsTopPanelVisible(false);
         setYouTubeAddonVisible(false);
-        setDuckAiPanelVisible(false);
         setBookmarkPanelVisible(false);
         setBookmarkEditorVisible(false);
         const isHidden = customAppsPanel?.classList.contains('hidden');
@@ -2943,23 +3013,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         setNavigationTopPanelVisible(false);
         setGoogleAppsPanelVisible(false);
         setCustomAppsPanelVisible(false);
-        setDuckAiPanelVisible(false);
+        setToolsTopPanelVisible(false);
         setSessionGuardVisible(false);
         setBookmarkPanelVisible(false);
         setBookmarkEditorVisible(false);
         setYouTubeAddonVisible(youtubeAddonPanel?.classList.contains('hidden'));
-    };
-
-    const toggleDuckAiPanel = () => {
-        if (!canShowDuckAiPanel()) return;
-        setNavigationTopPanelVisible(false);
-        setGoogleAppsPanelVisible(false);
-        setCustomAppsPanelVisible(false);
-        setYouTubeAddonVisible(false);
-        setSessionGuardVisible(false);
-        setBookmarkPanelVisible(false);
-        setBookmarkEditorVisible(false);
-        setDuckAiPanelVisible(duckAiPanel?.classList.contains('hidden'));
     };
 
     // ── BOOKMARKS ─────────────────────────────────────────────────────────────
@@ -3071,8 +3129,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         setGoogleAppsPanelVisible(false);
         setCustomAppsPanelVisible(false);
         setNavigationTopPanelVisible(false);
+        setToolsTopPanelVisible(false);
         setYouTubeAddonVisible(false);
-        setDuckAiPanelVisible(false);
         refreshBookmarkDraft(tab);
         await refreshBookmarks();
         setBookmarkPanelVisible(true);
@@ -3170,24 +3228,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     };
 
-    const persistDuckAiPreferences = async (partialAiChat = {}) => {
-        if (_duckSavePending) return;
-        _duckSavePending = true;
-        try {
-            if (!cachedSettings) cachedSettings = await settingsAPI.get();
-            const nextSettings = { ...(cachedSettings || {}), aiChat: { ...(cachedSettings?.aiChat || {}), ...partialAiChat } };
-            cachedSettings = nextSettings;
-            syncDuckAiPanel();
-            tabManager?.updateSettings?.(nextSettings);
-            const success = await settingsAPI.save(nextSettings);
-            if (!success) console.warn('[Duck AI Panel] Failed to save settings.');
-        } catch (e) {
-            console.warn('[Duck AI Panel] Save error:', e);
-        } finally {
-            _duckSavePending = false;
-        }
-    };
-
     const setupYouTubeAddonEvents = () => {
         if (!youtubeAddonPanel || youtubeAddonPanel.dataset.bound === '1') return;
         youtubeAddonPanel.dataset.bound = '1';
@@ -3197,12 +3237,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         youtubeAddonToggleChat?.addEventListener('change',      () => persistYouTubeAddonPreferences({ hideChats: youtubeAddonToggleChat.checked }));
         youtubeAddonToggleBw?.addEventListener('change',        () => persistYouTubeAddonPreferences({ blackAndWhiteMode: youtubeAddonToggleBw.checked }));
         youtubeAddonToggleAdSkipper?.addEventListener('change',  () => persistYouTubeAddonPreferences({ adSkipper: youtubeAddonToggleAdSkipper.checked }));
-    };
-
-    const setupDuckAiPanelEvents = () => {
-        if (!duckAiPanel || duckAiPanel.dataset.bound === '1') return;
-        duckAiPanel.dataset.bound = '1';
-        duckAiToggleSidebar?.addEventListener('change', () => persistDuckAiPreferences({ duckAiHideSidebar: duckAiToggleSidebar.checked }));
     };
 
     // ── SETTINGS ──────────────────────────────────────────────────────────────
@@ -3217,14 +3251,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                 screenshotDelaySeconds = cachedSettings.screenshot?.delaySeconds ?? 0;
                 updateDelayLabel(screenshotDelaySeconds);
                 syncYouTubeAddonPanel();
-                syncDuckAiPanel();
                 syncSiteToolQuickLaunchButtons();
                 tabManager?.updateSettings?.(cachedSettings);
                 syncWindowControlsVisibility();
             }
         } catch (e) {
             syncYouTubeAddonPanel();
-            syncDuckAiPanel();
             syncSiteToolQuickLaunchButtons();
             console.warn('Settings failed in renderer', e);
         } finally {
@@ -3411,8 +3443,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         const willShowFeatures = featuresHomePopup?.classList.contains('hidden') ?? false;
         setGoogleAppsPanelVisible(false);
         setCustomAppsPanelVisible(false);
+        setNavigationTopPanelVisible(false);
+        setToolsTopPanelVisible(false);
         setYouTubeAddonVisible(false);
-        setDuckAiPanelVisible(false);
         setBookmarkPanelVisible(false);
         setBookmarkEditorVisible(false);
         featuresHomePopup?.classList.toggle('hidden', !willShowFeatures);
@@ -3600,15 +3633,16 @@ document.addEventListener('DOMContentLoaded', async () => {
         'tab-list-container', 'webview-container',
         (url) => {
             syncWindowControlsVisibility();
+            syncOpenWebUiAutoCloseTimers();
             primeSiteSafetyScan(url);
             syncYouTubeAddonPanel();
-            syncDuckAiPanel();
             syncSiteToolQuickLaunchButtons();
         },
         handleWebviewContextMenu,
         handleTabContextMenu,
         async (tabId, tabInfo = {}) => {
             darkModeTabs.delete(tabId);
+            clearOpenWebUiAutoCloseTimer(tabId);
             if (tabId === openWebUiTabId) {
                 openWebUiTabId = null;
                 syncWindowControlsVisibility();
@@ -3618,6 +3652,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                 syncWindowControlsVisibility();
             }
             if ((tabInfo?.isScraberPage || tabInfo?.isOpenWebUiPage) && window.browserAPI?.app?.killOllamaForTabClose) {
+                const remainingServiceTabs = Array.isArray(tabManager?.tabs)
+                    ? tabManager.tabs.filter((tab) => tab?.isScraberPage === true || tab?.isOpenWebUiPage === true)
+                    : [];
+                if (remainingServiceTabs.length > 0) {
+                    return;
+                }
                 try {
                     await window.browserAPI.app.killOllamaForTabClose({
                         killPython: tabInfo?.isOpenWebUiPage === true
@@ -3643,7 +3683,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (cachedSettings) {
         tabManager.updateSettings?.(cachedSettings);
         syncYouTubeAddonPanel();
-        syncDuckAiPanel();
         syncSiteToolQuickLaunchButtons();
     }
 
@@ -3695,6 +3734,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const ctxBookmarkTab = document.getElementById('ctx-bookmark-tab');
     const ctxCopyUrl     = document.getElementById('ctx-copy-url');
     const ctxDarkMode    = document.getElementById('ctx-dark-mode');
+    const ctxOpenDevTools = document.getElementById('ctx-open-devtools');
     const ctxHideWindowControls = ctxHideWindowControlsMenuItem;
     const ctxSessionPopups = ctxSessionPopupsMenuItem;
 
@@ -3712,6 +3752,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         const tabId = currentTabContextId;
         closeAllContextMenus();
         if (tabId) toggleDarkModeForTab(tabId);
+    };
+    if (ctxOpenDevTools) ctxOpenDevTools.onclick = () => {
+        const tab = tabManager.tabs.find(t => t.id === currentTabContextId);
+        closeAllContextMenus();
+        try { tab?.webview?.openDevTools?.({ mode: 'detach' }); } catch (_) {}
     };
     if (ctxHideWindowControls) ctxHideWindowControls.onclick = async () => {
         const tab = tabManager.tabs.find(t => t.id === currentTabContextId);
@@ -3744,14 +3789,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (quickPanelGoogle)       quickPanelGoogle.onclick       = () => toggleGoogleAppsPanel();
     if (quickPanelBookmarks)    quickPanelBookmarks.onclick    = () => openBookmarkPanel();
+    if (quickPanelTools)        quickPanelTools.onclick        = () => toggleToolsTopPanel();
     if (quickPanelNavigation)   quickPanelNavigation.onclick   = () => toggleNavigationTopPanel();
     if (quickPanelSessionGuard) quickPanelSessionGuard.onclick = () => { if (canShowSessionGuardPanel()) { hideFeaturesHomePopup(); toggleSessionGuardPanel(); } };
     if (quickPanelApps)         quickPanelApps.onclick         = () => { hideFeaturesHomePopup(); toggleCustomAppsPanel(); };
-    if (quickPanelYoutubeAddon) quickPanelYoutubeAddon.onclick = () => { if (canShowYouTubeAddon()) { hideFeaturesHomePopup(); toggleYouTubeAddonPanel(); } };
-    if (quickPanelDuckAi)       quickPanelDuckAi.onclick       = () => { if (canShowDuckAiPanel())  { hideFeaturesHomePopup(); toggleDuckAiPanel();       } };
-    if (quickPanelScraper)      quickPanelScraper.onclick      = () => { hideFeaturesHomePopup(); openAppTab(SCRABER_URL); };
-    if (quickPanelTodoStation)  quickPanelTodoStation.onclick  = () => { hideFeaturesHomePopup(); openAppTab(TODO_STATION_URL); };
-    if (quickPanelGames)        quickPanelGames.onclick        = () => { hideFeaturesHomePopup(); openAppTab(GAMES_URL); };
+    if (quickToolsYoutubeAddon) quickToolsYoutubeAddon.onclick = () => { if (canShowYouTubeAddon()) { hideFeaturesHomePopup(); toggleYouTubeAddonPanel(); } };
+    if (quickToolsScraper)      quickToolsScraper.onclick      = () => { hideFeaturesHomePopup(); setToolsTopPanelVisible(false); openAppTab(SCRABER_URL); };
+    if (quickToolsTodoStation)  quickToolsTodoStation.onclick  = () => { hideFeaturesHomePopup(); setToolsTopPanelVisible(false); openAppTab(TODO_STATION_URL); };
+    if (quickToolsGames)        quickToolsGames.onclick        = () => { hideFeaturesHomePopup(); setToolsTopPanelVisible(false); openAppTab(GAMES_URL); };
     if (quickPanelLlamaServer)  quickPanelLlamaServer.onclick  = () => { hideFeaturesHomePopup(); openAppTab(`${SERVER_OPERATOR_URL}?panel=llama`); };
     if (quickPanelMcpServer)    quickPanelMcpServer.onclick    = () => { hideFeaturesHomePopup(); openAppTab(`${SERVER_OPERATOR_URL}?panel=mcp`); };
     if (quickPanelDiscord)      quickPanelDiscord.onclick      = () => {
@@ -3832,6 +3877,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             hideFeaturesHomePopup();
             setCustomAppsPanelVisible(false);
             setNavigationTopPanelVisible(false);
+            setToolsTopPanelVisible(false);
             setBookmarkPanelVisible(false);
             setBookmarkEditorVisible(false);
             closeCustomAppEditor();
@@ -3839,7 +3885,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             setOpenWebUiVisibleSafe(false);
             if (imageDlOverlay) imageDlOverlay.classList.add('hidden');
             setYouTubeAddonVisible(false);
-            setDuckAiPanelVisible(false);
             hideSiteInfoPopup();
             if (translatorUI) translatorUI.hide();
             if (writerUI)     writerUI.hide();
@@ -3873,14 +3918,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (navigationTopPanel && !navigationTopPanel.classList.contains('hidden')) {
             if (!navigationTopPanel.contains(e.target) && !quickPanelNavigation?.contains?.(e.target)) setNavigationTopPanelVisible(false);
         }
+        if (toolsTopPanel && !toolsTopPanel.classList.contains('hidden')) {
+            if (!toolsTopPanel.contains(e.target) && !quickPanelTools?.contains?.(e.target)) setToolsTopPanelVisible(false);
+        }
         if (bookmarkTopPanel && !bookmarkTopPanel.classList.contains('hidden')) {
             if (!bookmarkTopPanel.contains(e.target) && !quickPanelBookmarks?.contains?.(e.target)) setBookmarkPanelVisible(false);
         }
         if (youtubeAddonPanel && !youtubeAddonPanel.classList.contains('hidden')) {
             if (!youtubeAddonPanel.contains(e.target) && !btnNavHome?.contains?.(e.target) && !clickedWebview) setYouTubeAddonVisible(false);
-        }
-        if (duckAiPanel && !duckAiPanel.classList.contains('hidden')) {
-            if (!duckAiPanel.contains(e.target) && !btnNavHome?.contains?.(e.target)) setDuckAiPanelVisible(false);
         }
         if (sessionGuardOverlay && !sessionGuardOverlay.classList.contains('hidden')) {
             if (e.target === sessionGuardOverlay) setSessionGuardVisible(false);
@@ -3907,10 +3952,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     window.addEventListener('omx-show-search-overlay', () => {
         hideFeaturesHomePopup();
+        setNavigationTopPanelVisible(false);
+        setToolsTopPanelVisible(false);
         setBookmarkPanelVisible(false);
         setBookmarkEditorVisible(false);
         setYouTubeAddonVisible(false);
-        setDuckAiPanelVisible(false);
         searchSystem.show();
     });
 
@@ -3948,7 +3994,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (bookmarkTopPanel && !bookmarkTopPanel.classList.contains('hidden')) refreshBookmarkDraft();
         syncNavigationTopPanelButtons();
         syncYouTubeAddonPanel();
-        syncDuckAiPanel();
         syncSiteToolQuickLaunchButtons();
         if (siteInfoOverlay && !siteInfoOverlay.classList.contains('hidden')) refreshSiteInfoPopup();
     });
@@ -3970,7 +4015,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     loadCustomTopApps();
     renderCustomAppsPanel();
     setupYouTubeAddonEvents();
-    setupDuckAiPanelEvents();
     refreshBookmarks();
     syncSiteToolQuickLaunchButtons();
     syncNavigationTopPanelButtons();

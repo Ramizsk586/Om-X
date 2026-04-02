@@ -67,11 +67,9 @@ async function main() {
   const host = String(config.host || '0.0.0.0').trim() || '0.0.0.0';
   const useNgrok = config.useNgrok === true;
 
+  process.env.DB_MODE = 'local';
   if (config.localDbPath) {
-    process.env.DB_MODE = 'local';
     process.env.LOCAL_DB_PATH = config.localDbPath;
-  } else {
-    process.env.DB_MODE = 'local';
   }
 
   process.env.TRUST_PROXY = useNgrok ? '1' : '0';

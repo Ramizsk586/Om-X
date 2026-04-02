@@ -1,10 +1,9 @@
-const SessionLog = require('../models/SessionLog.model');
 const { createLogger } = require('../utils/logger');
 const { getModel } = require('./getModel');
 
 const logger = createLogger('session-repo');
 
-function getSessionLogCollection() { return getModel('sessionLogs', SessionLog); }
+function getSessionLogCollection() { return getModel('sessionLogs'); }
 
 function mapSessionLog(row) {
   if (!row) return null;

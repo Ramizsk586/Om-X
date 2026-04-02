@@ -2,14 +2,11 @@ const crypto = require('crypto');
 
 const serverRepo = require('./serverRepo');
 const userRepo = require('./userRepo');
-const ChatMessage = require('../models/ChatMessage.model');
-const DmConversation = require('../models/DmConversation.model');
-const UploadBlob = require('../models/UploadBlob.model');
 const { getModel } = require('./getModel');
 
-function getChatMessageCollection() { return getModel('chatMessages', ChatMessage); }
-function getDmConversationCollection() { return getModel('dmConversations', DmConversation); }
-function getUploadBlobCollection() { return getModel('uploadBlobs', UploadBlob); }
+function getChatMessageCollection() { return getModel('chatMessages'); }
+function getDmConversationCollection() { return getModel('dmConversations'); }
+function getUploadBlobCollection() { return getModel('uploadBlobs'); }
 
 const palette = ['#5865F2', '#57F287', '#FEE75C', '#EB459E', '#ED4245', '#99AAB5', '#FAA81A'];
 const adjectives = ['emerald', 'crystal', 'sunset', 'vivid', 'silver', 'frost', 'quiet', 'flying', 'storm', 'lunar', 'starlight', 'velvet', 'blazing', 'cosmic', 'violet', 'aurora', 'royal', 'tundra'];
@@ -184,30 +181,6 @@ async function hydrateRuntimeUsers() {
   db.data.users = users.map(mapRuntimeAuthUser).filter(Boolean);
 }
 
-async function hydrateMongoChatState() {
-  const [messages, dms] = await Promise.all([
-    getChatMessageCollection().find({}).sort({ createdAt: 1 }).lean(),
-    getDmConversationCollection().find({}).lean()
-  ]);
-
-  db.data.messages = Array.isArray(messages) ? messages.map((row) => ({
-    ...row,
-    id: String(row.id || ''),
-    createdAt: String(row.createdAt || now()),
-    dayKey: String(row.dayKey || dayKeyFromDate(row.createdAt)),
-    meta: row.meta && typeof row.meta === 'object' ? clone(row.meta) : null,
-    reactions: row.reactions && typeof row.reactions === 'object' ? row.reactions : {},
-    attachments: Array.isArray(row.attachments) ? row.attachments : []
-  })).filter((row) => row.id) : [];
-
-  db.data.dms = Array.isArray(dms) ? dms.map((row) => ensureDmRecordDefaults({
-    ...row,
-    id: String(row.id || ''),
-    createdAt: String(row.createdAt || now())
-  })).filter((row) => row.id) : [];
-}
-
-
 const db = {
   data: clone(defaultData),
   async read() {},
@@ -335,7 +308,6 @@ async function initDb() {
   ensureDefaultData(db);
 
   try {
-    await hydrateMongoChatState();
     await hydrateRuntimeUsers();
   } catch (err) {
     console.warn('[Om Chat] DB hydration failed, using empty state:', err.message);
@@ -639,7 +611,7 @@ function createDefaultRoles() {
 }
 
 /**
- * Resolve a server by id from MongoDB.
+ * Resolve a server by id from the local database.
  * @param {string} id Server identifier.
  * @returns {Promise<Record<string, unknown>|null>} Assembled server.
  */
@@ -713,7 +685,7 @@ function findPreferredDefaultChannel(server) {
 }
 
 /**
- * Create a new server in MongoDB and keep the system welcome message local.
+ * Create a new server and keep the system welcome message local.
  * @param {{name: string, icon: string, owner: {id: string, username: string, avatarColor: string, avatarUrl?: string}}} input Server creation payload.
  * @returns {Promise<Record<string, unknown>>} Created assembled server.
  */
@@ -853,7 +825,7 @@ async function addMember(serverId, user, roleName = 'Member') {
 }
 
 /**
- * Create an invite in MongoDB after checking member permissions.
+ * Create an invite after checking member permissions.
  * @param {string} serverId Server identifier.
  * @param {string} actorId Acting user id.
  * @param {{channelId?: string, maxUses?: number, expiresAt?: string|null}} payload Invite payload.
@@ -895,7 +867,7 @@ async function consumeInvite(code) {
 }
 
 /**
- * Create a channel in MongoDB.
+ * Create a channel.
  * @param {string} serverId Server identifier.
  * @param {string} actorId Acting user id.
  * @param {{name?: string, type?: string, category?: string, topic?: string, slowMode?: number, password?: string|null}} payload Channel payload.
@@ -920,7 +892,7 @@ async function createChannel(serverId, actorId, payload = {}) {
 }
 
 /**
- * Update a channel in MongoDB.
+ * Update a channel.
  * @param {string} serverId Server identifier.
  * @param {string} actorId Acting user id.
  * @param {string} channelId Channel identifier.
@@ -1505,7 +1477,7 @@ async function updateStatus(userId, status, customStatus) {
 }
 
 /**
- * Update the local shadow username and sync member display rows in MongoDB.
+ * Update the local shadow username and sync member display rows.
  * @param {string} userId User identifier.
  * @param {string} username Next username.
  * @returns {Promise<Record<string, unknown>|null>} Updated local user.
@@ -1520,7 +1492,7 @@ async function updateUsername(userId, username) {
 }
 
 /**
- * Update the local shadow profile and sync member display rows in MongoDB.
+ * Update the local shadow profile and sync member display rows.
  * @param {string} userId User identifier.
  * @param {{username?: string, avatarColor?: string, avatarUrl?: string}} payload Mutable profile fields.
  * @returns {Promise<Record<string, unknown>|null>} Updated local user.
@@ -1603,7 +1575,7 @@ async function ensureOperatorRole(serverId) {
 }
 
 /**
- * Set a member role in MongoDB.
+ * Set a member role.
  * @param {string} serverId Server identifier.
  * @param {string} userId Target user identifier.
  * @param {string} roleId Role identifier.

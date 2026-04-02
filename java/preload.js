@@ -326,14 +326,8 @@ contextBridge.exposeInMainWorld('browserAPI', {
     startServer: (config) => ipcRenderer.invoke('omchat:start-server', config),
     stopServer: () => ipcRenderer.invoke('omchat:stop-server'),
     selectDbFolder: () => ipcRenderer.invoke('omchat:select-db-folder'),
-    syncDatabases: () => ipcRenderer.invoke('omchat:sync-db'),
-    importDatabases: () => ipcRenderer.invoke('omchat:import-db'),
-    deleteMongoBackup: () => ipcRenderer.invoke('omchat:delete-mongo-backup'),
-    getMongoStats: () => ipcRenderer.invoke('omchat:get-mongo-stats'),
     onOutput: (callback) => ipcRenderer.on('omchat-server-output', (event, data) => callback(data)),
-    onExit: (callback) => ipcRenderer.on('omchat-server-exit', (event, data) => callback(data)),
-    onSyncProgress: (callback) => ipcRenderer.on('omchat-sync-progress', (event, data) => callback(data)),
-    onSyncDone: (callback) => ipcRenderer.on('omchat-sync-done', (event, data) => callback(data))
+    onExit: (callback) => ipcRenderer.on('omchat-server-exit', (event, data) => callback(data))
   },
   openWebUI: {
     probe: () => ipcRenderer.invoke('openwebui:probe'),

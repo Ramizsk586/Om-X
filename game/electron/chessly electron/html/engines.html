@@ -369,11 +369,18 @@
             
             const avatarSrc = resolveAvatarSrc(e.avatar);
             
+            const providerLabel = e.provider
+                ? (String(e.provider).charAt(0).toUpperCase() + String(e.provider).slice(1))
+                : "Neural";
+            const subLabel = e.type === "llm"
+                ? `${providerLabel} AI`
+                : "UCI Engine";
+
             div.innerHTML = `
                 <img class="eng-avatar-mini" src="${avatarSrc}" onerror="this.src='../assets/icon/chessly.png'">
                 <div class="eng-details">
                     <div class="eng-name">${e.name}</div>
-                    <div class="eng-sub">${e.type === 'llm' ? e.provider : 'Stockfish'}</div>
+                    <div class="eng-sub">${subLabel}</div>
                 </div>
             `;
             div.onclick = () => {

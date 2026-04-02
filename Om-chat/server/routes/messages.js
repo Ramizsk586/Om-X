@@ -4,10 +4,9 @@ const crypto = require('crypto');
 const dns = require('node:dns').promises;
 const path = require('path');
 const multer = require('multer');
-const UploadBlob = require('../models/UploadBlob.model');
-const { getModel, isLocalMode } = require('../db/getModel');
+const { getModel } = require('../db/getModel');
 
-function getUploadBlobCollection() { return getModel('uploadBlobs', UploadBlob); }
+function getUploadBlobCollection() { return getModel('uploadBlobs'); }
 
 const {
   createMessage,
@@ -262,7 +261,7 @@ router.post('/upload', (req, res) => {
       const originalName = cleanText(req.file.originalname || 'Attachment', { maxLength: 120, preserveWhitespace: true }) || 'Attachment';
       const mimeType = cleanText(req.file.mimetype || 'application/octet-stream', { maxLength: 120, preserveWhitespace: true }) || 'application/octet-stream';
       const buffer = Buffer.isBuffer(req.file.buffer) ? req.file.buffer : Buffer.from([]);
-      const localUploadId = isLocalMode() ? crypto.randomBytes(12).toString('hex') : undefined;
+      const localUploadId = crypto.randomBytes(12).toString('hex');
 
       const saved = await getUploadBlobCollection().create({
         _id: localUploadId,

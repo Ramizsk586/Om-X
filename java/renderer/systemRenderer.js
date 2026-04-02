@@ -94,17 +94,6 @@ const applyThemeClass = (theme) => {
     omchatLocalSection: document.getElementById('omchat-local-section'),
     omchatLocalDbPath: document.getElementById('omchat-local-db-path'),
     omchatBrowseLocalDb: document.getElementById('omchat-browse-local-db'),
-    omchatSyncBtn: document.getElementById('omchat-sync-btn'),
-    omchatImportBtn: document.getElementById('omchat-import-btn'),
-    omchatDeleteBtn: document.getElementById('omchat-delete-btn'),
-    omchatSyncModal: document.getElementById('omchat-sync-modal'),
-    omchatSyncClose: document.getElementById('omchat-sync-close'),
-    omchatSyncStatus: document.getElementById('omchat-sync-status'),
-    omchatSyncLog: document.getElementById('omchat-sync-log'),
-    omchatSyncBar: document.getElementById('omchat-sync-bar'),
-    omchatMongoStats: document.getElementById('omchat-mongo-stats'),
-    omchatMongoStatsLine: document.getElementById('omchat-mongo-stats-line'),
-    omchatMongoStatsSub: document.getElementById('omchat-mongo-stats-sub'),
   };
 
   let currentSettings = {};
@@ -180,97 +169,10 @@ const applyThemeClass = (theme) => {
     }
   });
 
-  // ─── OmChat MongoDB Toggle & Local Folder Browse ─────────────────
-  function syncOmChatMongoToggle() {
+  // OmChat local folder browse
+  function syncOmChatLocalSection() {
     if (els.omchatLocalSection) {
       els.omchatLocalSection.style.display = '';
-    }
-    if (els.omchatMongoStats) {
-      els.omchatMongoStats.style.display = '';
-    }
-    void refreshOmChatMongoStats();
-  }
-
-  function setOmChatSyncModalVisible(visible) {
-    if (!els.omchatSyncModal) return;
-    const shouldShow = Boolean(visible);
-    els.omchatSyncModal.classList.toggle('hidden', !shouldShow);
-    els.omchatSyncModal.setAttribute('aria-hidden', String(!shouldShow));
-  }
-
-  function resetOmChatSyncLog() {
-    if (els.omchatSyncLog) els.omchatSyncLog.innerHTML = '';
-    if (els.omchatSyncBar) els.omchatSyncBar.style.width = '0%';
-    if (els.omchatSyncStatus) els.omchatSyncStatus.textContent = 'Preparing backup...';
-  }
-
-  function appendOmChatSyncLog(message = '') {
-    if (!els.omchatSyncLog) return;
-    const line = document.createElement('div');
-    line.textContent = message;
-    els.omchatSyncLog.appendChild(line);
-    els.omchatSyncLog.scrollTop = els.omchatSyncLog.scrollHeight;
-  }
-
-  function setOmChatSyncProgress(percent = 0) {
-    if (!els.omchatSyncBar) return;
-    const safe = Math.max(0, Math.min(100, Number(percent) || 0));
-    els.omchatSyncBar.style.width = `${safe}%`;
-  }
-
-  function formatBytes(value) {
-    const bytes = Number(value);
-    if (!Number.isFinite(bytes)) return 'N/A';
-    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-    let size = bytes;
-    let unit = 0;
-    while (size >= 1024 && unit < units.length - 1) {
-      size /= 1024;
-      unit += 1;
-    }
-    return `${size.toFixed(size >= 10 || unit === 0 ? 0 : 1)} ${units[unit]}`;
-  }
-
-  async function refreshOmChatMongoStats() {
-    if (!window.browserAPI?.omChat?.getMongoStats) return;
-    if (!els.omchatMongoStatsLine || !els.omchatMongoStatsSub) return;
-    els.omchatMongoStatsLine.textContent = 'MongoDB storage: Loading...';
-    els.omchatMongoStatsSub.textContent = 'Free: --';
-    try {
-      const result = await window.browserAPI.omChat.getMongoStats();
-      if (!result?.success) {
-        els.omchatMongoStatsLine.textContent = result?.error || 'MongoDB stats unavailable.';
-        els.omchatMongoStatsSub.textContent = 'Free: --';
-        return;
-      }
-      const stats = result.stats || {};
-      const used = Number.isFinite(stats.fsUsedSize) ? stats.fsUsedSize : null;
-      const total = Number.isFinite(stats.fsTotalSize) ? stats.fsTotalSize : null;
-      const free = Number.isFinite(stats.freeBytes) ? stats.freeBytes : null;
-      const dataSize = Number.isFinite(stats.dataSize) ? stats.dataSize : null;
-      const storageSize = Number.isFinite(stats.storageSize) ? stats.storageSize : null;
-      const cluster = stats.cluster || {};
-      const clusterData = Number.isFinite(cluster.dataSize) ? cluster.dataSize : null;
-      const clusterStorage = Number.isFinite(cluster.storageSize) ? cluster.storageSize : null;
-      const dbName = String(stats.dbName || '').trim() || 'omchat';
-      const primaryText = used != null && total != null
-        ? `${formatBytes(used)} used of ${formatBytes(total)}`
-        : clusterData != null && clusterStorage != null
-          ? `${formatBytes(clusterData)} data, ${formatBytes(clusterStorage)} storage`
-          : storageSize != null && dataSize != null
-            ? `${formatBytes(dataSize)} data, ${formatBytes(storageSize)} storage`
-            : 'Usage details unavailable';
-      const freeText = free != null
-        ? `Free: ${formatBytes(free)}`
-        : dataSize != null && storageSize != null
-          ? `Database (${dbName}): ${formatBytes(dataSize)} data, ${formatBytes(storageSize)} storage`
-          : 'Free: N/A';
-      const label = clusterData != null && clusterStorage != null ? 'MongoDB storage (cluster)' : 'MongoDB storage';
-      els.omchatMongoStatsLine.textContent = `${label}: ${primaryText}`;
-      els.omchatMongoStatsSub.textContent = freeText;
-    } catch (error) {
-      els.omchatMongoStatsLine.textContent = error?.message || 'MongoDB stats unavailable.';
-      els.omchatMongoStatsSub.textContent = 'Free: --';
     }
   }
 
@@ -282,115 +184,6 @@ const applyThemeClass = (theme) => {
     }
   });
 
-  els.omchatSyncClose?.addEventListener('click', () => setOmChatSyncModalVisible(false));
-
-  function setOmChatActionButtonsBusy(isBusy = false, activeKind = 'backup') {
-    if (els.omchatSyncBtn) {
-      els.omchatSyncBtn.disabled = isBusy;
-      els.omchatSyncBtn.textContent = isBusy && activeKind === 'backup' ? 'Working...' : 'Backup Now';
-    }
-    if (els.omchatImportBtn) {
-      els.omchatImportBtn.disabled = isBusy;
-      els.omchatImportBtn.textContent = isBusy && activeKind === 'import' ? 'Working...' : 'Download Zip';
-    }
-    if (els.omchatDeleteBtn) {
-      els.omchatDeleteBtn.disabled = isBusy;
-      els.omchatDeleteBtn.textContent = isBusy && activeKind === 'delete' ? 'Deleting...' : 'Delete Backup';
-    }
-  }
-
-  async function runOmChatTransfer(kind = 'backup') {
-    const isBackup = kind === 'backup';
-    const isImport = kind === 'import';
-    const isDelete = kind === 'delete';
-    const invoke = isBackup
-      ? window.browserAPI?.omChat?.syncDatabases
-      : isImport
-        ? window.browserAPI?.omChat?.importDatabases
-        : window.browserAPI?.omChat?.deleteMongoBackup;
-    if (!invoke) {
-      resetOmChatSyncLog();
-      setOmChatSyncModalVisible(true);
-      if (els.omchatSyncStatus) {
-        els.omchatSyncStatus.textContent = 'MongoDB service is unavailable. Restart the app.';
-      }
-      appendOmChatSyncLog('Sync API missing. Please restart Om-X to load the latest preload.');
-      setOmChatSyncProgress(0);
-      return;
-    }
-    resetOmChatSyncLog();
-    setOmChatSyncModalVisible(true);
-    const requiresLocalPath = isBackup;
-    const localPath = String(els.omchatLocalDbPath?.value || '').trim();
-    if (requiresLocalPath && !localPath) {
-      if (els.omchatSyncStatus) els.omchatSyncStatus.textContent = 'Select a local folder first.';
-      appendOmChatSyncLog('Please choose a local database folder before running a backup.');
-      setOmChatSyncProgress(0);
-      return;
-    }
-    appendOmChatSyncLog(
-      isBackup ? 'Starting backup...' : isImport ? 'Starting download...' : 'Starting MongoDB cleanup...'
-    );
-    setOmChatSyncProgress(5);
-    setOmChatActionButtonsBusy(true, kind);
-    try {
-      const result = await invoke();
-      if (!result?.success) {
-        if (els.omchatSyncStatus) els.omchatSyncStatus.textContent = result?.error || 'Operation failed.';
-        appendOmChatSyncLog(result?.error || 'Operation failed.');
-      } else if (isBackup || isDelete) {
-        void refreshOmChatMongoStats();
-      }
-    } catch (error) {
-      if (els.omchatSyncStatus) els.omchatSyncStatus.textContent = error?.message || 'Operation failed.';
-      appendOmChatSyncLog(error?.message || 'Operation failed.');
-    } finally {
-      setOmChatActionButtonsBusy(false, kind);
-    }
-  }
-
-  els.omchatSyncBtn?.addEventListener('click', async () => runOmChatTransfer('backup'));
-  els.omchatImportBtn?.addEventListener('click', async () => runOmChatTransfer('import'));
-  els.omchatDeleteBtn?.addEventListener('click', async () => {
-    const confirmed = window.confirm('Delete all OmChat backup data from MongoDB? This cannot be undone.');
-    if (!confirmed) return;
-    await runOmChatTransfer('delete');
-  });
-
-  if (window.browserAPI?.omChat?.onSyncProgress) {
-    window.browserAPI.omChat.onSyncProgress((payload = {}) => {
-      if (payload?.status && els.omchatSyncStatus) {
-        els.omchatSyncStatus.textContent = payload.status;
-      }
-      if (typeof payload?.percent === 'number') {
-        setOmChatSyncProgress(payload.percent);
-      }
-      if (payload?.message) {
-        appendOmChatSyncLog(payload.message);
-      }
-    });
-  }
-
-  if (window.browserAPI?.omChat?.onSyncDone) {
-    window.browserAPI.omChat.onSyncDone((payload = {}) => {
-      if (payload?.success) {
-        const mode = payload?.mode;
-        const completeLabel =
-          mode === 'import' ? 'Download completed.' :
-          mode === 'delete' ? 'MongoDB backup deleted.' :
-          'Backup completed.';
-        if (els.omchatSyncStatus) els.omchatSyncStatus.textContent = completeLabel;
-        appendOmChatSyncLog(completeLabel);
-        setOmChatSyncProgress(100);
-        if (mode === 'backup' || mode === 'delete') {
-          void refreshOmChatMongoStats();
-        }
-      } else if (payload?.error) {
-        if (els.omchatSyncStatus) els.omchatSyncStatus.textContent = payload.error;
-        appendOmChatSyncLog(payload.error);
-      }
-    });
-  }
   function setActivePanel(targetId) {
     const resolved = String(targetId || '').trim() || 'panel-system';
     const targetPanel = document.getElementById(resolved);
@@ -597,10 +390,10 @@ const applyThemeClass = (theme) => {
       
       syncLlmOperatorSelection(getFallbackLlmProvider(s));
 
-      // Load OmChat DB settings
+      // Load OmChat local DB settings
       const omchatSettings = s.omchat || {};
       if (els.omchatLocalDbPath) els.omchatLocalDbPath.value = omchatSettings.localDbPath || '';
-      syncOmChatMongoToggle();
+      syncOmChatLocalSection();
 
       selectedTheme = applyThemeClass(s.theme || 'noir');
       renderShortcuts(s.shortcuts || {});
@@ -658,7 +451,6 @@ const applyThemeClass = (theme) => {
             provider: selectedLlmProvider || 'google'
         },
         omchat: {
-            dbMode: 'local',
             localDbPath: omchatPath,
             useLocalIpOnly: els.featOmchatLocalIp?.checked ?? false,
             alwaysOn: els.featOmchatAlwaysOn?.checked ?? false

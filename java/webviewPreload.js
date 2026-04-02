@@ -770,8 +770,12 @@ contextBridge.exposeInMainWorld('webviewAPI', {
 (function() {
   'use strict';
 
-  const adultContentMode = String(process.env.Adult_Content || process.env.ADULT_CONTENT || '').trim().toLowerCase();
-  if (adultContentMode === 'on') {
+  const adultContentMode = String(process.env.Adult_Content || process.env.ADULT_CONTENT || '')
+    .split('//')[0]
+    .split('#')[0]
+    .trim()
+    .toLowerCase();
+  if (adultContentMode === 'on' || adultContentMode === 'true' || adultContentMode === '1') {
     return;
   }
 

@@ -6,9 +6,13 @@ const fs = require('fs');
 const { pathToFileURL } = require('url');
 
 function isAdultContentBlockEnabledFromEnv() {
-  const raw = String(process.env.Adult_Content || process.env.ADULT_CONTENT || '').trim().toLowerCase();
-  if (raw === 'on') return false;
-  if (raw === 'off') return true;
+  const raw = String(process.env.Adult_Content || process.env.ADULT_CONTENT || '')
+    .split('//')[0]
+    .split('#')[0]
+    .trim()
+    .toLowerCase();
+  if (raw === 'on' || raw === 'true' || raw === '1') return false;
+  if (raw === 'off' || raw === 'false' || raw === '0') return true;
   return true;
 }
 

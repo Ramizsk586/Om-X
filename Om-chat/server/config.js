@@ -35,8 +35,6 @@ function loadConfig(env = process.env) {
     ACCESS_USERNAME: z.string().default(''),
     ACCESS_PASSWORD: z.string().default(''),
     ACCESS_TOKEN: z.string().default(''),
-    MONGODB_URI: z.string().trim().min(1).default('mongodb://localhost:27017'),
-    DB_MODE: z.enum(['mongo', 'local']).default('local'),
     LOCAL_DB_PATH: z.string().trim().default(''),
     SECURE_COOKIES: z.string().default('false'),
     COOKIE_SECURE: z.string().default('0'),
@@ -62,8 +60,6 @@ function loadConfig(env = process.env) {
   });
 
   const parsed = envSchema.parse(env);
-  const hasDbMode = Object.prototype.hasOwnProperty.call(env, 'DB_MODE') && String(env.DB_MODE || '').trim().length > 0;
-  const hasMongoUri = Object.prototype.hasOwnProperty.call(env, 'MONGODB_URI') && String(env.MONGODB_URI || '').trim().length > 0;
   const isProduction = parsed.NODE_ENV === 'production';
   const secureCookies = parseBoolean(parsed.SECURE_COOKIES) || parseBoolean(parsed.COOKIE_SECURE) || isProduction;
 
@@ -108,10 +104,6 @@ function loadConfig(env = process.env) {
         password: parsed.ACCESS_PASSWORD,
         token: parsed.ACCESS_TOKEN
       }
-    },
-    mongo: {
-      uri: parsed.MONGODB_URI,
-      dbName: 'omchat'
     },
     db: {
       mode: 'local',

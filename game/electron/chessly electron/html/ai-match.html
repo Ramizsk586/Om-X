@@ -765,7 +765,9 @@
             div.onclick = () => {
                 const cfg = e.type === 'llm' ? { provider: e.provider, apiKey: e.apiKey, model: e.model, engineId: e.id, name: e.name } : { engineId: e.id, name: e.name };
                 const nameText = e.name;
-                const modelText = e.type === 'llm' ? e.model : 'Stockfish/UCI';
+                const modelText = e.type === 'llm'
+                    ? (e.model || 'LLM')
+                    : 'UCI Engine';
                 
                 if(activeColor==='white') { 
                     whiteConfig=cfg; 
