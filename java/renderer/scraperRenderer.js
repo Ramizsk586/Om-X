@@ -87,11 +87,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   let webApiKeys = { serpapi: '', tavily: '', newsapi: '' };
   let scraperGroqModel = 'qwen/qwen3-32b';
-  let scraperOllamaConfig = {
+  let scraperLlamaConfig = {
     model: '',
     host: '127.0.0.1',
-    port: 11434,
-    baseUrl: 'http://127.0.0.1:11434'
+    port: 8091,
+    baseUrl: 'http://127.0.0.1:8091'
   };
   let adultContentBlockingEnabled = true;
 
@@ -577,6 +577,176 @@ document.addEventListener('DOMContentLoaded', async () => {
     return `${raw.slice(0, headChars).trim()}\n\n[...truncated for Groq token budget...]\n\n${raw.slice(-tailChars).trim()}`;
   };
 
+  const slugifyResearchLabel = (value = '', fallback = 'research') => {
+    const cleaned = String(value || '')
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+    return cleaned || fallback;
+  };
+
+  const buildResearchSessionId = (query = '') => {
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    return `${slugifyResearchLabel(query, 'research')}-${stamp}`;
+  };
+
+  const buildEvidencePackets = ({ records = [], contextLength = 3000, reserveTokens = 900, maxItemsPerPacket = 10 }) => {
+    const safeContext = Math.max(1024, Number(contextLength) || 3000);
+    const safeReserve = Math.max(300, Number(reserveTokens) || 900);
+    const targetBudget = Math.max(320, Math.floor(safeContext * 0.9) - safeReserve);
+    const packets = [];
+    let current = [];
+    let currentTokens = 0;
+
+    records.forEach((record) => {
+      const serialized = JSON.stringify(record || {});
+      const recordTokens = Math.max(24, estimateTokens(serialized) + 24);
+      const shouldFlush = current.length > 0
+        && (currentTokens + recordTokens > targetBudget || current.length >= maxItemsPerPacket);
+      if (shouldFlush) {
+        packets.push(current);
+        current = [];
+        currentTokens = 0;
+      }
+      current.push(record);
+      currentTokens += recordTokens;
+    });
+
+    if (current.length) packets.push(current);
+    return packets;
+  };
+
+  const normalizeExtractionNote = (note = {}) => ({
+    facts: Array.isArray(note?.facts) ? note.facts.slice(0, 14).map((fact) => ({
+      fact: stripLinks(String(fact?.fact || '').trim()),
+      confidence: stripLinks(String(fact?.confidence || '').trim() || 'medium'),
+      sources: Array.isArray(fact?.sources) ? fact.sources.slice(0, 4).map((src) => String(src || '').trim()).filter(Boolean) : []
+    })).filter((fact) => fact.fact) : [],
+    themes: Array.isArray(note?.themes) ? note.themes.slice(0, 8).map((theme) => stripLinks(String(theme || '').trim())).filter(Boolean) : [],
+    openQuestions: Array.isArray(note?.open_questions)
+      ? note.open_questions.slice(0, 8).map((item) => stripLinks(String(item || '').trim())).filter(Boolean)
+      : [],
+    contradictions: Array.isArray(note?.contradictions)
+      ? note.contradictions.slice(0, 8).map((item) => stripLinks(String(item || '').trim())).filter(Boolean)
+      : [],
+    raw: stripLinks(String(note?.raw || '').trim())
+  });
+
+  const extractionNoteToMarkdown = (note = {}, label = 'Packet') => {
+    const normalized = normalizeExtractionNote(note);
+    const lines = [`## ${label}`];
+    if (normalized.facts.length) {
+      lines.push('### Facts');
+      normalized.facts.forEach((fact) => {
+        const sourceLabel = fact.sources.length ? ` [${fact.sources.join(', ')}]` : '';
+        const confidence = fact.confidence ? ` (${fact.confidence})` : '';
+        lines.push(`- ${fact.fact}${confidence}${sourceLabel}`);
+      });
+    }
+    if (normalized.themes.length) {
+      lines.push('### Themes');
+      normalized.themes.forEach((theme) => lines.push(`- ${theme}`));
+    }
+    if (normalized.openQuestions.length) {
+      lines.push('### Open Questions');
+      normalized.openQuestions.forEach((item) => lines.push(`- ${item}`));
+    }
+    if (normalized.contradictions.length) {
+      lines.push('### Contradictions');
+      normalized.contradictions.forEach((item) => lines.push(`- ${item}`));
+    }
+    if (!normalized.facts.length && normalized.raw) {
+      lines.push('### Notes');
+      lines.push(normalized.raw);
+    }
+    return lines.join('\n').trim();
+  };
+
+  const buildMarkdownPackets = (sections = [], targetTokens = 1800) => {
+    const packets = [];
+    let current = [];
+    let currentTokens = 0;
+    const safeTarget = Math.max(320, Number(targetTokens) || 1800);
+
+    sections.forEach((section) => {
+      const value = String(section || '').trim();
+      if (!value) return;
+      const sectionTokens = estimateTokens(value) + 16;
+      if (current.length && currentTokens + sectionTokens > safeTarget) {
+        packets.push(current.join('\n\n'));
+        current = [];
+        currentTokens = 0;
+      }
+      current.push(value);
+      currentTokens += sectionTokens;
+    });
+
+    if (current.length) packets.push(current.join('\n\n'));
+    return packets;
+  };
+
+  const summarizeMarkdownPacket = async ({ query, markdown, llmConfig, stageLabel = 'Compress Evidence' }) => {
+    const summarySystem = [
+      'You are compressing research notes into compact markdown.',
+      'Use only the provided notes.',
+      'Preserve key facts, dates, entities, counts, contradictions, and unresolved questions.',
+      'Return concise markdown with headings and bullet points only.',
+      'Do not include URLs or links.'
+    ].join(' ');
+    const prompt = [
+      `Topic: ${query}`,
+      'Research notes:',
+      trimPromptToTokenBudget(String(markdown || ''), Math.max(700, Math.floor((Number(llmConfig?.maxTokens) || 3000) * 0.72))),
+      '',
+      'Write a compact markdown checkpoint with sections for Facts, Themes, Open Questions, and Contradictions when available.'
+    ].join('\n');
+    const llmRes = await callLlmForDataWorkflow({
+      prompt,
+      systemInstruction: summarySystem,
+      llmConfig: {
+        ...llmConfig,
+        maxTokens: Math.max(256, Math.min(1400, Math.floor((Number(llmConfig?.maxTokens) || 1200) * 0.45)))
+      }
+    });
+    return {
+      text: stripLinks(String(llmRes?.text || '').trim()) || stripLinks(String(markdown || '').trim()),
+      provider: llmRes?.provider || llmConfig?.provider || '',
+      stageLabel
+    };
+  };
+
+  const summarizeMergedMarkdown = async ({ query, markdownSections = [], llmConfig, onStage }) => {
+    const packets = buildMarkdownPackets(
+      markdownSections.map((section, idx) => `## Checkpoint ${idx + 1}\n${String(section || '').trim()}`),
+      Math.max(700, Math.floor((Number(llmConfig?.maxTokens) || 3000) * 0.68))
+    );
+    const packetSummaries = [];
+
+    for (let i = 0; i < packets.length; i++) {
+      onStage?.(`Merge Checkpoints (${i + 1}/${packets.length})`);
+      const res = await summarizeMarkdownPacket({
+        query,
+        markdown: packets[i],
+        llmConfig,
+        stageLabel: `Merge Checkpoints (${i + 1}/${packets.length})`
+      });
+      packetSummaries.push(res.text);
+    }
+
+    if (!packetSummaries.length) return '';
+    if (packetSummaries.length === 1) return packetSummaries[0];
+
+    onStage?.('Finalize Research Summary');
+    const finalRes = await summarizeMarkdownPacket({
+      query,
+      markdown: packetSummaries.join('\n\n'),
+      llmConfig,
+      stageLabel: 'Finalize Research Summary'
+    });
+    return finalRes.text;
+  };
+
   const loadRateState = () => {
     const raw = window.localStorage?.getItem('__omx_rl_state_v1');
     if (!raw) {
@@ -674,26 +844,26 @@ document.addEventListener('DOMContentLoaded', async () => {
       ? Math.max(96, Math.min(4096, Math.round(overrideMax)))
       : null;
 
-    if (llmBackend === 'ollama') {
-      const envConfig = window.browserAPI?.ai?.getScraperOllamaConfig
-        ? await window.browserAPI.ai.getScraperOllamaConfig()
+    if (llmBackend === 'llama') {
+      const envConfig = window.browserAPI?.ai?.getScraperLlamaConfig
+        ? await window.browserAPI.ai.getScraperLlamaConfig()
         : {};
       const resolved = {
-        ...scraperOllamaConfig,
+        ...scraperLlamaConfig,
         ...(envConfig && typeof envConfig === 'object' ? envConfig : {})
       };
-      scraperOllamaConfig = {
-        ...scraperOllamaConfig,
+      scraperLlamaConfig = {
+        ...scraperLlamaConfig,
         ...resolved,
         model: String(resolved?.model || '').trim(),
-        host: String(resolved?.host || scraperOllamaConfig.host || '127.0.0.1').trim(),
-        port: Number(resolved?.port || scraperOllamaConfig.port || 11434) || 11434,
-        baseUrl: String(resolved?.baseUrl || scraperOllamaConfig.baseUrl || '').trim() || `http://${String(resolved?.host || '127.0.0.1').trim()}:${Number(resolved?.port || 11434) || 11434}`
+        host: String(resolved?.host || scraperLlamaConfig.host || '127.0.0.1').trim(),
+        port: Number(resolved?.port || scraperLlamaConfig.port || 8091) || 8091,
+        baseUrl: String(resolved?.baseUrl || scraperLlamaConfig.baseUrl || '').trim() || `http://${String(resolved?.host || '127.0.0.1').trim()}:${Number(resolved?.port || 8091) || 8091}`
       };
       return {
-        provider: 'ollama',
-        model: scraperOllamaConfig.model,
-        baseUrl: scraperOllamaConfig.baseUrl,
+        provider: 'llama.cpp',
+        model: scraperLlamaConfig.model,
+        baseUrl: scraperLlamaConfig.baseUrl,
         temperature: overrides.temperature,
         maxTokens: normalizedOverrideMax || 700
       };
@@ -734,9 +904,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   };
 
   const callLlmForDataWorkflow = async ({ prompt, systemInstruction, llmConfig }) => {
-    if (llmConfig?.provider === 'ollama') {
-      if (!window.browserAPI?.ai?.scraperGenerateWithOllama) throw new Error('Scraper Ollama API unavailable');
-      if (!llmConfig?.model) throw new Error('SCRAPER_OLLAMA_MODEL is not configured.');
+    if (llmConfig?.provider === 'llama.cpp') {
+      if (!window.browserAPI?.ai?.scraperGenerateWithLlama) throw new Error('Scraper llama.cpp API unavailable');
       let workingPrompt = String(prompt || '');
       let effectiveMaxTokens = Number.isFinite(Number(llmConfig?.maxTokens))
         ? Math.round(Number(llmConfig.maxTokens))
@@ -746,7 +915,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const promptBudget = Math.max(700, 12000 - effectiveMaxTokens - estimateTokens(systemInstruction || '') - 120);
       workingPrompt = trimPromptToTokenBudget(workingPrompt, promptBudget);
 
-      const res = await window.browserAPI.ai.scraperGenerateWithOllama({
+      const res = await window.browserAPI.ai.scraperGenerateWithLlama({
         prompt: workingPrompt,
         systemInstruction,
         temperature: llmConfig.temperature,
@@ -755,7 +924,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (res?.error) throw new Error(res.error);
       return {
         text: String(res?.text || '').trim(),
-        provider: String(res?.provider || llmConfig.provider || 'ollama')
+        provider: String(res?.provider || llmConfig.provider || 'llama.cpp')
       };
     }
 
@@ -899,6 +1068,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     const llmConfig = await getActiveLlmConfigForDataWorkflow(llmOverrides, llmBackend);
     const evidenceSources = rankAndFilterSources(query, normalizedSources, -0.25).slice(0, 24);
     const evidenceRecords = [];
+    const researchSessionId = buildResearchSessionId(query);
+    const checkpointFiles = [];
+
+    const writeArtifact = async (fileName, content) => {
+      if (!window.browserAPI?.ai?.writeScraperResearchArtifact) return null;
+      const result = await window.browserAPI.ai.writeScraperResearchArtifact({
+        sessionId: researchSessionId,
+        fileName,
+        content
+      });
+      if (result?.success) checkpointFiles.push(result);
+      return result;
+    };
 
     (Array.isArray(wikiPages) ? wikiPages : []).slice(0, 6).forEach((page, idx) => {
       evidenceRecords.push({
@@ -930,10 +1112,51 @@ document.addEventListener('DOMContentLoaded', async () => {
       });
     });
 
-    const evidenceChunks = chunkArray(evidenceRecords, 12);
+    const evidenceChunks = buildEvidencePackets({
+      records: evidenceRecords,
+      contextLength: llmConfig?.maxTokens || aiReportSettings.contextLength,
+      reserveTokens: 1100,
+      maxItemsPerPacket: 10
+    });
+
     const extractionNotes = [];
+    const checkpointMarkdowns = [];
+    let rollingPacketMarkdown = [];
+    let rollingPacketTokens = 0;
+    let checkpointIndex = 0;
     let llmCalls = 0;
     let llmProviderUsed = llmConfig.provider;
+
+    const checkpointThreshold = Math.max(800, Math.floor((Number(llmConfig?.maxTokens) || aiReportSettings.contextLength || 3000) * 0.9));
+
+    const flushRollingCheckpoint = async ({ force = false } = {}) => {
+      if (!rollingPacketMarkdown.length) return;
+      if (!force && rollingPacketTokens < checkpointThreshold) return;
+      checkpointIndex += 1;
+      onStage?.(`Compress Evidence (${checkpointIndex})`);
+      const sourceMarkdown = rollingPacketMarkdown.join('\n\n');
+      try {
+        const summary = await summarizeMarkdownPacket({
+          query,
+          markdown: sourceMarkdown,
+          llmConfig,
+          stageLabel: `Compress Evidence (${checkpointIndex})`
+        });
+        llmCalls += 1;
+        llmProviderUsed = summary.provider || llmProviderUsed;
+        const markdown = `# Evidence Checkpoint ${checkpointIndex}\n\n${summary.text}`;
+        checkpointMarkdowns.push(markdown);
+        await writeArtifact(`checkpoint-${String(checkpointIndex).padStart(3, '0')}`, markdown);
+      } catch (err) {
+        console.warn('[Data Workflow] Rolling checkpoint compression failed:', err?.message || err);
+        const markdown = `# Evidence Checkpoint ${checkpointIndex}\n\n${sourceMarkdown}`;
+        checkpointMarkdowns.push(markdown);
+        await writeArtifact(`checkpoint-${String(checkpointIndex).padStart(3, '0')}`, markdown);
+      } finally {
+        rollingPacketMarkdown = [];
+        rollingPacketTokens = 0;
+      }
+    };
 
     const extractorSystem = [
       'You are a strict research extraction engine.',
@@ -962,9 +1185,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         const llmRes = await callLlmForDataWorkflow({ prompt, systemInstruction: extractorSystem, llmConfig });
         llmCalls++;
         llmProviderUsed = llmRes.provider || llmProviderUsed;
-        const parsed = tryParseJsonBlock(llmRes.text);
-        if (parsed) extractionNotes.push(parsed);
-        else extractionNotes.push({ facts: [], themes: [], open_questions: [], contradictions: [], raw: llmRes.text.slice(0, 1200) });
+        const parsed = tryParseJsonBlock(llmRes.text) || { facts: [], themes: [], open_questions: [], contradictions: [], raw: llmRes.text.slice(0, 1200) };
+        extractionNotes.push(parsed);
+        const markdown = extractionNoteToMarkdown(parsed, `Packet ${i + 1}`);
+        rollingPacketMarkdown.push(markdown);
+        rollingPacketTokens += estimateTokens(markdown);
+        await flushRollingCheckpoint();
       } catch (err) {
         console.warn('[Data Workflow] LLM extraction chunk failed:', err?.message || err);
       } finally {
@@ -974,21 +1200,52 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     }
 
+    await flushRollingCheckpoint({ force: true });
+
+    let checkpointArtifacts = checkpointMarkdowns.slice();
+    if (window.browserAPI?.ai?.listScraperResearchArtifacts) {
+      try {
+        const listed = await window.browserAPI.ai.listScraperResearchArtifacts(researchSessionId);
+        if (listed?.success && Array.isArray(listed.files) && listed.files.length) {
+          checkpointArtifacts = listed.files.map((file) => String(file?.content || '').trim()).filter(Boolean);
+        }
+      } catch (err) {
+        console.warn('[Data Workflow] Failed to list scraper research artifacts:', err?.message || err);
+      }
+    }
+
     onStage?.('Synthesize Summary');
+    let mergedResearchSummary = '';
+    try {
+      mergedResearchSummary = await summarizeMergedMarkdown({
+        query,
+        markdownSections: checkpointArtifacts,
+        llmConfig,
+        onStage
+      });
+      if (mergedResearchSummary) {
+        llmCalls += Math.max(1, buildMarkdownPackets(checkpointArtifacts, Math.max(700, Math.floor((Number(llmConfig?.maxTokens) || 3000) * 0.68))).length);
+        await writeArtifact('final-summary', `# Final Research Summary\n\n${mergedResearchSummary}`);
+      }
+    } catch (err) {
+      console.warn('[Data Workflow] Merged research summary failed:', err?.message || err);
+      mergedResearchSummary = checkpointArtifacts.join('\n\n').slice(0, 6000);
+    }
+
     const summarySystem = [
       'You are an analyst producing a structured evidence-based summary.',
-      'Use only the extracted notes and evidence metadata provided.',
+      'Use only the provided checkpoint summary and evidence metadata.',
       'Return JSON only.',
       'Keep overview factual and concise; key points should reference sources by source label/domain when possible.',
       'Do not include any URLs or links.',
-      'All sentences must be complete and polished. If a sentence feels truncated, rewrite it to be complete.'
+      'All sentences must be complete and polished.'
     ].join(' ');
     const summaryPrompt = [
       `Topic: ${query}`,
       `Images collected: ${uniqueImages.length}`,
       `Evidence source count: ${evidenceSources.length}`,
-      'Extraction notes (JSON array):',
-      JSON.stringify(extractionNotes.slice(0, 12), null, 2),
+      'Merged research summary (markdown):',
+      trimPromptToTokenBudget(mergedResearchSummary || checkpointArtifacts.join('\n\n'), Math.max(900, Math.floor((Number(llmConfig?.maxTokens) || 3000) * 0.7))),
       'Top evidence sources (JSON array):',
       JSON.stringify(evidenceSources.slice(0, 12).map((s) => ({ title: s.title, url: s.url, snippet: s.snippet })), null, 2),
       '',
@@ -1031,24 +1288,25 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     } catch (err) {
       console.warn('[Data Workflow] LLM summary synthesis failed:', err?.message || err);
+      summaryText = stripLinks(mergedResearchSummary);
     }
 
     onStage?.('Compose Detailed Report');
     const reportSystem = [
       'You are a senior research analyst writing a detailed report.',
-      'Use only provided evidence and extracted notes.',
+      'Use only provided evidence, checkpoint summaries, and source metadata.',
       'No hallucinations. Clearly state uncertainty when evidence is weak.',
       'Write in clean markdown-like plain text paragraphs and bullet lists.',
       'Target 2500-4000 characters.',
       'Do not include any URLs or links.',
-      'Ensure every sentence is complete and polished. If a thought feels unfinished, complete it.'
+      'Ensure every sentence is complete and polished.'
     ].join(' ');
     const reportPrompt = [
       `Topic: ${query}`,
       `Wikipedia overview: ${wikiSummary ? cleanSnippet(wikiSummary).slice(0, 1000) : 'None'}`,
       `Related topics: ${(relatedTopics || []).slice(0, 15).join(', ') || 'None'}`,
-      'Extracted evidence notes (JSON array):',
-      JSON.stringify(extractionNotes.slice(0, 20), null, 2),
+      'Merged checkpoint summary (markdown):',
+      trimPromptToTokenBudget(mergedResearchSummary || checkpointArtifacts.join('\n\n'), Math.max(900, Math.floor((Number(llmConfig?.maxTokens) || 3000) * 0.72))),
       'Curated source references (JSON array):',
       JSON.stringify(evidenceSources.slice(0, 20).map((s, i) => ({ id: `S${i + 1}`, title: s.title, url: s.url, snippet: s.snippet })), null, 2),
       '',
@@ -1063,6 +1321,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       detailedNarrative = stripLinks(String(llmRes.text || '').trim());
     } catch (err) {
       console.warn('[Data Workflow] LLM detailed report synthesis failed:', err?.message || err);
+      detailedNarrative = stripLinks(String(mergedResearchSummary || '').trim());
     }
 
     return {
@@ -1071,7 +1330,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       detailedNarrative: stripLinks(detailedNarrative),
       llmProviderUsed,
       llmCalls,
-      extractionChunkCalls: extractionNotes.length
+      extractionChunkCalls: extractionNotes.length,
+      researchSessionId,
+      checkpointFiles: checkpointFiles.map((file) => file.filePath).filter(Boolean)
     };
   };
 
@@ -1079,31 +1340,42 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (els.scraperResults) {
       els.scraperResults.innerHTML = '';
     }
-    const isAiData = report?.mode === 'ai-data';
     const summaryStructured = report.summaryStructured || {
       overview: report.summary || '',
       keyPoints: [],
-        focusAreas: []
+      focusAreas: []
     };
+    const narrativeParagraphs = String(report?.detailedNarrative || '')
+      .split(/\n{2,}/)
+      .map((paragraph) => paragraph.trim())
+      .filter(Boolean);
+    const sourceRows = Array.isArray(report?.sources)
+      ? report.sources.filter((src) => src?.title || cleanSnippet(src?.snippet || '')).slice(0, 12)
+      : [];
+    const wikiRows = Array.isArray(report?.wikiPages) ? report.wikiPages.filter((page) => page?.title || page?.summary).slice(0, 4) : [];
+    const imageRows = Array.isArray(report?.images) ? report.images.filter(Boolean).slice(0, 6) : [];
+
     const summaryCard = document.createElement('div');
     summaryCard.className = 'report-card';
     summaryCard.innerHTML = `
-      <h3>Intelligence Summary</h3>
+      <h3>Research Report</h3>
+      <div style="font-size:12px; color:#94a3b8; margin-bottom:12px;">Generated ${escapeHtml(new Date(Number(report?.generatedAt || Date.now())).toLocaleString())}</div>
       <p>${escapeHtml(summaryStructured.overview || '')}</p>
       ${Array.isArray(summaryStructured.keyPoints) && summaryStructured.keyPoints.length ? `
         <div style="margin-top:12px;">
-          <div style="font-size:12px; color:#d4d4d8; font-weight:700; margin-bottom:6px;">Key Points</div>
+          <div style="font-size:12px; color:#d4d4d8; font-weight:700; margin-bottom:6px;">Executive Findings</div>
           <ul style="margin:0; padding-left:18px; color:#a1a1aa; font-size:13px; line-height:1.5; display:grid; gap:8px;">
             ${summaryStructured.keyPoints.map((point) => {
               const text = typeof point === 'string' ? point : (point?.text || '');
-              return `<li>${escapeHtml(text)}</li>`;
+              const source = typeof point === 'object' ? String(point?.source || '').trim() : '';
+              return `<li>${escapeHtml(text)}${source ? `<div style="margin-top:3px; color:#71717a; font-size:11px;">${escapeHtml(source)}</div>` : ''}</li>`;
             }).join('')}
           </ul>
         </div>
       ` : ''}
       ${Array.isArray(summaryStructured.focusAreas) && summaryStructured.focusAreas.length ? `
         <div style="margin-top:12px;">
-          <div style="font-size:12px; color:#d4d4d8; font-weight:700; margin-bottom:6px;">Related Focus</div>
+          <div style="font-size:12px; color:#d4d4d8; font-weight:700; margin-bottom:6px;">Focus Areas</div>
           <div style="display:flex; flex-wrap:wrap; gap:8px;">
             ${summaryStructured.focusAreas.map((topic) => `<span style="font-size:11px; color:#cbd5e1; border:1px solid #334155; padding:5px 10px; border-radius:999px; background:#0f172a;">${escapeHtml(topic)}</span>`).join('')}
           </div>
@@ -1112,18 +1384,23 @@ document.addEventListener('DOMContentLoaded', async () => {
     `;
     els.scraperResults.appendChild(summaryCard);
 
-    const rawDataCard = document.createElement('div');
-    rawDataCard.className = 'report-card';
-    const wikiRows = Array.isArray(report?.wikiPages) ? report.wikiPages.filter((page) => page?.title || page?.summary).slice(0, 8) : [];
-    const sourceRows = Array.isArray(report?.sources)
-      ? report.sources.filter((src) => src?.title || cleanSnippet(src?.snippet || '')).slice(0, 18)
-      : [];
-    const evidenceRows = sourceRows.filter((src) => cleanSnippet(src?.snippet || ''));
-    rawDataCard.innerHTML = `
-      <h3>Raw Data</h3>
+    const narrativeCard = document.createElement('div');
+    narrativeCard.className = 'report-card';
+    narrativeCard.innerHTML = `
+      <h3>Detailed Analysis</h3>
+      ${narrativeParagraphs.length
+        ? narrativeParagraphs.map((paragraph) => `<p style="color:#cbd5e1; line-height:1.7; margin:0 0 12px;">${escapeHtml(paragraph)}</p>`).join('')
+        : `<p style="color:#a1a1aa;">Detailed report text was not available for this run.</p>`}
+    `;
+    els.scraperResults.appendChild(narrativeCard);
+
+    const evidenceCard = document.createElement('div');
+    evidenceCard.className = 'report-card';
+    evidenceCard.innerHTML = `
+      <h3>Evidence Highlights</h3>
       ${wikiRows.length ? `
         <div style="margin-top:10px;">
-          <div style="font-size:12px; color:#d4d4d8; font-weight:700; margin-bottom:8px;">Wikipedia Data</div>
+          <div style="font-size:12px; color:#d4d4d8; font-weight:700; margin-bottom:8px;">Wikipedia Context</div>
           <div style="display:grid; gap:10px;">
             ${wikiRows.map((page) => `
               <div style="padding:10px 12px; border:1px solid #27272a; border-radius:10px; background:#111114;">
@@ -1134,11 +1411,11 @@ document.addEventListener('DOMContentLoaded', async () => {
           </div>
         </div>
       ` : ''}
-      ${evidenceRows.length ? `
+      ${sourceRows.length ? `
         <div style="margin-top:14px;">
-          <div style="font-size:12px; color:#d4d4d8; font-weight:700; margin-bottom:8px;">Collected Evidence</div>
+          <div style="font-size:12px; color:#d4d4d8; font-weight:700; margin-bottom:8px;">Source Highlights</div>
           <div style="display:grid; gap:10px;">
-            ${evidenceRows.map((src) => `
+            ${sourceRows.map((src) => `
               <div style="padding:10px 12px; border:1px solid #27272a; border-radius:10px; background:#111114;">
                 <div style="font-size:12px; font-weight:700; color:#f4f4f5; margin-bottom:6px;">${escapeHtml(src.title || 'Source')}</div>
                 <div style="font-size:12px; color:#a1a1aa; line-height:1.55;">${escapeHtml(cleanSnippet(src.snippet || ''))}</div>
@@ -1156,10 +1433,17 @@ document.addEventListener('DOMContentLoaded', async () => {
         </div>
       ` : ''}
     `;
-    els.scraperResults.appendChild(rawDataCard);
+    els.scraperResults.appendChild(evidenceCard);
 
-    if (!isAiData) {
-      const imageRows = (report.images || []).slice(0, 8);
+    if (imageRows.length) {
+      const imageSection = document.createElement('div');
+      imageSection.className = 'report-card';
+      imageSection.innerHTML = `
+        <h3>Visual References</h3>
+        <div style="font-size:12px; color:#94a3b8; margin-bottom:12px;">Images gathered from the research pass to support the report context.</div>
+      `;
+      els.scraperResults.appendChild(imageSection);
+
       imageRows.forEach((imgUrl) => {
         const safeImgUrl = escapeHtml(imgUrl || '');
         const card = document.createElement('div');
@@ -1168,7 +1452,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         card.innerHTML = `
           <img src="${safeImgUrl}" onerror="this.parentElement.style.display='none'" alt="Topic Image">
           <div class="scraper-card-meta">
-            <div class="scraper-card-type">Data Image</div>
+            <div class="scraper-card-type">Report Image</div>
           </div>
           <div class="scraper-dl-overlay">
             <div class="overlay-actions">
@@ -1291,7 +1575,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   const runDataIntelligenceWorkflow = async (query) => {
     const report = await runAiDataIntelligenceWorkflow(query, {
-      llmBackend: 'ollama',
+      llmBackend: 'llama',
       maxDdgQueries: DATA_PANEL_DDG_MAX_QUERIES,
       maxSerpQueries: DATA_PANEL_SERP_MAX_QUERIES
     });
@@ -1307,7 +1591,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   };
 
   const runAiDataIntelligenceWorkflow = async (query, options = {}) => {
-    const llmBackend = String(options?.llmBackend || 'groq').trim().toLowerCase() === 'ollama' ? 'ollama' : 'groq';
+    const llmBackend = String(options?.llmBackend || 'groq').trim().toLowerCase() === 'llama' ? 'llama' : 'groq';
     const maxDdgQueries = Math.max(3, Math.min(20, Number(options?.maxDdgQueries) || AI_DATA_PANEL_DDG_MAX_QUERIES));
     const maxSerpQueries = Math.max(0, Math.min(8, Number(options?.maxSerpQueries) || AI_DATA_PANEL_SERP_MAX_QUERIES));
     currentDataReport = null;
@@ -1327,7 +1611,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const labelEl = el?.querySelector('.workflow-step-label');
       if (labelEl) labelEl.textContent = label;
     };
-    const backendLabel = llmBackend === 'ollama' ? 'Ollama' : 'Groq';
+    const backendLabel = llmBackend === 'llama' ? 'llama.cpp' : 'Groq';
     const setLiveStatus = (title, meta, state = 'active') => {
       updateWorkflowLivePanel({ title, meta, state });
     };
@@ -1348,17 +1632,29 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     try {
-      if (llmBackend === 'ollama' && window.browserAPI?.ai?.getScraperOllamaConfig) {
-        scraperOllamaConfig = {
-          ...scraperOllamaConfig,
-          ...(await window.browserAPI.ai.getScraperOllamaConfig())
+      let llamaSessionStarted = false;
+      if (llmBackend === 'llama' && window.browserAPI?.ai?.getScraperLlamaConfig) {
+        scraperLlamaConfig = {
+          ...scraperLlamaConfig,
+          ...(await window.browserAPI.ai.getScraperLlamaConfig())
         };
+        if (window.browserAPI?.ai?.startScraperLlamaSession) {
+          const session = await window.browserAPI.ai.startScraperLlamaSession();
+          if (!session?.success) {
+            throw new Error(session?.error || 'Unable to start scraper llama.cpp background server.');
+          }
+          llamaSessionStarted = true;
+          scraperLlamaConfig = {
+            ...scraperLlamaConfig,
+            ...(session && typeof session === 'object' ? session : {})
+          };
+        }
       }
 
       setLiveStatus(
-        llmBackend === 'ollama' ? 'Booting Ollama research flow' : 'Booting AI research flow',
-        llmBackend === 'ollama'
-          ? `Preparing ${backendLabel} and gathering trusted context before the report is written.`
+        llmBackend === 'llama' ? 'Booting llama.cpp research flow' : 'Booting AI research flow',
+        llmBackend === 'llama'
+          ? `Starting llama.cpp in the background and gathering trusted context before the report is written.`
           : `Preparing ${backendLabel} planning and collecting trusted context before synthesis starts.`
       );
 
@@ -1389,7 +1685,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       await setWorkflowStepState('plan', 'active', 120);
       setLiveStatus(
-        llmBackend === 'ollama' ? 'Planning search with Ollama' : 'Planning search with AI',
+        llmBackend === 'llama' ? 'Planning search with llama.cpp' : 'Planning search with AI',
         `Using ${backendLabel} to decide which search queries are worth running next.`
       );
       const llmOverrides = {
@@ -1494,6 +1790,30 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     await setWorkflowStepState('links', 'active', 120);
     setLiveStatus('Curating source links', 'Cleaning, ranking, and deduplicating links so the final report stays grounded.');
+    try {
+      if (window.browserAPI?.ai?.webSearch) {
+        const supplementalQueries = dedupeBy([
+          `${query} latest developments`,
+          `${query} official sources`,
+          `${query} analysis report`
+        ], (item) => String(item || '').toLowerCase()).slice(0, webApiKeys.tavily || webApiKeys.newsapi ? 4 : 2);
+
+        for (let i = 0; i < supplementalQueries.length; i++) {
+          const result = await window.browserAPI.ai.webSearch(supplementalQueries[i]).catch(() => null);
+          const sources = Array.isArray(result?.sources) ? result.sources : [];
+          const images = Array.isArray(result?.images) ? result.images : [];
+          if (sources.length) {
+            collectedSources.push(...sources);
+            collectedWebSources.push(...sources);
+          }
+          if (images.length) {
+            collectedImages.push(...images);
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('[AI Data] Supplemental search pass failed:', err?.message || err);
+    }
     const rankedWebSources = rankAndFilterSources(query, collectedWebSources, -0.2);
     const rankedAllSources = rankAndFilterSources(query, collectedSources, -0.15);
     const normalizedSources = dedupeBy(
@@ -1522,11 +1842,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     try {
       const reportStepEl = els.scraperResults?.querySelector('.workflow-step[data-step="report"]');
       const originalReportLabel = reportStepEl?.querySelector('.workflow-step-label')?.textContent || 'AI Synthesis + PDF';
-      setStepLabel('report', llmBackend === 'ollama' ? 'Ollama Writing Report' : 'AI Synthesis + PDF');
+      setStepLabel('report', llmBackend === 'llama' ? 'llama.cpp Writing Report' : 'AI Synthesis + PDF');
       setLiveStatus(
-        llmBackend === 'ollama' ? 'Ollama is building the answer' : 'AI is building the answer',
-        llmBackend === 'ollama'
-          ? 'The sources are ready. Ollama is now extracting evidence, summarizing it, and writing the final response.'
+        llmBackend === 'llama' ? 'llama.cpp is building the answer' : 'AI is building the answer',
+        llmBackend === 'llama'
+          ? 'The sources are ready. llama.cpp is now extracting evidence, summarizing it, and writing the final response.'
           : 'The sources are ready. The model is now extracting evidence, summarizing it, and writing the final response.'
       );
       const llmSynth = await synthesizeReportWithLlm({
@@ -1575,18 +1895,20 @@ document.addEventListener('DOMContentLoaded', async () => {
         provider: llmSynth?.llmProviderUsed || '',
         calls: Number(llmSynth?.llmCalls || 0),
         extractionChunkCalls: Number(llmSynth?.extractionChunkCalls || 0),
-        fallbackUsed: !(llmSynth?.summaryStructured?.overview || llmSynth?.summaryText || llmSynth?.detailedNarrative)
+        fallbackUsed: !(llmSynth?.summaryStructured?.overview || llmSynth?.summaryText || llmSynth?.detailedNarrative),
+        researchSessionId: String(llmSynth?.researchSessionId || '').trim(),
+        checkpointFiles: Array.isArray(llmSynth?.checkpointFiles) ? llmSynth.checkpointFiles : []
       };
       setStepLabel('report', originalReportLabel);
       setLiveStatus(
-        llmBackend === 'ollama' ? 'Ollama report ready' : 'AI report ready',
+        llmBackend === 'llama' ? 'llama.cpp report ready' : 'AI report ready',
         'The synthesis step finished successfully. Preparing the final report card and PDF export.',
         'done'
       );
     } catch (llmErr) {
       console.warn('[AI Data] LLM synthesis fallback triggered:', llmErr?.message || llmErr);
       setLiveStatus(
-        llmBackend === 'ollama' ? 'Ollama synthesis hit a problem' : 'AI synthesis hit a problem',
+        llmBackend === 'llama' ? 'llama.cpp synthesis hit a problem' : 'AI synthesis hit a problem',
         String(llmErr?.message || llmErr || 'Unknown model error'),
         'error'
       );
@@ -1618,6 +1940,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         llmProvider: llmDiagnostics.provider,
         llmCalls: llmDiagnostics.calls,
         llmExtractionChunkCalls: llmDiagnostics.extractionChunkCalls,
+        llmResearchSessionId: llmDiagnostics.researchSessionId || '',
+        llmCheckpointFiles: Array.isArray(llmDiagnostics.checkpointFiles) ? llmDiagnostics.checkpointFiles : [],
         llmFallbackUsed: llmDiagnostics.fallbackUsed,
         webSourcesRaw: collectedWebSources.length,
         sourcesRanked: normalizedSources.length,
@@ -1627,7 +1951,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     currentDataReport = report;
     await setWorkflowStepState('report', 'done', 220);
     setLiveStatus(
-      llmBackend === 'ollama' ? 'Ollama workflow completed' : 'AI workflow completed',
+      llmBackend === 'llama' ? 'llama.cpp workflow completed' : 'AI workflow completed',
       'All steps finished. You can now read the report or export it as PDF.',
       'done'
     );
@@ -1636,11 +1960,15 @@ document.addEventListener('DOMContentLoaded', async () => {
       console.error('[AI Data] Workflow failed:', err);
       await setWorkflowStepState('report', 'error', 180);
       setLiveStatus(
-        llmBackend === 'ollama' ? 'Ollama workflow failed' : 'AI workflow failed',
+        llmBackend === 'llama' ? 'llama.cpp workflow failed' : 'AI workflow failed',
         String(err?.message || err || 'Unknown workflow error'),
         'error'
       );
       throw err;
+    } finally {
+      if (llmBackend === 'llama' && window.browserAPI?.ai?.stopScraperLlamaSession) {
+        await window.browserAPI.ai.stopScraperLlamaSession().catch(() => {});
+      }
     }
   };
 
@@ -2046,8 +2374,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     const envGroqModel = window.browserAPI?.ai?.getScraperGroqModel
       ? await window.browserAPI.ai.getScraperGroqModel()
       : '';
-    const envOllamaConfig = window.browserAPI?.ai?.getScraperOllamaConfig
-      ? await window.browserAPI.ai.getScraperOllamaConfig()
+    const envLlamaConfig = window.browserAPI?.ai?.getScraperLlamaConfig
+      ? await window.browserAPI.ai.getScraperLlamaConfig()
       : {};
     webApiKeys = {
       serpapi: String(envKeys?.serpapi || envKeys?.scrapeSerp || '').trim(),
@@ -2055,13 +2383,13 @@ document.addEventListener('DOMContentLoaded', async () => {
       newsapi: String(envKeys?.newsapi || '').trim()
     };
     scraperGroqModel = String(envGroqModel || '').trim() || 'qwen/qwen3-32b';
-    scraperOllamaConfig = {
-      ...scraperOllamaConfig,
-      ...(envOllamaConfig && typeof envOllamaConfig === 'object' ? envOllamaConfig : {}),
-      model: String(envOllamaConfig?.model || scraperOllamaConfig.model || '').trim(),
-      host: String(envOllamaConfig?.host || scraperOllamaConfig.host || '127.0.0.1').trim(),
-      port: Number(envOllamaConfig?.port || scraperOllamaConfig.port || 11434) || 11434,
-      baseUrl: String(envOllamaConfig?.baseUrl || scraperOllamaConfig.baseUrl || '').trim() || `http://${String(envOllamaConfig?.host || scraperOllamaConfig.host || '127.0.0.1').trim()}:${Number(envOllamaConfig?.port || scraperOllamaConfig.port || 11434) || 11434}`
+    scraperLlamaConfig = {
+      ...scraperLlamaConfig,
+      ...(envLlamaConfig && typeof envLlamaConfig === 'object' ? envLlamaConfig : {}),
+      model: String(envLlamaConfig?.model || scraperLlamaConfig.model || '').trim(),
+      host: String(envLlamaConfig?.host || scraperLlamaConfig.host || '127.0.0.1').trim(),
+      port: Number(envLlamaConfig?.port || scraperLlamaConfig.port || 8091) || 8091,
+      baseUrl: String(envLlamaConfig?.baseUrl || scraperLlamaConfig.baseUrl || '').trim() || `http://${String(envLlamaConfig?.host || scraperLlamaConfig.host || '127.0.0.1').trim()}:${Number(envLlamaConfig?.port || scraperLlamaConfig.port || 8091) || 8091}`
     };
     const { keys: _ignoredKeys, scraper: _ignoredScraper, ...persistedConfig } = persisted;
     config = {
@@ -2177,11 +2505,81 @@ document.addEventListener('DOMContentLoaded', async () => {
     return ctor;
   };
 
-  const buildJsonPdfBlob = async (report) => {
+  const buildReportPdfSections = (report) => {
+    const summaryStructured = report?.summaryStructured || {};
+    const sections = [];
+    sections.push({
+      title: 'Executive Summary',
+      body: [
+        String(summaryStructured.overview || report?.summary || '').trim(),
+        Array.isArray(summaryStructured.keyPoints) && summaryStructured.keyPoints.length
+          ? `Key Findings:\n${summaryStructured.keyPoints.map((point) => {
+            const text = typeof point === 'string' ? point : String(point?.text || '').trim();
+            const source = typeof point === 'object' ? String(point?.source || '').trim() : '';
+            return `- ${text}${source ? ` (${source})` : ''}`;
+          }).join('\n')}`
+          : '',
+        Array.isArray(summaryStructured.focusAreas) && summaryStructured.focusAreas.length
+          ? `Focus Areas: ${summaryStructured.focusAreas.join(', ')}`
+          : ''
+      ].filter(Boolean).join('\n\n')
+    });
+
+    sections.push({
+      title: 'Detailed Analysis',
+      body: String(report?.detailedNarrative || '').trim() || 'Detailed narrative was not available for this run.'
+    });
+
+    const wikiRows = Array.isArray(report?.wikiPages) ? report.wikiPages.slice(0, 4) : [];
+    if (wikiRows.length) {
+      sections.push({
+        title: 'Wikipedia Context',
+        body: wikiRows.map((page) => `- ${String(page?.title || 'Wikipedia').trim()}: ${cleanSnippet(page?.summary || '')}`).join('\n')
+      });
+    }
+
+    const sourceRows = Array.isArray(report?.sources) ? report.sources.slice(0, 12) : [];
+    if (sourceRows.length) {
+      sections.push({
+        title: 'Source Highlights',
+        body: sourceRows.map((src, idx) => `${idx + 1}. ${String(src?.title || 'Source').trim()}\n${cleanSnippet(src?.snippet || '')}`).join('\n\n')
+      });
+    }
+
+    const relatedTopics = Array.isArray(report?.relatedTopics) ? report.relatedTopics.filter(Boolean).slice(0, 18) : [];
+    if (relatedTopics.length) {
+      sections.push({
+        title: 'Related Topics',
+        body: relatedTopics.join(', ')
+      });
+    }
+
+    return sections.filter((section) => section.body);
+  };
+
+  const loadRemoteImageAsDataUrl = async (url) => {
+    const response = await fetch(String(url || ''), { mode: 'cors' });
+    if (!response.ok) throw new Error(`Image request failed: ${response.status}`);
+    const blob = await response.blob();
+    return await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ''));
+      reader.onerror = () => reject(new Error('Failed to read image data.'));
+      reader.readAsDataURL(blob);
+    });
+  };
+
+  const detectPdfImageFormat = (dataUrl = '') => {
+    const match = String(dataUrl || '').match(/^data:image\/([^;]+);/i);
+    const kind = String(match?.[1] || '').toLowerCase();
+    if (kind.includes('png')) return 'PNG';
+    if (kind.includes('webp')) return 'WEBP';
+    return 'JPEG';
+  };
+
+  const buildReportPdfBlob = async (report) => {
     if (!report) throw new Error('No data report available for export.');
     const jsPDFCtor = await loadScraperJsPdfCtor();
-    const payload = buildRawDataExport(report);
-    const json = JSON.stringify(payload, null, 2);
     const pdf = new jsPDFCtor({
       orientation: 'portrait',
       unit: 'pt',
@@ -2192,12 +2590,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     const pageHeight = pdf.internal.pageSize.getHeight();
     const margin = 28;
     const contentWidth = Math.max(120, pageWidth - (margin * 2));
-    const lineHeight = 10;
-    const title = report.mode === 'ai-data' ? 'AI Data JSON Export' : 'Data JSON Export';
+    const lineHeight = 13;
+    const title = report.mode === 'ai-data' ? 'AI Research Report' : 'Research Report';
     const metadataLines = [
       `Query: ${String(report.query || 'Untitled report')}`,
       `Generated: ${new Date(Number(report.generatedAt || Date.now())).toLocaleString()}`
     ];
+    const sections = buildReportPdfSections(report);
 
     const addHeader = (isFirstPage = false) => {
       let y = margin;
@@ -2225,32 +2624,73 @@ document.addEventListener('DOMContentLoaded', async () => {
         pdf.text(title, margin, y);
         y += 16;
       }
-      pdf.setFont('courier', 'normal');
-      pdf.setFontSize(8.5);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(10.5);
       pdf.setTextColor(20, 20, 20);
       return y;
     };
 
-    const wrappedLines = [];
-    json.replace(/\r\n/g, '\n').split('\n').forEach((rawLine) => {
-      const normalizedLine = rawLine === '' ? ' ' : rawLine.replace(/\t/g, '  ');
-      const splitLines = pdf.splitTextToSize(normalizedLine, contentWidth);
-      if (Array.isArray(splitLines) && splitLines.length) {
-        wrappedLines.push(...splitLines);
-      } else {
-        wrappedLines.push(' ');
+    let y = addHeader(true);
+    const ensureSpace = (neededHeight = 36) => {
+      if (y + neededHeight <= pageHeight - margin) return;
+      pdf.addPage();
+      y = addHeader(false);
+    };
+
+    sections.forEach((section, index) => {
+      ensureSpace(54);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(13);
+      pdf.setTextColor(28, 28, 28);
+      pdf.text(String(section.title || 'Section'), margin, y);
+      y += 18;
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(10.5);
+      pdf.setTextColor(35, 35, 35);
+      String(section.body || '').replace(/\r\n/g, '\n').split('\n').forEach((rawLine) => {
+        const normalizedLine = rawLine === '' ? ' ' : rawLine.replace(/\t/g, '  ');
+        const splitLines = pdf.splitTextToSize(normalizedLine, contentWidth);
+        const lines = Array.isArray(splitLines) && splitLines.length ? splitLines : [' '];
+        lines.forEach((line) => {
+          ensureSpace(lineHeight + 2);
+          pdf.text(String(line), margin, y, { baseline: 'top' });
+          y += lineHeight;
+        });
+      });
+      y += 8;
+      if (index < sections.length - 1) {
+        pdf.setDrawColor(228, 228, 231);
+        pdf.line(margin, y, pageWidth - margin, y);
+        y += 14;
       }
     });
 
-    let y = addHeader(true);
-    wrappedLines.forEach((line) => {
-      if (y > pageHeight - margin) {
-        pdf.addPage();
-        y = addHeader(false);
+    const imageRows = Array.isArray(report?.images) ? report.images.filter(Boolean).slice(0, 4) : [];
+    if (imageRows.length) {
+      ensureSpace(48);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(13);
+      pdf.setTextColor(28, 28, 28);
+      pdf.text('Visual References', margin, y);
+      y += 18;
+
+      for (let i = 0; i < imageRows.length; i++) {
+        const imageUrl = imageRows[i];
+        try {
+          const dataUrl = await loadRemoteImageAsDataUrl(imageUrl);
+          ensureSpace(176);
+          pdf.addImage(dataUrl, detectPdfImageFormat(dataUrl), margin, y, contentWidth, 150, undefined, 'FAST');
+          y += 158;
+        } catch (_) {
+          ensureSpace(30);
+          pdf.setFont('helvetica', 'italic');
+          pdf.setFontSize(10);
+          pdf.setTextColor(110, 110, 110);
+          pdf.text(`Image ${i + 1} could not be embedded in the PDF.`, margin, y);
+          y += 14;
+        }
       }
-      pdf.text(String(line), margin, y, { baseline: 'top' });
-      y += lineHeight;
-    });
+    }
 
     const pageCount = pdf.getNumberOfPages();
     for (let page = 1; page <= pageCount; page += 1) {
@@ -2265,13 +2705,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   };
 
   const downloadDataReportPdf = async (report) => {
-    const blob = await buildJsonPdfBlob(report);
+    const blob = await buildReportPdfBlob(report);
     const blobUrl = URL.createObjectURL(blob);
     const safeQuery = String(report.query || 'report').trim().replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '') || 'report';
     try {
       await window.browserAPI.downloads.start(blobUrl, {
         saveAs: true,
-        filename: `${safeQuery}-${report.mode === 'ai-data' ? 'ai-data' : 'data'}-json.pdf`
+        filename: `${safeQuery}-${report.mode === 'ai-data' ? 'ai-data' : 'data'}-report.pdf`
       });
     } finally {
       setTimeout(() => URL.revokeObjectURL(blobUrl), 4000);

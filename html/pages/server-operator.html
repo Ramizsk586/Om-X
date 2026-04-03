@@ -3126,11 +3126,30 @@
                                 </div>
                             </div>
 
-                            <div class="config-field full-width hidden" id="llama-model-section">
+                            <div class="config-field full-width hidden" id="llama-model-section" style="margin-bottom: 16px;">
                                 <div class="config-field-label">Select Model</div>
                                 <select class="config-field-input" id="model-select">
                                     <option value="">-- Select a model --</option>
                                 </select>
+                            </div>
+
+                            <div class="config-grid" style="margin-bottom: 12px;">
+                                <div class="config-field">
+                                    <div class="config-field-label">Model Type</div>
+                                    <div style="font-size: 16px; font-weight: 600; color: var(--text);" id="llama-model-type">--</div>
+                                </div>
+                                <div class="config-field">
+                                    <div class="config-field-label">Projector</div>
+                                    <div style="font-size: 16px; font-weight: 600; color: var(--text);" id="llama-model-projector">--</div>
+                                </div>
+                                <div class="config-field">
+                                    <div class="config-field-label">Capability Status</div>
+                                    <div style="font-size: 16px; font-weight: 600; color: var(--text-dim);" id="llama-model-capability-status">Waiting for model selection</div>
+                                </div>
+                            </div>
+
+                            <div class="model-warning hidden" id="llama-capability-warning">
+                                <strong>Capability Warning:</strong> <span id="llama-capability-warning-text">Vision model detected but no mmproj found; launch will fall back to text-only.</span>
                             </div>
 
                             <div class="model-warning hidden" id="model-warning">
@@ -3156,6 +3175,7 @@
                                 <div class="config-field">
                                     <div class="config-field-label">GPU Layers</div>
                                     <input type="number" class="config-field-input" id="gpu-layers" value="-1" min="-1">
+                                    <div id="llama-auto-gpu-layers-status" style="margin-top: 10px; font-size: 12px; color: var(--text-dim);">Auto GPU layers enabled</div>
                                 </div>
                                 <div class="config-field">
                                     <div class="config-field-label">Port</div>
@@ -3598,12 +3618,9 @@
         </div>
 
     <script>
-        console.log('[Minecraft] Checking browserAPI availability...');
-        console.log('[Minecraft] window.browserAPI:', typeof window.browserAPI);
-        console.log('[Minecraft] window.electronAPI:', typeof window.electronAPI);
-        if (window.browserAPI) {
-            console.log('[Minecraft] pocketTTS:', window.browserAPI.pocketTTS);
-        }
+        console.log('[ServerOperator] Checking browserAPI availability...');
+        console.log('[ServerOperator] window.browserAPI:', typeof window.browserAPI);
+        console.log('[ServerOperator] window.electronAPI:', typeof window.electronAPI);
     </script>
 
     <script src="../../java/renderer/server-renderer.js"></script>

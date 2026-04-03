@@ -204,8 +204,13 @@ contextBridge.exposeInMainWorld('browserAPI', {
   ai: {
     performTask: (params) => ipcRenderer.invoke('ai-perform-task', params),
     generateSpeech: (params) => ipcRenderer.invoke('ai-generate-speech', params),
-    getScraperOllamaConfig: () => ipcRenderer.invoke('scraper:get-ollama-config'),
-    scraperGenerateWithOllama: (params) => ipcRenderer.invoke('scraper:ollama:generate', params),
+    getScraperLlamaConfig: () => ipcRenderer.invoke('scraper:get-llama-config'),
+    startScraperLlamaSession: () => ipcRenderer.invoke('scraper:llama:session-start'),
+    stopScraperLlamaSession: () => ipcRenderer.invoke('scraper:llama:session-stop'),
+    scraperGenerateWithLlama: (params) => ipcRenderer.invoke('scraper:llama:generate', params),
+    writeScraperResearchArtifact: (payload) => ipcRenderer.invoke('scraper:research-artifact-write', payload),
+    listScraperResearchArtifacts: (sessionId) => ipcRenderer.invoke('scraper:research-artifact-list', sessionId),
+    cleanupScraperResearchArtifacts: (sessionId) => ipcRenderer.invoke('scraper:research-artifact-cleanup', sessionId),
     getScraperUsageStats: () => ipcRenderer.invoke('scraper:get-usage-stats'),
     getScraperGroqKeys: () => ipcRenderer.invoke('scraper:get-groq-keys'),
     getScraperGroqModel: () => ipcRenderer.invoke('scraper:get-groq-model'),
@@ -305,16 +310,12 @@ contextBridge.exposeInMainWorld('browserAPI', {
     startServer: (config) => ipcRenderer.invoke('llama:start-server', config),
     stopServer: () => ipcRenderer.invoke('llama:stop-server'),
     sendCommand: (command) => ipcRenderer.invoke('llama:send-command', command),
+    scanModels: (modelsPath) => ipcRenderer.invoke('llama:scan-models', modelsPath),
+    prepareLaunch: (config) => ipcRenderer.invoke('llama:prepare-launch', config),
     checkModelSize: (modelsPath, modelName) => ipcRenderer.invoke('llama:check-model-size', modelsPath, modelName),
     getGPUInfo: () => ipcRenderer.invoke('llama:get-gpu-info'),
     onOutput: (callback) => ipcRenderer.on('llama-server-output', (event, data) => callback(data)),
     onExit: (callback) => ipcRenderer.on('llama-server-exit', (event, data) => callback(data))
-  },
-  pocketTTS: {
-    startServer: (config) => ipcRenderer.invoke('pocket-tts:start-server', config),
-    stopServer: () => ipcRenderer.invoke('pocket-tts:stop-server'),
-    onOutput: (callback) => ipcRenderer.on('pocket-tts-output', (event, data) => callback(data)),
-    onExit: (callback) => ipcRenderer.on('pocket-tts-exit', (event, data) => callback(data))
   },
   mcp: {
     startServer: (config) => ipcRenderer.invoke('mcp:start-server', config),

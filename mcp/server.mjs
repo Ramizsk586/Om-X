@@ -11,6 +11,8 @@ import { buildFlowchartTools, normalizeDiagramToolOptions } from "../tools/diagr
 
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 3000;
+const MCP_SERVER_NAME = "Om-X MCP Server";
+const MCP_SERVER_VERSION = "2.6.0";
 const NEWS_API_BASE = "https://newsapi.org/v2";
 const DEFAULT_ENABLED_TOOLS = Object.freeze({
   wiki: true,
@@ -644,7 +646,7 @@ function buildServer() {
   const enabledTools = getActiveEnabledTools();
   const server = new McpServer({
     name: "omx-mcp",
-    version: "2.6.0"
+    version: MCP_SERVER_VERSION
   });
 
   for (const [name, definition] of Object.entries(getEnabledToolRegistry(enabledTools))) {
@@ -677,22 +679,21 @@ const app = express()
 // ✅ Added MCP spec endpoint for UI compatibility
 app.get('/mcp', (req, res) => {
   try {
-    const tools = Object.entries(TOOL_REGISTRY || {}).map(([name, tool]) => ({
+    const tools = Object.entries(getEnabledToolRegistry(getActiveEnabledTools()) || {}).map(([name, tool]) => ({
       name,
       description: tool.description || "",
       input_schema: tool.openAiSchema || {}
     }));
 
     res.json({
-      name: "Om-X MCP Server",
-      version: "1.0.0",
+      name: MCP_SERVER_NAME,
+      version: MCP_SERVER_VERSION,
       tools
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
-;
 app.disable("x-powered-by");
 
 app.use((req, res, next) => {

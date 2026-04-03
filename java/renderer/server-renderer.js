@@ -1,6 +1,6 @@
 /**
-  * Minecraft Panel Renderer
-  * Manages the Minecraft Bedrock server and AI player
+  * Server Operator Renderer
+  * Manages the llama and MCP server operator panels
   */
 
 function appendTerminalLine(outputEl, entry = {}) {
@@ -129,13 +129,19 @@ class LlamaServerRenderer {
         this.llamaPath = null;
         this.llamaCliPath = null;
         this.modelsPath = null;
+        this.models = [];
         this.selectedModel = null;
+        this.selectedModelEntry = null;
         this.startTime = null;
         this.uptimeInterval = null;
         this.guardStatusInterval = null;
         this.latestModelInfo = null;
         this.latestSystemProfile = null;
         this.latestCompatibility = null;
+        this.latestPreparedLaunch = null;
+        this.latestGpuInfo = null;
+        this.autoGpuLayersEnabled = true;
+        this.autoGpuLayerCache = new Map();
     }
 
     init() {
@@ -149,6 +155,7 @@ class LlamaServerRenderer {
         this.loadSettings();
         this.loadRuntimeState();
         this.updateGPUDisplay();
+        this.updateAutoGpuLayersUI();
         this.updateManualCommand();
         this.startGuardStatusPolling();
         this.log('Llama Server Manager initialized', 'info');
@@ -169,6 +176,7 @@ class LlamaServerRenderer {
         const dedicated = Number(gpuInfo?.dedicatedMemoryMB || 0);
         const shared = Number(gpuInfo?.sharedMemoryMB || 0);
         const isIntegrated = gpuInfo?.isIntegrated === true;
+        this.latestGpuInfo = gpuInfo || null;
         memoryEl.textContent = available > 0 ? `${available} MB` : '-- MB';
         memoryEl.title = available > 0
             ? (isIntegrated
@@ -176,6 +184,7 @@ class LlamaServerRenderer {
                 : `Dedicated GPU${dedicated > 0 ? ` VRAM ${dedicated} MB` : ''}${shared > 0 ? `, shared memory ${shared} MB` : ''}`)
             : 'GPU VRAM could not be detected reliably on this device';
         this.updateCompatibilityCalculator();
+        this.autoDetectGpuLayers();
     }
 
     setupIPCListeners() {
@@ -249,7 +258,6 @@ class LlamaServerRenderer {
         if (modelSelect) {
             modelSelect.addEventListener('change', (e) => {
                 this.onModelSelected(e.target.value);
-                this.updateManualCommand();
             });
         }
 
@@ -303,14 +311,24 @@ class LlamaServerRenderer {
         inputs.forEach(id => {
             const input = document.getElementById(id);
             if (input) {
-                input.addEventListener('change', () => this.saveSettings());
+                input.addEventListener('change', () => {
+                    this.saveSettings();
+                    this.updateManualCommand();
+                });
                 input.addEventListener('input', () => {
+                    if (id === 'gpu-layers' && input.matches(':focus')) {
+                        this.setAutoGpuLayersEnabled(false);
+                    }
                     this.updateManualCommand();
                     if (id === 'llama-port' || id === 'llama-host') {
                         this.updateEndpoint();
                     }
                     if (id === 'context-length' || id === 'gpu-layers') {
                         this.updateCompatibilityCalculator();
+                    }
+                    if (id === 'context-length') {
+                        this.setAutoGpuLayersEnabled(true, { save: false });
+                        this.autoDetectGpuLayers({ force: true });
                     }
                 });
             }
@@ -329,17 +347,13 @@ class LlamaServerRenderer {
     }
 
     generateManualCommand() {
-        const cliPath = this.resolveCliPath();
-        if (!cliPath) {
-            return 'Configure server or CLI executable and model to generate llama-cli command...';
+        if (this.latestPreparedLaunch?.cliCommand) {
+            return this.latestPreparedLaunch.cliCommand;
         }
-
-        const modelPath = this.selectedModel ? `${this.modelsPath}\\${this.selectedModel}` : 'path\\to\\model.gguf';
-        const contextLength = document.getElementById('context-length')?.value || '4096';
-        const gpuLayers = document.getElementById('gpu-layers')?.value || '-1';
-        const threads = document.getElementById('llama-threads')?.value || '4';
-
-        return `& "${cliPath}" -m "${modelPath}" -c ${contextLength} -ngl ${gpuLayers} -t ${threads} --color auto`;
+        const cliPath = this.resolveCliPath();
+        return cliPath
+            ? 'Select a model to generate the llama-cli command...'
+            : 'Configure server or CLI executable and model to generate llama-cli command...';
     }
 
     getSystemPrompt() {
@@ -384,12 +398,16 @@ class LlamaServerRenderer {
             safe: 'Protected',
             warning: 'Warning',
             critical: 'Critical',
+            overloaded: 'Draining...',
             tripped: 'Model Ejected',
             disabled: 'Disabled'
         };
 
         const pressure = String(guard?.pressure || 'idle').trim().toLowerCase();
-        if (statusEl) statusEl.textContent = pressureLabels[pressure] || 'Idle';
+        if (statusEl) {
+            statusEl.textContent = pressureLabels[pressure] || 'Idle';
+            statusEl.dataset.state = pressure;
+        }
         if (usedEl) {
             usedEl.textContent = Number.isFinite(Number(guard?.lastSample?.usedPercent))
                 ? `${guard.lastSample.usedPercent}% (${guard.lastSample.usedMB} MB)`
@@ -530,6 +548,144 @@ class LlamaServerRenderer {
         return Math.max(0.5, modelGB * 0.08);
     }
 
+    inferLayerCount(metadata = null) {
+        if (metadata?.paramsB && metadata?.arch) {
+            return Math.max(1, this.estimateLayers(metadata.paramsB, metadata.arch));
+        }
+        return 32;
+    }
+
+    estimateModelMemory(modelName, contextLength, info = null) {
+        const metadata = this.parseModelMetadata(modelName, info || null);
+        const totalLayers = this.inferLayerCount(metadata);
+        const modelSizeMB = info?.size
+            ? Number(info.size)
+            : Math.round(this.calcModelWeightsGB(metadata.paramsB, metadata.bits, metadata.actualSizeGB) * 1024);
+        const kvCacheMB = Math.max(64, Math.round(this.calcKVCacheGB(metadata.paramsB, contextLength, metadata.arch, metadata.bits) * 1024));
+        const overheadMB = Math.max(128, Math.round(this.calcOverheadGB(modelSizeMB / 1024) * 1024));
+
+        return {
+            metadata,
+            totalLayers,
+            modelSizeMB,
+            kvCacheMB,
+            overheadMB,
+            totalMB: modelSizeMB + kvCacheMB + overheadMB
+        };
+    }
+
+    computeOptimalGpuLayers({ modelSizeMB, kvCacheMB, overheadMB, availableVRAM, totalLayers, isIntegrated = false }) {
+        const numericVram = Number(availableVRAM || 0);
+        const numericLayers = Math.max(1, Number(totalLayers || 0));
+        if (!Number.isFinite(numericVram) || numericVram <= 0) {
+            return 0;
+        }
+
+        const safetyFactor = isIntegrated ? 0.65 : 0.85;
+        const usableVRAM = Math.max(0, numericVram * safetyFactor);
+        const runtimeReserveMB = Math.max(256, Number(kvCacheMB || 0) + Number(overheadMB || 0));
+        const availableForWeightsMB = Math.max(0, usableVRAM - runtimeReserveMB);
+        if (availableForWeightsMB <= 0) {
+            return 0;
+        }
+
+        if (Number(modelSizeMB || 0) <= availableForWeightsMB) {
+            return -1;
+        }
+
+        const ratio = Math.max(0, Math.min(1, availableForWeightsMB / Math.max(1, Number(modelSizeMB || 0))));
+        const estimatedLayers = Math.floor(numericLayers * ratio);
+        return Math.max(0, Math.min(numericLayers - 1, estimatedLayers));
+    }
+
+    getAutoGpuLayerCacheKey(modelPath, contextLength, gpuInfo = null) {
+        return [
+            String(modelPath || '').toLowerCase(),
+            String(contextLength || ''),
+            String(gpuInfo?.availableMemory || 0),
+            gpuInfo?.isIntegrated ? 'integrated' : 'discrete'
+        ].join('|');
+    }
+
+    updateAutoGpuLayersUI(message = '', detectedValue = null) {
+        const statusEl = document.getElementById('llama-auto-gpu-layers-status');
+        if (statusEl) {
+            if (!this.autoGpuLayersEnabled) {
+                statusEl.textContent = 'Manual override active';
+            } else if (message) {
+                statusEl.textContent = message;
+            } else if (detectedValue === -1) {
+                statusEl.textContent = 'Auto: full GPU offload';
+            } else if (Number.isFinite(Number(detectedValue))) {
+                statusEl.textContent = `Auto: ${detectedValue} GPU layer${Number(detectedValue) === 1 ? '' : 's'}`;
+            } else {
+                statusEl.textContent = 'Auto: waiting for model';
+            }
+        }
+    }
+
+    setAutoGpuLayersEnabled(enabled, options = {}) {
+        this.autoGpuLayersEnabled = Boolean(enabled);
+        this.updateAutoGpuLayersUI(options.message || '', options.detectedValue ?? null);
+        if (options.save !== false) {
+            this.saveSettings();
+        }
+    }
+
+    async autoDetectGpuLayers(options = {}) {
+        const { force = false } = options;
+        if (!this.autoGpuLayersEnabled && !force) {
+            this.updateAutoGpuLayersUI();
+            return null;
+        }
+        if (!this.selectedModel) {
+            this.updateAutoGpuLayersUI('Auto: waiting for model');
+            return null;
+        }
+
+        const modelPath = this.getSelectedModelPath();
+        const contextLength = Number(document.getElementById('context-length')?.value || 4096);
+        const gpuInput = document.getElementById('gpu-layers');
+        if (!modelPath || !gpuInput) {
+            return null;
+        }
+
+        let gpuInfo = this.latestGpuInfo;
+        if (!gpuInfo && window.browserAPI?.llama?.getGPUInfo) {
+            try {
+                gpuInfo = await window.browserAPI.llama.getGPUInfo();
+                this.latestGpuInfo = gpuInfo || null;
+            } catch (_) {}
+        }
+
+        const cacheKey = this.getAutoGpuLayerCacheKey(modelPath, contextLength, gpuInfo);
+        let recommendation = this.autoGpuLayerCache.get(cacheKey) || null;
+        if (!recommendation) {
+            const memory = this.estimateModelMemory(this.selectedModel, contextLength, this.latestModelInfo);
+            const detectedLayers = this.computeOptimalGpuLayers({
+                modelSizeMB: memory.modelSizeMB,
+                kvCacheMB: memory.kvCacheMB,
+                overheadMB: memory.overheadMB,
+                availableVRAM: Number(gpuInfo?.availableMemory || 0),
+                totalLayers: memory.totalLayers,
+                isIntegrated: gpuInfo?.isIntegrated === true
+            });
+            recommendation = {
+                value: detectedLayers,
+                totalLayers: memory.totalLayers,
+                modelSizeMB: memory.modelSizeMB
+            };
+            this.autoGpuLayerCache.set(cacheKey, recommendation);
+        }
+
+        gpuInput.value = String(recommendation.value);
+        this.updateAutoGpuLayersUI('', recommendation.value);
+        this.saveSettings();
+        await this.updateCompatibilityCalculator(this.latestModelInfo);
+        await this.updateManualCommand();
+        return recommendation.value;
+    }
+
     async getSystemMemoryProfile() {
         if (window.browserAPI?.servers?.getStatus) {
             try {
@@ -586,14 +742,22 @@ class LlamaServerRenderer {
 
         const metadata = this.parseModelMetadata(this.selectedModel, info || null);
         const system = await this.getSystemMemoryProfile();
-        const availableVramGB = (await this.getAvailableGPUMemory()) / 1024;
+        let gpuInfo = this.latestGpuInfo;
+        if (!gpuInfo && window.browserAPI?.llama?.getGPUInfo) {
+            try {
+                gpuInfo = await window.browserAPI.llama.getGPUInfo();
+                this.latestGpuInfo = gpuInfo || null;
+            } catch (_) {}
+        }
+        const availableVramGB = Number(gpuInfo?.availableMemory || 0) / 1024;
         const availableRamGB = Math.max(0.5, Number(system.freeRamGB || 0));
         const contextLength = Number(document.getElementById('context-length')?.value || 4096);
         const layers = this.estimateLayers(metadata.paramsB, metadata.arch);
-        const modelWeightsGB = this.calcModelWeightsGB(metadata.paramsB, metadata.bits, metadata.actualSizeGB);
-        const kvCacheGB = this.calcKVCacheGB(metadata.paramsB, contextLength, metadata.arch, metadata.bits);
-        const overheadGB = this.calcOverheadGB(modelWeightsGB);
-        const totalRequiredGB = modelWeightsGB + kvCacheGB + overheadGB;
+        const memory = this.estimateModelMemory(this.selectedModel, contextLength, info || null);
+        const modelWeightsGB = memory.modelSizeMB / 1024;
+        const kvCacheGB = memory.kvCacheMB / 1024;
+        const overheadGB = memory.overheadMB / 1024;
+        const totalRequiredGB = memory.totalMB / 1024;
 
         const canGpuFull = availableVramGB > 0 && availableVramGB >= totalRequiredGB;
         const canGpuPartial = availableVramGB > 0 && availableVramGB >= modelWeightsGB * 0.35 && availableRamGB >= Math.max(1, (totalRequiredGB - availableVramGB) * 1.1);
@@ -616,9 +780,15 @@ class LlamaServerRenderer {
             desc = `The model should run from system RAM only, but inference will be slower than a full GPU fit.`;
         }
 
-        let gpuLayers = 0;
-        if (runMode === 'full') gpuLayers = layers;
-        else if (runMode === 'partial') gpuLayers = Math.max(1, Math.min(layers, Math.floor((availableVramGB / Math.max(totalRequiredGB, 0.01)) * layers)));
+        let gpuLayers = this.computeOptimalGpuLayers({
+            modelSizeMB: memory.modelSizeMB,
+            kvCacheMB: memory.kvCacheMB,
+            overheadMB: memory.overheadMB,
+            availableVRAM: Number(gpuInfo?.availableMemory || 0),
+            totalLayers: layers,
+            isIntegrated: gpuInfo?.isIntegrated === true
+        });
+        if (runMode === 'none') gpuLayers = 0;
 
         this.latestCompatibility = {
             runMode,
@@ -634,7 +804,7 @@ class LlamaServerRenderer {
         setText('llama-compat-params', `${metadata.paramsB.toFixed(metadata.paramsB < 10 ? 1 : 0)}B`);
         setText('llama-compat-quant', `${metadata.quantName} (${metadata.bits}-bit)`);
         setText('llama-compat-mode', runMode === 'full' ? 'Full GPU' : runMode === 'partial' ? 'Hybrid' : runMode === 'cpu' ? 'CPU Only' : 'Insufficient');
-        setText('llama-compat-gpu-layers', `${gpuLayers} / ${layers}`);
+        setText('llama-compat-gpu-layers', gpuLayers === -1 ? `Full GPU / ${layers}` : `${gpuLayers} / ${layers}`);
         setText('llama-compat-weights', this.formatGB(modelWeightsGB));
         setText('llama-compat-kv', this.formatGB(kvCacheGB));
         
@@ -681,26 +851,94 @@ class LlamaServerRenderer {
     }
 
     generateServerCommand() {
-        if (!this.llamaPath || !this.selectedModel) {
-            return '';
-        }
-
-        const modelPath = this.modelsPath ? `${this.modelsPath}\\${this.selectedModel}` : this.selectedModel;
-        const contextLength = document.getElementById('context-length')?.value || '4096';
-        const gpuLayers = document.getElementById('gpu-layers')?.value || '-1';
-        const port = document.getElementById('llama-port')?.value || '8080';
-        const threads = document.getElementById('llama-threads')?.value || '4';
-        const serverType = this.normalizeServerType(document.getElementById('llama-host')?.value || 'local');
-        const host = this.resolveBindHost(serverType);
-        const systemPrompt = this.getSystemPrompt();
-        const systemPromptArg = systemPrompt
-            ? ` --system-prompt "${this.escapePowerShellDoubleQuotedString(systemPrompt)}"`
-            : '';
-
-        return `& "${this.llamaPath}" -m "${modelPath}" -c ${contextLength} -ngl ${gpuLayers} --port ${port} -t ${threads} --host ${host}${systemPromptArg}`;
+        return this.latestPreparedLaunch?.command || '';
     }
 
-    updateManualCommand() {
+    getSelectedModelPath() {
+        if (this.selectedModelEntry?.path) return this.selectedModelEntry.path;
+        if (!this.selectedModel) return '';
+        return this.modelsPath ? `${this.modelsPath}\\${this.selectedModel}` : this.selectedModel;
+    }
+
+    getCurrentLaunchConfig() {
+        const serverType = this.normalizeServerType(document.getElementById('llama-host')?.value || 'local');
+        return {
+            executable: this.llamaPath,
+            cliPath: this.resolveCliPath(),
+            model: this.selectedModel,
+            modelsPath: this.modelsPath,
+            modelPath: this.getSelectedModelPath(),
+            contextLength: document.getElementById('context-length')?.value || '4096',
+            gpuLayers: document.getElementById('gpu-layers')?.value || '-1',
+            port: document.getElementById('llama-port')?.value || '8080',
+            threads: document.getElementById('llama-threads')?.value || '4',
+            host: this.resolveBindHost(serverType),
+            systemPrompt: this.getSystemPrompt()
+        };
+    }
+
+    async refreshPreparedLaunch() {
+        if (!this.selectedModel || !window.browserAPI?.llama?.prepareLaunch) {
+            this.latestPreparedLaunch = null;
+            this.updateCapabilityUI();
+            return null;
+        }
+
+        try {
+            const result = await window.browserAPI.llama.prepareLaunch(this.getCurrentLaunchConfig());
+            if (!result?.success) {
+                this.latestPreparedLaunch = null;
+                this.updateCapabilityUI(null, result?.error ? [result.error] : []);
+                return null;
+            }
+            this.latestPreparedLaunch = result;
+            this.updateCapabilityUI(result);
+            return result;
+        } catch (err) {
+            console.error('[LlamaServer] Failed to prepare launch:', err);
+            this.latestPreparedLaunch = null;
+            this.updateCapabilityUI(null, [err?.message || String(err)]);
+            return null;
+        }
+    }
+
+    updateCapabilityUI(launch = this.latestPreparedLaunch, overrideWarnings = null) {
+        const typeEl = document.getElementById('llama-model-type');
+        const projectorEl = document.getElementById('llama-model-projector');
+        const statusEl = document.getElementById('llama-model-capability-status');
+        const warningEl = document.getElementById('llama-capability-warning');
+        const warningTextEl = document.getElementById('llama-capability-warning-text');
+        const warnings = Array.isArray(overrideWarnings) ? overrideWarnings : (Array.isArray(launch?.warnings) ? launch.warnings : []);
+
+        if (typeEl) {
+            typeEl.textContent = launch?.supportsVision ? 'Vision-capable' : (this.selectedModel ? 'Text-only' : '--');
+        }
+        if (projectorEl) {
+            projectorEl.textContent = launch?.mmprojPath
+                ? (String(launch.mmprojPath).split(/[/\\]/).at(-1) || launch.mmprojPath)
+                : (this.selectedModel ? 'Not found' : '--');
+        }
+        if (statusEl) {
+            if (!this.selectedModel) {
+                statusEl.textContent = 'Waiting for model selection';
+            } else if (launch?.mmprojPath) {
+                statusEl.textContent = 'mmproj found automatically';
+            } else if (launch?.supportsVision) {
+                statusEl.textContent = 'Vision model detected; fallback launch is text-only';
+            } else {
+                statusEl.textContent = 'Text-only';
+            }
+        }
+        if (warningEl) {
+            warningEl.classList.toggle('hidden', warnings.length === 0);
+        }
+        if (warningTextEl) {
+            warningTextEl.textContent = warnings[0] || 'Vision model detected but no mmproj found; launch will fall back to text-only.';
+        }
+    }
+
+    async updateManualCommand() {
+        await this.refreshPreparedLaunch();
         const cliCommandEl = document.getElementById('llama-manual-command');
         if (cliCommandEl) {
             cliCommandEl.textContent = this.generateManualCommand();
@@ -767,7 +1005,13 @@ class LlamaServerRenderer {
 
         if (id === 'llama-path-input') this.llamaPath = value;
         if (id === 'llama-cli-path-input') this.llamaCliPath = value;
-        if (id === 'models-path-input') this.modelsPath = value;
+        if (id === 'models-path-input') {
+            this.modelsPath = value;
+            this.models = [];
+            this.selectedModelEntry = null;
+            this.latestPreparedLaunch = null;
+            this.updateCapabilityUI();
+        }
 
         if (save) this.saveSettings();
         this.updateManualCommand();
@@ -982,37 +1226,44 @@ class LlamaServerRenderer {
             }
         }
 
-        if (window.browserAPI && window.browserAPI.files) {
+        if (window.browserAPI?.llama?.scanModels) {
             try {
-                const files = await window.browserAPI.files.readDir(folderPath);
-                
-                // Handle both string filenames and Dirent objects
-                const ggufFiles = files
-                    .map(f => {
-                        // Extract filename if it's a Dirent object, otherwise use as-is
-                        const filename = typeof f === 'string' ? f : (f.name || String(f));
-                        return filename;
-                    })
-                    .filter(filename => {
-                        const name = String(filename).toLowerCase();
-                        return name.endsWith('.gguf');
-                    });
+                const result = await window.browserAPI.llama.scanModels(folderPath);
+                if (!result?.success) {
+                    throw new Error(result?.error || 'Failed to scan models folder.');
+                }
 
-                if (ggufFiles.length === 0) {
+                const models = Array.isArray(result.models) ? result.models : [];
+                if (models.length === 0) {
                     this.log('No .gguf model files found in the folder', 'warning');
+                    this.models = [];
+                    this.populateModelSelect([]);
+                    this.latestPreparedLaunch = null;
+                    this.updateCapabilityUI();
                     return;
                 }
 
-                this.log(`Found ${ggufFiles.length} model(s)`, 'success');
-                this.populateModelSelect(ggufFiles);
+                this.models = models;
+                if (this.selectedModel && !models.some((entry) => entry?.name === this.selectedModel || entry?.path === this.selectedModel)) {
+                    this.selectedModel = null;
+                    this.selectedModelEntry = null;
+                } else {
+                    this.selectedModelEntry = models.find((entry) => entry?.name === this.selectedModel || entry?.path === this.selectedModel) || null;
+                }
+                this.log(`Found ${models.length} model(s)`, 'success');
+                this.populateModelSelect(models);
                 this.showModelSection();
-                this.updateManualCommand();
+                await this.updateManualCommand();
+                if (this.selectedModelEntry) {
+                    await this.checkModelRequirements(this.selectedModelEntry.name);
+                    await this.autoDetectGpuLayers();
+                }
             } catch (err) {
                 console.error('[LlamaServer] Error scanning folder:', err);
                 this.log(`Error scanning folder: ${err.message || err}`, 'error');
             }
         } else {
-            this.log('File API not available', 'error');
+            this.log('Llama model scan API not available', 'error');
         }
     }
 
@@ -1023,10 +1274,16 @@ class LlamaServerRenderer {
         select.innerHTML = '<option value="">-- Select a model --</option>';
         models.forEach(model => {
             const option = document.createElement('option');
-            option.value = model;
-            option.textContent = model;
+            const name = typeof model === 'string' ? model : String(model.name || model.path || '').trim();
+            const typeLabel = String(model?.supportsVision ? 'Vision' : 'Text');
+            option.value = name;
+            option.textContent = `${name} (${typeLabel})`;
             select.appendChild(option);
         });
+
+        if (this.selectedModel) {
+            select.value = this.selectedModel;
+        }
     }
 
     showModelSection() {
@@ -1038,11 +1295,14 @@ class LlamaServerRenderer {
 
     async onModelSelected(modelName) {
         this.selectedModel = modelName;
+        this.selectedModelEntry = this.models.find((entry) => entry?.name === modelName || entry?.path === modelName) || null;
         this.saveSettings();
 
         if (!modelName) {
             this.latestModelInfo = null;
+            this.latestPreparedLaunch = null;
             this.updateModelInfo(null);
+            this.updateCapabilityUI();
             const modelEl = document.getElementById('llama-status-model');
             if (modelEl) modelEl.textContent = 'Model: --';
             await this.updateCompatibilityCalculator(null);
@@ -1051,24 +1311,23 @@ class LlamaServerRenderer {
 
         this.log(`Model selected: ${modelName}`, 'info');
         this.updateManualCommand();
+        this.setAutoGpuLayersEnabled(true, { save: false });
+        await this.autoDetectGpuLayers();
         
         // Update status bar model
         const modelEl = document.getElementById('llama-status-model');
         if (modelEl) modelEl.textContent = `Model: ${modelName}`;
         
         await this.checkModelRequirements(modelName);
+        await this.updateManualCommand();
         await this.updateCompatibilityCalculator(this.latestModelInfo);
     }
 
     async checkModelRequirements(modelName) {
-        this.updateManualCommand();
-        await this.checkModelRequirements(modelName);
-    }
-
-    async checkModelRequirements(modelName) {
+        const modelPath = this.selectedModelEntry?.path || modelName;
         if (window.browserAPI && window.browserAPI.llama) {
             try {
-                const info = await window.browserAPI.llama.checkModelSize(this.modelsPath, modelName);
+                const info = await window.browserAPI.llama.checkModelSize(this.modelsPath, modelPath);
                 this.latestModelInfo = info;
                 this.updateModelInfo(info);
             } catch (err) {
@@ -1223,9 +1482,13 @@ class LlamaServerRenderer {
         this.isStarting = true;
         this.setStatus('starting');
         this.log('Starting Llama Server...', 'info');
-        const launchCommand = this.generateServerCommand();
+        const preparedLaunch = await this.refreshPreparedLaunch();
+        const launchCommand = preparedLaunch?.command || this.generateServerCommand();
         if (launchCommand) {
             this.log(`Launch command: ${launchCommand}`, 'command');
+        }
+        if (preparedLaunch?.warnings?.length) {
+            preparedLaunch.warnings.forEach((warning) => this.log(warning, 'warning'));
         }
 
         try {
@@ -1269,6 +1532,15 @@ class LlamaServerRenderer {
                 });
 
                 if (result.success) {
+                    this.latestPreparedLaunch = {
+                        ...(preparedLaunch || this.latestPreparedLaunch || {}),
+                        command: result.command || preparedLaunch?.command || this.latestPreparedLaunch?.command || '',
+                        mmprojPath: result.mmprojPath ?? preparedLaunch?.mmprojPath ?? null,
+                        modelType: result.modelType || preparedLaunch?.modelType || 'text',
+                        supportsVision: typeof result.supportsVision === 'boolean' ? result.supportsVision : Boolean(preparedLaunch?.supportsVision),
+                        warnings: Array.isArray(result.warnings) ? result.warnings : (preparedLaunch?.warnings || [])
+                    };
+                    this.updateCapabilityUI();
                     this.isStarting = false;
                     this.isRunning = true;
                     this.startTime = Date.now();
@@ -1278,6 +1550,9 @@ class LlamaServerRenderer {
                     this.log(`Server listening on ${localUrl}`, 'info');
                     if (result.publicUrl) {
                         this.log(`Public URL: ${result.publicUrl}`, 'success');
+                    }
+                    if (Array.isArray(result.warnings)) {
+                        result.warnings.forEach((warning) => this.log(warning, 'warning'));
                     }
                     this.log(`API endpoint: ${result.publicUrl || localUrl}/v1/chat/completions`, 'info');
                     this.startUptimeCounter();
@@ -1533,6 +1808,7 @@ class LlamaServerRenderer {
                 this.llamaCliPath = settings.llamaCliPath;
                 this.modelsPath = settings.modelsPath;
                 this.selectedModel = settings.selectedModel;
+                this.autoGpuLayersEnabled = true;
                 const savedHost = this.normalizeServerType(settings.host || settings.serverType || 'local');
 
                 const pathInput = document.getElementById('llama-path-input');
@@ -1563,6 +1839,8 @@ class LlamaServerRenderer {
                     const input = document.getElementById('gpu-layers');
                     if (input) input.value = settings.gpuLayers;
                 }
+
+                this.updateAutoGpuLayersUI();
 
                 if (settings.port) {
                     const input = document.getElementById('llama-port');
@@ -1596,6 +1874,8 @@ class LlamaServerRenderer {
                     host: this.resolveBindHost(savedHost),
                     serverType: savedHost
                 });
+            } else {
+                this.updateAutoGpuLayersUI();
             }
         } catch (e) {
             console.error('Failed to load settings:', e);
@@ -1627,6 +1907,16 @@ class LlamaServerRenderer {
                     const parts = String(status.config.modelPath).split(/[/\\]/);
                     modelEl.textContent = `Model: ${parts.at(-1) || this.selectedModel || '--'}`;
                 }
+                this.latestPreparedLaunch = status?.config ? {
+                    modelPath: status.config.modelPath,
+                    modelType: status.config.modelType || 'text',
+                    supportsVision: Boolean(status.config.supportsVision),
+                    mmprojPath: status.config.mmprojPath || null,
+                    warnings: Array.isArray(status.config.warnings) ? status.config.warnings : [],
+                    command: status.config.command || '',
+                    cliCommand: this.latestPreparedLaunch?.cliCommand || ''
+                } : this.latestPreparedLaunch;
+                this.updateCapabilityUI();
 
                 const startBtn = document.getElementById('btn-start-llama');
                 const stopBtn = document.getElementById('btn-stop-llama');
@@ -2148,475 +2438,13 @@ class UnifiedMcpServerRenderer {
     }
 }
 
-class PocketTTSRenderer {
-    constructor() {
-        this.pocketttsProcess = null;
-        this.isPocketttsRunning = false;
-        this.pocketttsPath = null;
-        this.startTime = null;
-        this.uptimeInterval = null;
-    }
-
-    init() {
-        this.setupEventListeners();
-        this.setupIPCListeners();
-        this.loadSettings();
-    }
-
-    setupIPCListeners() {
-        if (window.browserAPI && window.browserAPI.pocketTTS) {
-            window.browserAPI.pocketTTS.onOutput((data) => {
-                if (data.type === 'stdout') {
-                    const lines = data.data.trim().split('\n');
-                    lines.forEach(line => {
-                        if (line.trim()) {
-                            this.log(line, 'info');
-                            // Check if server has actually started
-                            if (line.includes('Application startup complete') || line.includes('Uvicorn running on')) {
-                                if (!this.isPocketttsRunning) {
-                                    this.isPocketttsRunning = true;
-                                    this.setStatus('online');
-                                    this.startUptimeCounter();
-                                    // Update buttons
-                                    const startBtn = document.getElementById('btn-start-pockettts');
-                                    const stopBtn = document.getElementById('btn-stop-pockettts');
-                                    if (startBtn) {
-                                        startBtn.disabled = true;
-                                        startBtn.style.opacity = '0.5';
-                                    }
-                                    if (stopBtn) {
-                                        stopBtn.disabled = false;
-                                        stopBtn.style.opacity = '1';
-                                    }
-                                }
-                            }
-                        }
-                    });
-                } else if (data.type === 'stderr') {
-                    const lines = data.data.trim().split('\n');
-                    lines.forEach(line => {
-                        if (line.trim()) {
-                            this.log(line, 'warning');
-                        }
-                    });
-                } else if (data.type === 'error') {
-                    this.log(data.data, 'error');
-                }
-            });
-
-            window.browserAPI.pocketTTS.onExit((data) => {
-                if (Number(data.code) !== 0) {
-                    this.log(`Server exited with code: ${data.code}`, 'error');
-                }
-                this.isPocketttsRunning = false;
-                this.setStatus('offline');
-                if (this.uptimeInterval) {
-                    clearInterval(this.uptimeInterval);
-                    this.uptimeInterval = null;
-                }
-                const startBtn = document.getElementById('btn-start-pockettts');
-                const stopBtn = document.getElementById('btn-stop-pockettts');
-                if (startBtn) startBtn.disabled = false;
-                if (stopBtn) {
-                    stopBtn.disabled = true;
-                    stopBtn.textContent = 'Stop';
-                }
-            });
-        }
-    }
-
-    setupEventListeners() {
-
-        // Local server controls
-        const browsePocketttsBtn = document.getElementById('btn-browse-pockettts');
-        const startPocketttsBtn = document.getElementById('btn-start-pockettts');
-        const stopPocketttsBtn = document.getElementById('btn-stop-pockettts');
-        const clearPocketttsBtn = document.getElementById('btn-clear-pockettts');
-
-        if (browsePocketttsBtn) {
-            browsePocketttsBtn.addEventListener('click', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                this.browseForPocketttsExecutable();
-            });
-        }
-
-        if (startPocketttsBtn) {
-            startPocketttsBtn.addEventListener('click', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                this.startPocketttsServer();
-            });
-        }
-
-        if (stopPocketttsBtn) {
-            stopPocketttsBtn.addEventListener('click', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                this.stopPocketttsServer();
-            });
-        }
-
-        if (clearPocketttsBtn) {
-            clearPocketttsBtn.addEventListener('click', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                this.clearTerminal();
-            });
-        }
-
-        // Save settings on path change
-        const pocketttsPathInput = document.getElementById('pockettts-server-path');
-        if (pocketttsPathInput) {
-            pocketttsPathInput.addEventListener('change', () => this.saveSettings());
-        }
-
-        // Command input handler
-        const commandInput = document.getElementById('pockettts-command-input');
-        if (commandInput) {
-            commandInput.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter' && this.isPocketttsRunning) {
-                    const command = commandInput.value.trim();
-                    if (command) {
-                        this.log(`> ${command}`, 'command');
-                        this.sendCommand(command);
-                        commandInput.value = '';
-                    }
-                }
-            });
-        }
-
-    }
-
-    async sendCommand(command) {
-        
-        if (window.browserAPI && window.browserAPI.pocketTTS) {
-            try {
-                // Note: pocketTTS doesn't support commands, but we can log it
-                this.log(`Command not supported by Pocket TTS: ${command}`, 'warning');
-            } catch (err) {
-                console.error('[PocketTTS] Error:', err);
-                this.log(`Error: ${err.message || err}`, 'error');
-            }
-        } else {
-            this.log('Pocket TTS API not available', 'error');
-        }
-    }
-
-    async browseForPocketttsExecutable() {
-        if (window.browserAPI && window.browserAPI.files) {
-            try {
-                const filters = [
-                    { name: 'Executable', extensions: ['exe'] },
-                    { name: 'All Files', extensions: ['*'] }
-                ];
-                const filePath = await window.browserAPI.files.selectFile(filters);
-
-                if (filePath) {
-                    const pathInput = document.getElementById('pockettts-server-path');
-                    const currentPathEl = document.getElementById('pockettts-current-path');
-                    if (pathInput) {
-                        pathInput.value = filePath;
-                    }
-                    this.pocketttsPath = filePath;
-                    if (currentPathEl) {
-                        currentPathEl.textContent = filePath;
-                    }
-                    this.saveSettings();
-                }
-            } catch (err) {
-                console.error('[PocketTTS] Dialog error:', err);
-                this.showPathPrompt();
-            }
-        } else {
-            this.showPathPrompt();
-        }
-    }
-
-    showPathPrompt() {
-        const path = prompt('Enter the path to pocket-tts.exe:', 'C:\\pocket-tts\\pocket-tts.exe');
-        if (path) {
-            const pathInput = document.getElementById('pockettts-server-path');
-            const currentPathEl = document.getElementById('pockettts-current-path');
-            if (pathInput) {
-                pathInput.value = path;
-            }
-            this.pocketttsPath = path;
-            if (currentPathEl) {
-                currentPathEl.textContent = path;
-            }
-            this.saveSettings();
-        }
-    }
-
-    async startPocketttsServer() {
-        if (!this.pocketttsPath) {
-            this.log('Please select the Pocket TTS executable first', 'error');
-            return;
-        }
-
-        this.setStatus('starting');
-
-        const startBtn = document.getElementById('btn-start-pockettts');
-        if (startBtn) {
-            startBtn.disabled = true;
-            startBtn.textContent = 'Starting...';
-        }
-
-        if (window.browserAPI && window.browserAPI.pocketTTS) {
-            try {
-                const result = await window.browserAPI.pocketTTS.startServer({
-                    executable: this.pocketttsPath
-                });
-                if (result.success) {
-                    this.isPocketttsRunning = true;
-                    this.startTime = Date.now();
-                    this.setStatus('online');
-                    this.startUptimeCounter();
-
-                    const startBtn = document.getElementById('btn-start-pockettts');
-                    const stopBtn = document.getElementById('btn-stop-pockettts');
-                    const cmdInput = document.getElementById('pockettts-command-input');
-                    
-                    if (startBtn) {
-                        startBtn.disabled = true;
-                        startBtn.style.opacity = '0.5';
-                    }
-                    if (stopBtn) {
-                        stopBtn.disabled = false;
-                        stopBtn.style.opacity = '1';
-                    }
-                    
-                    if (cmdInput) {
-                        cmdInput.readOnly = false;
-                        cmdInput.placeholder = 'Type command and press Enter...';
-                        cmdInput.style.color = 'var(--text)';
-                        cmdInput.focus();
-                    }
-
-                    document.getElementById('pockettts-current-path').textContent = this.pocketttsPath;
-                } else {
-                    this.log(`Failed to start: ${result.error}`, 'error');
-                    this.setStatus('offline');
-                    const startBtn = document.getElementById('btn-start-pockettts');
-                    if (startBtn) {
-                        startBtn.disabled = false;
-                        startBtn.textContent = 'Start';
-                    }
-                }
-            } catch (err) {
-                this.log(`Error: ${err.message || err}`, 'error');
-                this.setStatus('offline');
-                const startBtn = document.getElementById('btn-start-pockettts');
-                if (startBtn) {
-                    startBtn.disabled = false;
-                    startBtn.textContent = 'Start';
-                }
-            }
-        } else {
-            this.log('Pocket TTS API not available', 'error');
-            this.setStatus('offline');
-            const startBtn = document.getElementById('btn-start-pockettts');
-            if (startBtn) {
-                startBtn.disabled = false;
-                startBtn.textContent = 'Start';
-            }
-        }
-    }
-
-    async stopPocketttsServer() {
-
-        if (!this.isPocketttsRunning) {
-            this.log('Pocket TTS server is not running.', 'warning');
-            return;
-        }
-
-        const stopBtn = document.getElementById('btn-stop-pockettts');
-        if (stopBtn) {
-            stopBtn.disabled = true;
-            stopBtn.textContent = 'Stopping...';
-        }
-
-        if (window.browserAPI && window.browserAPI.pocketTTS) {
-            try {
-                const result = await window.browserAPI.pocketTTS.stopServer();
-
-                if (result.success) {
-                    this.isPocketttsRunning = false;
-                    if (this.uptimeInterval) {
-                        clearInterval(this.uptimeInterval);
-                        this.uptimeInterval = null;
-                    }
-                    this.setStatus('offline');
-
-                    const startBtn = document.getElementById('btn-start-pockettts');
-                    const stopBtn = document.getElementById('btn-stop-pockettts');
-                    const cmdInput = document.getElementById('pockettts-command-input');
-                    
-                    if (startBtn) {
-                        startBtn.disabled = false;
-                        startBtn.style.opacity = '1';
-                    }
-                    if (stopBtn) {
-                        stopBtn.disabled = true;
-                        stopBtn.style.opacity = '0.5';
-                    }
-                    
-                    // Keep command input editable for quick retries
-                    if (cmdInput) {
-                        cmdInput.readOnly = false;
-                        cmdInput.placeholder = 'Type command and press Enter...';
-                        cmdInput.style.color = 'var(--text)';
-                        cmdInput.value = '';
-                    }
-                    
-                    // Reset status metrics
-                    const uptimeEl = document.getElementById('pockettts-uptime');
-                    if (uptimeEl) uptimeEl.textContent = '00:00:00';
-                } else {
-                    this.log(`Failed to stop server: ${result.error}`, 'error');
-                    const stopBtn = document.getElementById('btn-stop-pockettts');
-                    if (stopBtn) {
-                        stopBtn.disabled = false;
-                        stopBtn.textContent = 'Stop';
-                    }
-                }
-            } catch (err) {
-                console.error('[PocketTTS] Error stopping server:', err);
-                this.log(`Error stopping server: ${err.message || err}`, 'error');
-                const stopBtn = document.getElementById('btn-stop-pockettts');
-                if (stopBtn) {
-                    stopBtn.disabled = false;
-                    stopBtn.textContent = 'Stop';
-                }
-            }
-        }
-    }
-
-    setStatus(status) {
-        const colors = {
-            offline: 'var(--danger)',
-            starting: 'var(--warning)',
-            online: 'var(--success)'
-        };
-        const labels = {
-            offline: 'Offline',
-            starting: 'Starting...',
-            online: 'Online'
-        };
-        
-        // Update simplified status indicator
-        const statusIndicator = document.getElementById('pockettts-status-indicator');
-        const statusText = document.getElementById('pockettts-status-text');
-        const infoStatus = document.getElementById('pockettts-info-status');
-        
-        if (statusIndicator) {
-            statusIndicator.className = 'status-indicator';
-            if (status === 'online') statusIndicator.classList.add('online');
-            if (status === 'starting') statusIndicator.classList.add('starting');
-        }
-        
-        if (statusText) {
-            statusText.textContent = `Server ${labels[status]}`;
-        }
-
-        if (infoStatus) {
-            infoStatus.textContent = labels[status];
-        }
-    }
-
-    log(message, type = 'info') {
-        const output = document.getElementById('pockettts-terminal-output');
-        if (!output) return;
-
-        const line = document.createElement('div');
-        line.className = `terminal-line ${type}`;
-        const timestamp = new Date().toLocaleTimeString();
-        line.textContent = `[${timestamp}] ${message}`;
-        output.appendChild(line);
-        
-        // Auto-scroll to bottom
-        requestAnimationFrame(() => {
-            output.scrollTop = output.scrollHeight;
-        });
-
-        // Limit lines to prevent memory issues
-        while (output.children.length > 1000) {
-            output.removeChild(output.firstChild);
-        }
-    }
-
-    clearTerminal() {
-        const output = document.getElementById('pockettts-terminal-output');
-        if (output) {
-            output.innerHTML = '<div class="terminal-line info">Terminal cleared.</div>';
-        }
-    }
-
-    startUptimeCounter() {
-        if (this.uptimeInterval) {
-            clearInterval(this.uptimeInterval);
-        }
-        this.uptimeInterval = setInterval(() => {
-            const uptime = Date.now() - this.startTime;
-            const hours = Math.floor(uptime / 3600000).toString().padStart(2, '0');
-            const minutes = Math.floor((uptime % 3600000) / 60000).toString().padStart(2, '0');
-            const seconds = Math.floor((uptime % 60000) / 1000).toString().padStart(2, '0');
-            const uptimeEl = document.getElementById('pockettts-uptime');
-            if (uptimeEl) {
-                uptimeEl.textContent = `${hours}:${minutes}:${seconds}`;
-            }
-        }, 1000);
-    }
-
-    saveSettings() {
-        try {
-            const settings = {
-                pocketttsPath: this.pocketttsPath
-            };
-            localStorage.setItem('pockettts-server-settings', JSON.stringify(settings));
-        } catch (e) {
-            console.error('Failed to save settings:', e);
-        }
-    }
-
-    loadSettings() {
-        try {
-            const saved = localStorage.getItem('pockettts-server-settings');
-            if (saved) {
-                const settings = JSON.parse(saved);
-
-                this.pocketttsPath = settings.pocketttsPath;
-                const pathInput = document.getElementById('pockettts-server-path');
-                const currentPathEl = document.getElementById('pockettts-current-path');
-                if (pathInput && this.pocketttsPath) {
-                    pathInput.value = this.pocketttsPath;
-                }
-                if (currentPathEl && this.pocketttsPath) {
-                    currentPathEl.textContent = this.pocketttsPath;
-                }
-            }
-        } catch (e) {
-            console.error('Failed to load settings:', e);
-        }
-    }
-}
-
-function initMinecraft() {
+function initServerOperator() {
     applyRequestedServerOperatorPanel(getRequestedServerOperatorPanel());
     try {
         window.llamaServerRenderer = new LlamaServerRenderer();
         window.llamaServerRenderer.init();
     } catch (err) {
         console.error('[LlamaServer] Initialization error:', err);
-    }
-if (document.getElementById('panel-pocket-tts')) {
-        try {
-            window.pocketTTSRenderer = new PocketTTSRenderer();
-            window.pocketTTSRenderer.init();
-        } catch (err) {
-            console.error('[PocketTTS] Initialization error:', err);
-        }
     }
 
     if (document.getElementById('panel-mcp')) {
@@ -2631,7 +2459,7 @@ if (document.getElementById('panel-pocket-tts')) {
 }
 
 if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initMinecraft);
+    document.addEventListener('DOMContentLoaded', initServerOperator);
 } else {
-    initMinecraft();
+    initServerOperator();
 }

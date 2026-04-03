@@ -388,6 +388,12 @@ export class TabManager {
     }
   }
 
+  shouldSkipAdultContentBlock(url = '') {
+    const value = String(url || '').trim();
+    if (!value) return false;
+    return this.isLocalOrHostedAiUrl(value) || this.isOpenWebUiUrl(value) || this.isOmChatUrl(value);
+  }
+
   registerOmChatOrigin(origin) {
     const safe = String(origin || '').trim();
     if (!safe) return;
@@ -4122,10 +4128,11 @@ body[class*="overflow-hidden"]:not([data-legit]) {
   async applyAdultContentBlocker(webview) {
     try {
       if (!webview || !webview.executeJavaScript) return;
+      const currentUrl = webview.getURL ? webview.getURL() : '';
       
       // Check if adult content blocking is enabled in settings
       const adultBlockEnabled = this.settings?.features?.enableAdultContentBlock !== false;
-      if (!adultBlockEnabled) return;
+      if (!adultBlockEnabled || this.shouldSkipAdultContentBlock(currentUrl)) return;
       
       await webview.executeJavaScript(this.getAdultContentBlockerScript(), true);
     } catch (e) {
@@ -5453,7 +5460,7 @@ body[class*="overflow-hidden"]:not([data-legit]) {
 
         // Early injection for adult content blocker
         const adultBlockEnabled = this.settings?.features?.enableAdultContentBlock !== false;
-        if (isWebsite && adultBlockEnabled) {
+        if (isWebsite && adultBlockEnabled && !this.shouldSkipAdultContentBlock(url)) {
           await webview.executeJavaScript(this.getAdultContentBlockerScript(), true);
         }
       } catch (_) {}

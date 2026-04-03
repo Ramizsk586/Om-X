@@ -8,6 +8,10 @@ const net = require('net');
 const os = require('os');
 const { pathToFileURL, fileURLToPath } = require('url');
 const dotenv = require('dotenv');
+const {
+  normalizeModelEntry,
+  prepareLlamaLaunch
+} = require('../utils/llama-models');
 
 function getBundledOmxEnvCandidates() {
   return [
@@ -724,9 +728,10 @@ const goApp = !isStandaloneLaunch ? require('../../game/electron/go electron/jav
 let llamaServerProcess = null;
 let llamaNgrokProcess = null;
 let llamaServerStartInProgress = false;
-let scraperOllamaServeProcess = null;
-let scraperOllamaServerStartInProgress = false;
-let scraperOllamaStartedByApp = false;
+let scraperLlamaServerProcess = null;
+let scraperLlamaServerStartInProgress = false;
+let scraperLlamaStartedByApp = false;
+let scraperLlamaActiveSessions = 0;
 let llamaMemoryGuardInterval = null;
 const LLAMA_GUARD_DEFAULTS = Object.freeze({
   enabled: true,
@@ -734,12 +739,15 @@ const LLAMA_GUARD_DEFAULTS = Object.freeze({
   stopRamPercent: 93,
   minFreeRamMB: 2048,
   consecutiveHits: 2,
-  sampleIntervalMs: 2000
+  sampleIntervalMs: 2000,
+  drainPeriodMs: 15000
 });
 let llamaMemoryGuardState = {
   enabled: LLAMA_GUARD_DEFAULTS.enabled,
   pressure: 'idle',
   criticalHits: 0,
+  isDraining: false,
+  drainStartedAt: 0,
   lastSample: null,
   lastAction: 'Watching system memory.',
   lastWarningAt: 0,
@@ -860,114 +868,139 @@ function execFileAsync(command, args = [], options = {}) {
   });
 }
 
-function getScraperOllamaExecutableFromEnv() {
+function getScraperLlamaExecutableFromEnv() {
   return String(
-    process.env.OMX_OLLAMA_EXECUTABLE
-    || process.env.SCRAPER_OLLAMA_EXECUTABLE
-    || process.env.OLLAMA_EXECUTABLE
-    || 'ollama'
+    process.env.OMX_SCRAPER_LLAMA_EXECUTABLE
+    || process.env.SCRAPER_LLAMA_EXECUTABLE
+    || process.env.OMX_LLAMA_EXECUTABLE
+    || process.env.LLAMA_SERVER_EXECUTABLE
+    || 'C:\\llama.cpp\\llama-server.exe'
   ).trim();
 }
 
-function getScraperOllamaHostFromEnv() {
+function getScraperLlamaHostFromEnv() {
   return String(
-    process.env.OMX_SCRAPER_OLLAMA_HOST
-    || process.env.SCRAPER_OLLAMA_HOST
-    || process.env.OLLAMA_HOST
+    process.env.OMX_SCRAPER_LLAMA_HOST
+    || process.env.SCRAPER_LLAMA_HOST
     || '127.0.0.1'
   ).trim() || '127.0.0.1';
 }
 
-function getScraperOllamaPortFromEnv() {
+function getScraperLlamaPortFromEnv() {
   const raw = Number(
-    process.env.OMX_SCRAPER_OLLAMA_PORT
-    || process.env.SCRAPER_OLLAMA_PORT
-    || process.env.OLLAMA_PORT
-    || 11434
+    process.env.OMX_SCRAPER_LLAMA_PORT
+    || process.env.SCRAPER_LLAMA_PORT
+    || 8091
   );
-  return Number.isFinite(raw) && raw > 0 ? Math.round(raw) : 11434;
+  return Number.isFinite(raw) && raw > 0 ? Math.round(raw) : 8091;
 }
 
-function getScraperOllamaModelFromEnv() {
+function getScraperLlamaModelsPathFromEnv() {
   return String(
-    process.env.OMX_SCRAPER_OLLAMA_MODEL
-    || process.env.SCRAPER_OLLAMA_MODEL
+    process.env.OMX_SCRAPER_LLAMA_MODELS_PATH
+    || process.env.SCRAPER_LLAMA_MODELS_PATH
+    || process.env.OMX_LLAMA_MODELS_PATH
+    || process.env.LLAMA_MODELS_PATH
+    || 'C:\\llama.cpp\\models'
+  ).trim();
+}
+
+function getScraperLlamaModelFromEnv() {
+  return String(
+    process.env.OMX_SCRAPER_LLAMA_MODEL
+    || process.env.SCRAPER_LLAMA_MODEL
     || process.env.OMX_SCRAPER_LLM_MODEL
     || process.env.SCRAPER_LLM_MODEL
-    || process.env.OLLAMA_MODEL
     || ''
   ).trim();
 }
 
-function getScraperOllamaApiBaseUrl() {
-  return `http://${getScraperOllamaHostFromEnv()}:${getScraperOllamaPortFromEnv()}`;
+function getScraperLlamaContextLengthFromEnv() {
+  const raw = Number(
+    process.env.OMX_SCRAPER_LLAMA_CONTEXT_LENGTH
+    || process.env.SCRAPER_LLAMA_CONTEXT_LENGTH
+    || 4096
+  );
+  return Number.isFinite(raw) && raw > 0 ? Math.round(raw) : 4096;
 }
 
-async function isScraperOllamaReady() {
-  try {
-    const response = await fetch(`${getScraperOllamaApiBaseUrl()}/api/tags`, {
-      signal: AbortSignal.timeout(4000)
-    });
-    return response.ok;
-  } catch (_) {
-    return false;
-  }
+function getScraperLlamaGpuLayersFromEnv() {
+  const raw = Number(
+    process.env.OMX_SCRAPER_LLAMA_GPU_LAYERS
+    || process.env.SCRAPER_LLAMA_GPU_LAYERS
+    || -1
+  );
+  return Number.isFinite(raw) ? Math.round(raw) : -1;
 }
 
-async function verifyScraperOllamaModel(modelName) {
-  const normalized = String(modelName || '').trim();
-  if (!normalized) {
-    return { ok: false, error: 'SCRAPER_OLLAMA_MODEL is not set in .env.' };
-  }
+function getScraperLlamaThreadsFromEnv() {
+  const raw = Number(
+    process.env.OMX_SCRAPER_LLAMA_THREADS
+    || process.env.SCRAPER_LLAMA_THREADS
+    || Math.max(4, Math.min(16, os.cpus()?.length || 4))
+  );
+  return Number.isFinite(raw) && raw > 0 ? Math.round(raw) : 4;
+}
 
-  try {
-    const response = await fetch(`${getScraperOllamaApiBaseUrl()}/api/tags`, {
-      signal: AbortSignal.timeout(8000)
-    });
-    if (!response.ok) {
-      const detail = await response.text().catch(() => '');
-      return {
-        ok: false,
-        error: `Ollama model check failed: ${response.status}${detail ? ` ${detail}` : ''}`
-      };
+function getScraperLlamaSystemPromptFromEnv() {
+  return String(
+    process.env.OMX_SCRAPER_LLAMA_SYSTEM_PROMPT
+    || process.env.SCRAPER_LLAMA_SYSTEM_PROMPT
+    || ''
+  ).trim();
+}
+
+function getScraperLlamaApiBaseUrl() {
+  return `http://${getScraperLlamaHostFromEnv()}:${getScraperLlamaPortFromEnv()}`;
+}
+
+async function resolveScraperLlamaModelPath() {
+  const configuredModel = getScraperLlamaModelFromEnv();
+  const modelsPath = getScraperLlamaModelsPathFromEnv();
+  let modelPath = '';
+
+  if (configuredModel) {
+    modelPath = path.isAbsolute(configuredModel)
+      ? configuredModel
+      : path.join(modelsPath || '', configuredModel);
+  } else if (modelsPath) {
+    const entries = await fs.promises.readdir(modelsPath, { withFileTypes: true });
+    const firstModel = entries
+      .filter((entry) => entry.isFile())
+      .map((entry) => entry.name)
+      .find((name) => /\.gguf$/i.test(name) && !/^mmproj[-_]?.+\.gguf$/i.test(name));
+    if (firstModel) {
+      modelPath = path.join(modelsPath, firstModel);
     }
-
-    const payload = await response.json().catch(() => ({}));
-    const models = Array.isArray(payload?.models) ? payload.models : [];
-    const wanted = normalized.toLowerCase();
-    const match = models.some((entry) => {
-      const name = String(entry?.name || '').trim().toLowerCase();
-      const model = String(entry?.model || '').trim().toLowerCase();
-      return name === wanted || model === wanted;
-    });
-
-    if (!match) {
-      return {
-        ok: false,
-        error: `Ollama model "${normalized}" is not installed. Run "ollama pull ${normalized}" first.`
-      };
-    }
-
-    return { ok: true };
-  } catch (error) {
-    return { ok: false, error: error?.message || 'Failed to verify Ollama model.' };
   }
+
+  const resolvedModelPath = path.resolve(String(modelPath || '').trim());
+  if (!resolvedModelPath) {
+    throw new Error('SCRAPER_LLAMA_MODEL is not configured and no GGUF model was found in SCRAPER_LLAMA_MODELS_PATH.');
+  }
+
+  const stat = await fs.promises.stat(resolvedModelPath);
+  if (!stat.isFile()) {
+    throw new Error('SCRAPER_LLAMA_MODEL does not point to a valid GGUF file.');
+  }
+
+  return resolvedModelPath;
 }
 
-async function ensureScraperOllamaServeRunning() {
-  const executable = getScraperOllamaExecutableFromEnv();
-  const host = getScraperOllamaHostFromEnv();
-  const port = getScraperOllamaPortFromEnv();
-  const model = getScraperOllamaModelFromEnv();
+async function ensureScraperLlamaServerRunning() {
+  const executable = getScraperLlamaExecutableFromEnv();
+  const host = getScraperLlamaHostFromEnv();
+  const port = getScraperLlamaPortFromEnv();
+  const contextLength = String(getScraperLlamaContextLengthFromEnv());
+  const gpuLayers = String(getScraperLlamaGpuLayersFromEnv());
+  const threads = String(getScraperLlamaThreadsFromEnv());
+  const systemPrompt = getScraperLlamaSystemPromptFromEnv();
 
-  if (!model) {
-    return { success: false, error: 'SCRAPER_OLLAMA_MODEL is not configured in .env.' };
-  }
+  const modelPath = await resolveScraperLlamaModelPath();
+  const baseUrl = getScraperLlamaApiBaseUrl();
 
-  if (await isScraperOllamaReady()) {
-    const modelCheck = await verifyScraperOllamaModel(model);
-    if (!modelCheck.ok) return { success: false, error: modelCheck.error };
-    scraperOllamaStartedByApp = false;
+  if (await checkTcpPort(host, port)) {
+    scraperLlamaStartedByApp = false;
     return {
       success: true,
       alreadyRunning: true,
@@ -975,94 +1008,93 @@ async function ensureScraperOllamaServeRunning() {
       executable,
       host,
       port,
-      model,
-      baseUrl: getScraperOllamaApiBaseUrl()
+      modelPath,
+      baseUrl
     };
   }
 
-  if (isServerProcessActive(scraperOllamaServeProcess)) {
-    const modelCheck = await verifyScraperOllamaModel(model);
-    if (!modelCheck.ok) return { success: false, error: modelCheck.error };
+  if (isServerProcessActive(scraperLlamaServerProcess)) {
     return {
       success: true,
       alreadyRunning: true,
-      startedByApp: scraperOllamaStartedByApp,
+      startedByApp: scraperLlamaStartedByApp,
       executable,
       host,
       port,
-      model,
-      baseUrl: getScraperOllamaApiBaseUrl()
+      modelPath,
+      baseUrl
     };
   }
 
-  if (scraperOllamaServerStartInProgress) {
-    return { success: false, error: 'Scraper Ollama server is already starting.' };
+  if (scraperLlamaServerStartInProgress) {
+    return { success: false, error: 'Scraper llama.cpp server is already starting.' };
   }
 
-  scraperOllamaServerStartInProgress = true;
+  scraperLlamaServerStartInProgress = true;
   try {
-    scraperOllamaServeProcess = spawn(executable, ['serve'], {
-      windowsHide: true,
-      stdio: 'ignore',
-      env: {
-        ...process.env,
-        OLLAMA_HOST: `${host}:${port}`
-      }
+    const siblingFiles = await listSiblingFilesForModel(modelPath);
+    const launch = prepareLlamaLaunch({
+      executable,
+      modelPath,
+      contextLength,
+      gpuLayers,
+      port,
+      threads,
+      host,
+      systemPrompt,
+      siblingFiles
     });
 
-    const spawnedProcess = scraperOllamaServeProcess;
-    scraperOllamaStartedByApp = true;
+    scraperLlamaServerProcess = spawn(executable, launch.args, {
+      cwd: path.dirname(executable),
+      windowsHide: true,
+      stdio: 'ignore'
+    });
+
+    const spawnedProcess = scraperLlamaServerProcess;
+    scraperLlamaStartedByApp = true;
 
     const startupState = await Promise.race([
       new Promise((resolve) => {
         spawnedProcess.once('error', (error) => {
-          resolve({ ok: false, error: error?.message || 'Failed to launch Ollama.' });
+          resolve({ ok: false, error: error?.message || 'Failed to launch scraper llama.cpp server.' });
         });
         spawnedProcess.once('exit', (code, signal) => {
-          resolve({ ok: false, error: `Ollama exited early (code: ${code ?? 'null'}, signal: ${signal ?? 'none'}).` });
+          resolve({ ok: false, error: `Scraper llama.cpp server exited early (code: ${code ?? 'null'}, signal: ${signal ?? 'none'}).` });
         });
       }),
       wait(1200).then(() => ({ ok: isServerProcessActive(spawnedProcess) }))
     ]);
 
     if (!startupState?.ok) {
-      scraperOllamaServeProcess = null;
-      scraperOllamaStartedByApp = false;
-      return { success: false, error: startupState?.error || 'Ollama failed to stay running.' };
+      scraperLlamaServerProcess = null;
+      scraperLlamaStartedByApp = false;
+      return { success: false, error: startupState?.error || 'Scraper llama.cpp server failed to stay running.' };
     }
 
     const ready = await waitForServerReady({
       host,
       port,
       proc: spawnedProcess,
-      timeoutMs: 30000
+      timeoutMs: 60000
     });
 
     if (!ready) {
       await terminateManagedChildProcess(spawnedProcess);
-      if (scraperOllamaServeProcess === spawnedProcess) {
-        scraperOllamaServeProcess = null;
+      if (scraperLlamaServerProcess === spawnedProcess) {
+        scraperLlamaServerProcess = null;
       }
-      scraperOllamaStartedByApp = false;
-      return { success: false, error: `Ollama did not open http://${host}:${port} within 30 seconds.` };
+      scraperLlamaStartedByApp = false;
+      return { success: false, error: `Scraper llama.cpp server did not open ${baseUrl} within 60 seconds.` };
     }
 
     spawnedProcess.once('exit', () => {
-      if (scraperOllamaServeProcess === spawnedProcess) {
-        scraperOllamaServeProcess = null;
+      if (scraperLlamaServerProcess === spawnedProcess) {
+        scraperLlamaServerProcess = null;
       }
-      scraperOllamaStartedByApp = false;
+      scraperLlamaStartedByApp = false;
+      scraperLlamaActiveSessions = 0;
     });
-
-    const modelCheck = await verifyScraperOllamaModel(model);
-    if (!modelCheck.ok) {
-      await terminateManagedChildProcess(spawnedProcess);
-      if (scraperOllamaServeProcess === spawnedProcess) {
-        scraperOllamaServeProcess = null;
-      }
-      scraperOllamaStartedByApp = false;
-      return { success: false, error: modelCheck.error };
-    }
 
     return {
       success: true,
@@ -1070,57 +1102,170 @@ async function ensureScraperOllamaServeRunning() {
       executable,
       host,
       port,
-      model,
-      baseUrl: getScraperOllamaApiBaseUrl()
+      modelPath,
+      baseUrl
     };
   } catch (error) {
-    scraperOllamaServeProcess = null;
-    scraperOllamaStartedByApp = false;
-    return { success: false, error: error?.message || 'Failed to start Ollama.' };
+    scraperLlamaServerProcess = null;
+    scraperLlamaStartedByApp = false;
+    return { success: false, error: error?.message || 'Failed to start scraper llama.cpp server.' };
   } finally {
-    scraperOllamaServerStartInProgress = false;
+    scraperLlamaServerStartInProgress = false;
   }
 }
 
-async function callScraperOllamaGenerate({ prompt, systemInstruction = '', temperature, maxTokens }) {
-  const startup = await ensureScraperOllamaServeRunning();
-  if (!startup?.success) {
-    throw new Error(startup?.error || 'Ollama is unavailable.');
-  }
-
-  const response = await fetch(`${startup.baseUrl}/api/generate`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: startup.model,
-      prompt: String(prompt || ''),
-      system: String(systemInstruction || ''),
-      stream: false,
-      options: {
-        temperature: Number.isFinite(Number(temperature)) ? Number(temperature) : 0.3,
-        num_predict: Number.isFinite(Number(maxTokens)) ? Math.max(96, Math.min(4096, Math.round(Number(maxTokens)))) : 700
-      }
-    }),
-    signal: AbortSignal.timeout(120000)
-  });
-
-  if (!response.ok) {
-    const detail = await response.text().catch(() => '');
-    throw new Error(`Ollama generate failed: ${response.status}${detail ? ` ${detail}` : ''}`);
-  }
-
-  const payload = await response.json().catch(() => ({}));
-  const text = String(payload?.response || '').trim();
-  if (!text) {
-    throw new Error('Ollama returned an empty response.');
-  }
-
+async function startScraperLlamaSession() {
+  const startup = await ensureScraperLlamaServerRunning();
+  if (!startup?.success) return startup;
+  scraperLlamaActiveSessions += 1;
   return {
-    text,
-    provider: 'ollama',
-    model: startup.model,
-    baseUrl: startup.baseUrl
+    ...startup,
+    activeSessions: scraperLlamaActiveSessions
   };
+}
+
+async function stopScraperLlamaSession(options = {}) {
+  const force = options?.force === true;
+  if (force) {
+    scraperLlamaActiveSessions = 0;
+  } else {
+    scraperLlamaActiveSessions = Math.max(0, scraperLlamaActiveSessions - 1);
+  }
+
+  if (scraperLlamaActiveSessions > 0) {
+    return { success: true, running: true, activeSessions: scraperLlamaActiveSessions };
+  }
+
+  if (scraperLlamaStartedByApp && isServerProcessActive(scraperLlamaServerProcess)) {
+    const proc = scraperLlamaServerProcess;
+    scraperLlamaServerProcess = null;
+    scraperLlamaStartedByApp = false;
+    await terminateManagedChildProcess(proc);
+    return { success: true, stopped: true, activeSessions: 0 };
+  }
+
+  return { success: true, stopped: false, activeSessions: 0 };
+}
+
+async function callScraperLlamaGenerate({ prompt, systemInstruction = '', temperature, maxTokens }) {
+  const startup = await ensureScraperLlamaServerRunning();
+  if (!startup?.success) {
+    throw new Error(startup?.error || 'llama.cpp is unavailable.');
+  }
+
+  const shouldStopAfter = scraperLlamaActiveSessions === 0 && startup.startedByApp;
+  try {
+    const response = await fetch(`${startup.baseUrl}/v1/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: path.basename(startup.modelPath || 'local-model.gguf'),
+        messages: [
+          ...(systemInstruction ? [{ role: 'system', content: String(systemInstruction || '') }] : []),
+          { role: 'user', content: String(prompt || '') }
+        ],
+        stream: false,
+        temperature: Number.isFinite(Number(temperature)) ? Number(temperature) : 0.3,
+        max_tokens: Number.isFinite(Number(maxTokens)) ? Math.max(96, Math.min(4096, Math.round(Number(maxTokens)))) : 700
+      }),
+      signal: AbortSignal.timeout(120000)
+    });
+
+    if (!response.ok) {
+      const detail = await response.text().catch(() => '');
+      throw new Error(`llama.cpp generate failed: ${response.status}${detail ? ` ${detail}` : ''}`);
+    }
+
+    const payload = await response.json().catch(() => ({}));
+    const text = String(payload?.choices?.[0]?.message?.content || '').trim();
+    if (!text) {
+      throw new Error('llama.cpp returned an empty response.');
+    }
+
+    return {
+      text,
+      provider: 'llama.cpp',
+      model: path.basename(startup.modelPath || ''),
+      baseUrl: startup.baseUrl
+    };
+  } finally {
+    if (shouldStopAfter) {
+      await stopScraperLlamaSession({ force: true }).catch(() => {});
+    }
+  }
+}
+
+function sanitizeScraperArtifactSegment(value, fallback = 'artifact') {
+  const cleaned = String(value || '')
+    .trim()
+    .replace(/[<>:"/\\|?*\u0000-\u001F]/g, '-')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return cleaned || fallback;
+}
+
+function getScraperResearchArtifactsRoot() {
+  return path.join(app.getPath('userData'), 'scraper-llama-artifacts');
+}
+
+function getScraperResearchSessionDir(sessionId) {
+  return path.join(
+    getScraperResearchArtifactsRoot(),
+    sanitizeScraperArtifactSegment(sessionId, 'session')
+  );
+}
+
+async function writeScraperResearchArtifact({ sessionId, fileName, content }) {
+  const normalizedSessionId = sanitizeScraperArtifactSegment(sessionId, 'session');
+  const normalizedFileName = sanitizeScraperArtifactSegment(fileName, 'checkpoint') + '.md';
+  const sessionDir = getScraperResearchSessionDir(normalizedSessionId);
+  await fs.promises.mkdir(sessionDir, { recursive: true });
+  const filePath = path.join(sessionDir, normalizedFileName);
+  await fs.promises.writeFile(filePath, String(content || ''), 'utf8');
+  return {
+    success: true,
+    sessionId: normalizedSessionId,
+    fileName: normalizedFileName,
+    filePath
+  };
+}
+
+async function listScraperResearchArtifacts(sessionId) {
+  const normalizedSessionId = sanitizeScraperArtifactSegment(sessionId, 'session');
+  const sessionDir = getScraperResearchSessionDir(normalizedSessionId);
+  try {
+    const entries = await fs.promises.readdir(sessionDir, { withFileTypes: true });
+    const files = [];
+    for (const entry of entries) {
+      if (!entry.isFile() || path.extname(entry.name).toLowerCase() !== '.md') continue;
+      const filePath = path.join(sessionDir, entry.name);
+      const content = await fs.promises.readFile(filePath, 'utf8').catch(() => '');
+      files.push({
+        fileName: entry.name,
+        filePath,
+        content: String(content || '')
+      });
+    }
+    files.sort((a, b) => a.fileName.localeCompare(b.fileName, undefined, { numeric: true, sensitivity: 'base' }));
+    return { success: true, sessionId: normalizedSessionId, files };
+  } catch (error) {
+    if (error?.code === 'ENOENT') {
+      return { success: true, sessionId: normalizedSessionId, files: [] };
+    }
+    throw error;
+  }
+}
+
+async function cleanupScraperResearchArtifacts(sessionId) {
+  const normalizedSessionId = sanitizeScraperArtifactSegment(sessionId, 'session');
+  const sessionDir = getScraperResearchSessionDir(normalizedSessionId);
+  try {
+    await fs.promises.rm(sessionDir, { recursive: true, force: true });
+    return { success: true, sessionId: normalizedSessionId };
+  } catch (error) {
+    return { success: false, sessionId: normalizedSessionId, error: error?.message || 'Failed to clean scraper artifacts.' };
+  }
 }
 
 function getOpenWebUiLocalUrl() {
@@ -2170,6 +2315,49 @@ function normalizeOmChatUrl(value) {
   return normalized ? `${normalized}/` : '';
 }
 
+async function listSiblingFilesForModel(modelPath) {
+  const resolvedModelPath = path.resolve(String(modelPath || ''));
+  if (!resolvedModelPath) return [];
+  const modelDir = path.dirname(resolvedModelPath);
+  const entries = await fs.promises.readdir(modelDir, { withFileTypes: true });
+  return entries
+    .filter((entry) => entry.isFile())
+    .map((entry) => path.join(modelDir, entry.name));
+}
+
+async function buildLlamaModelEntries(modelsPath) {
+  const abs = path.resolve(String(modelsPath || '').trim());
+  if (!abs) {
+    throw new Error('Invalid models path.');
+  }
+  if (!isPathInSafeDirectories(abs)) {
+    throw new Error('Access denied: Path outside allowed directories');
+  }
+
+  const entries = await fs.promises.readdir(abs, { withFileTypes: true });
+  const siblingFiles = entries
+    .filter((entry) => entry.isFile())
+    .map((entry) => path.join(abs, entry.name));
+
+  return siblingFiles
+    .filter((filePath) => /\.gguf$/i.test(filePath))
+    .filter((filePath) => !/^mmproj[-_]?.+\.gguf$/i.test(path.basename(filePath)))
+    .map((filePath) => {
+      const launch = prepareLlamaLaunch({
+        modelPath: filePath,
+        siblingFiles
+      });
+      return normalizeModelEntry({
+        name: path.basename(filePath),
+        path: filePath,
+        type: launch.modelType,
+        mmprojPath: launch.mmprojPath,
+        supportsVision: launch.supportsVision,
+        warnings: launch.warnings
+      });
+    });
+}
+
 function syncLlamaServerConfig(config = {}) {
   const requestedType = String(config.serverType || serverConfigs.llama?.serverType || '').trim().toLowerCase();
   const safeType = ['ngrok', 'lan', 'local'].includes(requestedType)
@@ -2187,6 +2375,11 @@ function syncLlamaServerConfig(config = {}) {
     ...(serverConfigs.llama || {}),
     executable: config.executable || serverConfigs.llama?.executable || null,
     modelPath: config.modelPath || serverConfigs.llama?.modelPath || null,
+    modelType: config.modelType || serverConfigs.llama?.modelType || 'text',
+    supportsVision: typeof config.supportsVision === 'boolean' ? config.supportsVision : Boolean(serverConfigs.llama?.supportsVision),
+    mmprojPath: config.mmprojPath ?? serverConfigs.llama?.mmprojPath ?? null,
+    warnings: Array.isArray(config.warnings) ? config.warnings : (serverConfigs.llama?.warnings || []),
+    command: String(config.command || serverConfigs.llama?.command || ''),
     contextLength: String(config.contextLength || serverConfigs.llama?.contextLength || '4096'),
     gpuLayers: String(config.gpuLayers || serverConfigs.llama?.gpuLayers || '-1'),
     threads: String(config.threads || serverConfigs.llama?.threads || '4'),
@@ -2713,14 +2906,16 @@ function resolveMcpLlmConfig(settings = cachedSettings || DEFAULT_SETTINGS) {
 function buildMcpRuntimeConfig(config = {}) {
   const existingConfig = serverConfigs.mcp || {};
   const host = String(config.host || existingConfig.host || '127.0.0.1').trim() || '127.0.0.1';
-  const port = Number(config.port || existingConfig.port || 3000);
+  const rawPort = Number(config.port || existingConfig.port || 3000);
+  const port = Number.isFinite(rawPort) ? Math.min(65535, Math.max(1, Math.round(rawPort))) : 3000;
   const enabledTools = resolveMcpEnabledTools(config?.enabledTools || existingConfig?.enabledTools || {});
   return { host, port, enabledTools };
 }
 
 async function startMcpBackground(config = {}) {
   const host = String(config.host || '127.0.0.1').trim() || '127.0.0.1';
-  const port = Number(config.port || 3000) || 3000;
+  const rawPort = Number(config.port || 3000);
+  const port = Number.isFinite(rawPort) ? Math.min(65535, Math.max(1, Math.round(rawPort))) : 3000;
   const enabledTools = resolveMcpEnabledTools(config.enabledTools || {});
 
   if (!fs.existsSync(OMX_MCP_BOOTSTRAP)) {
@@ -3151,6 +3346,8 @@ function clearLlamaMemoryGuard() {
     llamaMemoryGuardInterval = null;
   }
   llamaMemoryGuardState.criticalHits = 0;
+  llamaMemoryGuardState.isDraining = false;
+  llamaMemoryGuardState.drainStartedAt = 0;
   if (llamaMemoryGuardState.pressure !== 'tripped') {
     llamaMemoryGuardState.pressure = isServerProcessActive(llamaServerProcess) ? 'safe' : 'idle';
   }
@@ -3188,6 +3385,7 @@ function normalizeLlamaGuardSettings(settings = {}) {
   const minFreeRamMB = clampNumber(source.minFreeRamMB, LLAMA_GUARD_DEFAULTS.minFreeRamMB, 256, 32768);
   const consecutiveHits = Math.round(clampNumber(source.consecutiveHits, LLAMA_GUARD_DEFAULTS.consecutiveHits, 1, 10));
   const sampleIntervalMs = Math.round(clampNumber(source.sampleIntervalMs, LLAMA_GUARD_DEFAULTS.sampleIntervalMs, 1000, 10000));
+  const drainPeriodMs = Math.round(clampNumber(source.drainPeriodMs, LLAMA_GUARD_DEFAULTS.drainPeriodMs, 5000, 60000));
 
   return {
     enabled,
@@ -3195,7 +3393,8 @@ function normalizeLlamaGuardSettings(settings = {}) {
     stopRamPercent,
     minFreeRamMB,
     consecutiveHits,
-    sampleIntervalMs
+    sampleIntervalMs,
+    drainPeriodMs
   };
 }
 
@@ -3225,6 +3424,8 @@ function startLlamaMemoryGuard() {
     enabled: settings.enabled,
     pressure: settings.enabled ? 'safe' : 'disabled',
     criticalHits: 0,
+    isDraining: false,
+    drainStartedAt: 0,
     lastSample: sampleLlamaMemoryGuard(),
     lastAction: settings.enabled ? 'Watching system memory.' : 'Protection is disabled.',
     lastWarningAt: 0
@@ -3245,6 +3446,8 @@ function startLlamaMemoryGuard() {
       if (!nextSettings.enabled) {
         llamaMemoryGuardState.pressure = 'disabled';
         llamaMemoryGuardState.criticalHits = 0;
+        llamaMemoryGuardState.isDraining = false;
+        llamaMemoryGuardState.drainStartedAt = 0;
         llamaMemoryGuardState.lastAction = 'Protection is disabled.';
         invalidateServerStatusCache('llama');
         return;
@@ -3252,6 +3455,7 @@ function startLlamaMemoryGuard() {
 
       const warning = sample.usedPercent >= nextSettings.warnRamPercent || sample.freeMB <= nextSettings.minFreeRamMB;
       const critical = sample.usedPercent >= nextSettings.stopRamPercent || sample.freeMB <= nextSettings.minFreeRamMB;
+      const now = Date.now();
 
       if (critical) {
         llamaMemoryGuardState.criticalHits += 1;
@@ -3259,10 +3463,23 @@ function startLlamaMemoryGuard() {
         llamaMemoryGuardState.criticalHits = 0;
       }
 
-      llamaMemoryGuardState.pressure = critical ? 'critical' : warning ? 'warning' : 'safe';
+      if (llamaMemoryGuardState.isDraining && !critical) {
+        llamaMemoryGuardState.isDraining = false;
+        llamaMemoryGuardState.drainStartedAt = 0;
+        llamaMemoryGuardState.criticalHits = 0;
+        llamaMemoryGuardState.pressure = warning ? 'warning' : 'safe';
+        llamaMemoryGuardState.lastAction = 'System memory recovered during drain mode. Om-X kept the model loaded.';
+        invalidateServerStatusCache('llama');
+        return;
+      }
+
+      llamaMemoryGuardState.pressure = critical
+        ? (llamaMemoryGuardState.isDraining ? 'overloaded' : 'critical')
+        : warning
+          ? 'warning'
+          : 'safe';
 
       if (warning && !critical) {
-        const now = Date.now();
         if ((now - Number(llamaMemoryGuardState.lastWarningAt || 0)) >= 15000) {
           const warningMessage = `Llama protection warning: system RAM is at ${sample.usedPercent}% used with ${sample.freeMB} MB free. Om-X is watching to avoid a freeze.`;
           llamaMemoryGuardState.lastWarningAt = now;
@@ -3270,15 +3487,25 @@ function startLlamaMemoryGuard() {
           pushServerLog('llama', 'warning', warningMessage);
           mainWindow?.webContents?.send('llama-server-output', { type: 'stderr', data: `${warningMessage}\n` });
         }
-      } else if (!warning) {
+      } else if (!warning && !llamaMemoryGuardState.isDraining) {
         llamaMemoryGuardState.lastAction = 'Watching system memory.';
       }
 
-      invalidateServerStatusCache('llama');
-
       if (critical && llamaMemoryGuardState.criticalHits >= nextSettings.consecutiveHits) {
-        forceStopLlamaServer(`Llama protection manager ejected the model because system RAM reached ${sample.usedPercent}% used with only ${sample.freeMB} MB free. Server stopped to prevent a system freeze.`);
+        if (!llamaMemoryGuardState.isDraining) {
+          llamaMemoryGuardState.isDraining = true;
+          llamaMemoryGuardState.drainStartedAt = now;
+          llamaMemoryGuardState.pressure = 'overloaded';
+          llamaMemoryGuardState.lastAction = `Llama protection manager entered drain mode for ${Math.round(nextSettings.drainPeriodMs / 1000)}s because system RAM reached ${sample.usedPercent}% used with only ${sample.freeMB} MB free. In-flight requests may finish before unload.`;
+          pushServerLog('llama', 'warning', llamaMemoryGuardState.lastAction);
+          mainWindow?.webContents?.send('llama-server-output', { type: 'stderr', data: `${llamaMemoryGuardState.lastAction}\n` });
+        } else if ((now - Number(llamaMemoryGuardState.drainStartedAt || 0)) >= nextSettings.drainPeriodMs) {
+          forceStopLlamaServer(`Llama protection manager ejected the model after a ${Math.round(nextSettings.drainPeriodMs / 1000)}s drain window because system RAM remained at ${sample.usedPercent}% used with only ${sample.freeMB} MB free. Server stopped to prevent a system freeze.`);
+          return;
+        }
       }
+
+      invalidateServerStatusCache('llama');
     } catch (_) {}
   }, settings.sampleIntervalMs);
 }
@@ -5669,6 +5896,49 @@ ipcMain.handle('server:get-logs', withAuthorizedRendererPages(AUTHORIZED_RENDERE
   return { success: true, logs: serverLogs[serverName] };
 }));
 
+ipcMain.handle('llama:scan-models', withAuthorizedRendererPages(AUTHORIZED_RENDERER_PAGES.serverOperator, 'llama:scan-models', async (event, modelsPath) => {
+  ensureTrustedServerControlSender(event);
+  try {
+    const models = await buildLlamaModelEntries(modelsPath);
+    return { success: true, models };
+  } catch (error) {
+    return { success: false, error: error?.message || 'Failed to scan models folder.', models: [] };
+  }
+}));
+
+ipcMain.handle('llama:prepare-launch', withAuthorizedRendererPages(AUTHORIZED_RENDERER_PAGES.serverOperator, 'llama:prepare-launch', async (event, config = {}) => {
+  ensureTrustedServerControlSender(event);
+  try {
+    const model = String(config.model || '').trim();
+    const modelsPath = String(config.modelsPath || '').trim();
+    const modelPath = path.isAbsolute(model) ? model : path.join(modelsPath || '', model);
+    if (!modelPath) {
+      return { success: false, error: 'Model path is required.' };
+    }
+    const resolvedModelPath = path.resolve(modelPath);
+    if (!isPathInSafeDirectories(resolvedModelPath)) {
+      return { success: false, error: 'Access denied: Path outside allowed directories.' };
+    }
+    await fs.promises.stat(resolvedModelPath);
+    const siblingFiles = await listSiblingFilesForModel(resolvedModelPath);
+    const launch = prepareLlamaLaunch({
+      executable: config.executable,
+      cliPath: config.cliPath,
+      modelPath: resolvedModelPath,
+      contextLength: config.contextLength,
+      gpuLayers: config.gpuLayers,
+      port: config.port,
+      threads: config.threads,
+      host: config.host,
+      systemPrompt: config.systemPrompt,
+      siblingFiles
+    });
+    return { success: true, ...launch };
+  } catch (error) {
+    return { success: false, error: error?.message || 'Failed to prepare llama launch.' };
+  }
+}));
+
 ipcMain.handle('llama:start-server', withAuthorizedRendererPages(AUTHORIZED_RENDERER_PAGES.serverOperator, 'llama:start-server', async (event, config = {}) => {
   ensureTrustedServerControlSender(event);
   invalidateServerStatusCache('llama');
@@ -5692,11 +5962,44 @@ ipcMain.handle('llama:start-server', withAuthorizedRendererPages(AUTHORIZED_REND
     ? '0.0.0.0'
     : '127.0.0.1';
   const launchHost = ['0.0.0.0', '::'].includes(host) ? '127.0.0.1' : host;
+  const resolvedModelPath = path.resolve(modelPath);
+
+  if (!isPathInSafeDirectories(resolvedModelPath)) {
+    return { success: false, error: 'Access denied: Path outside allowed directories.' };
+  }
+
+  let siblingFiles = [];
+  let launch = null;
+  try {
+    const modelStat = await fs.promises.stat(resolvedModelPath);
+    if (!modelStat.isFile()) {
+      return { success: false, error: 'Selected model file is missing or invalid.' };
+    }
+    siblingFiles = await listSiblingFilesForModel(resolvedModelPath);
+    launch = prepareLlamaLaunch({
+      executable,
+      modelPath: resolvedModelPath,
+      contextLength,
+      gpuLayers,
+      port,
+      threads,
+      host,
+      systemPrompt,
+      siblingFiles
+    });
+  } catch (error) {
+    return { success: false, error: error?.message || 'Selected model file is missing or invalid.' };
+  }
 
   if (isServerProcessActive(llamaServerProcess)) {
     const syncedConfig = syncLlamaServerConfig({
       executable,
-      modelPath,
+      modelPath: launch.modelPath,
+      modelType: launch.modelType,
+      supportsVision: launch.supportsVision,
+      mmprojPath: launch.mmprojPath,
+      warnings: launch.warnings,
+      command: launch.command,
       contextLength,
       gpuLayers,
       port,
@@ -5724,6 +6027,11 @@ ipcMain.handle('llama:start-server', withAuthorizedRendererPages(AUTHORIZED_REND
       launchHost: syncedConfig.launchHost,
       port: syncedConfig.port,
       modelPath: syncedConfig.modelPath,
+      modelType: syncedConfig.modelType,
+      supportsVision: syncedConfig.supportsVision,
+      mmprojPath: syncedConfig.mmprojPath,
+      warnings: syncedConfig.warnings,
+      command: syncedConfig.command,
       localUrl: syncedConfig.localUrl,
       publicUrl: syncedConfig.publicUrl || '',
       url: syncedConfig.url,
@@ -5736,10 +6044,7 @@ ipcMain.handle('llama:start-server', withAuthorizedRendererPages(AUTHORIZED_REND
     return { success: false, alreadyStarting: true, error: 'Llama server is already starting. Please wait.' };
   }
 
-  const args = ['-m', modelPath, '-c', contextLength, '-ngl', gpuLayers, '--port', String(port), '-t', threads, '--host', host];
-  if (systemPrompt) {
-    args.push('--system-prompt', systemPrompt);
-  }
+  const args = Array.isArray(launch?.args) ? launch.args : [];
 
   llamaServerStartInProgress = true;
   invalidateServerStatusCache('llama');
@@ -5752,7 +6057,12 @@ ipcMain.handle('llama:start-server', withAuthorizedRendererPages(AUTHORIZED_REND
     serverStarts.llama = Date.now();
     syncLlamaServerConfig({
       executable,
-      modelPath,
+      modelPath: launch.modelPath,
+      modelType: launch.modelType,
+      supportsVision: launch.supportsVision,
+      mmprojPath: launch.mmprojPath,
+      warnings: launch.warnings,
+      command: launch.command,
       contextLength,
       gpuLayers,
       port,
@@ -5761,6 +6071,10 @@ ipcMain.handle('llama:start-server', withAuthorizedRendererPages(AUTHORIZED_REND
       guardSettings,
       host,
       serverType
+    });
+    launch.warnings.forEach((warning) => {
+      pushServerLog('llama', 'warning', warning);
+      mainWindow?.webContents?.send('llama-server-output', { type: 'stderr', data: `${warning}\n` });
     });
 
     llamaServerProcess.stdout.on('data', (data) => {
@@ -5833,7 +6147,12 @@ ipcMain.handle('llama:start-server', withAuthorizedRendererPages(AUTHORIZED_REND
 
     let syncedConfig = syncLlamaServerConfig({
       executable,
-      modelPath,
+      modelPath: launch.modelPath,
+      modelType: launch.modelType,
+      supportsVision: launch.supportsVision,
+      mmprojPath: launch.mmprojPath,
+      warnings: launch.warnings,
+      command: launch.command,
       contextLength,
       gpuLayers,
       port,
@@ -5877,6 +6196,11 @@ ipcMain.handle('llama:start-server', withAuthorizedRendererPages(AUTHORIZED_REND
       launchHost: syncedConfig.launchHost,
       port: syncedConfig.port,
       modelPath: syncedConfig.modelPath,
+      modelType: syncedConfig.modelType,
+      supportsVision: syncedConfig.supportsVision,
+      mmprojPath: syncedConfig.mmprojPath,
+      warnings: syncedConfig.warnings,
+      command: syncedConfig.command,
       localUrl: syncedConfig.localUrl,
       publicUrl: syncedConfig.publicUrl || '',
       url: syncedConfig.url,
@@ -7745,19 +8069,64 @@ ipcMain.handle('ai-perform-task', (e, p) => performAITask(e, p));
 ipcMain.handle('translator-perform', (e, p) => performAITask(e, { ...p, context: 'translator' }));
 ipcMain.handle('writer-perform', (e, p) => performAITask(e, { ...p, context: 'writer' }));
 
-ipcMain.handle('scraper:get-ollama-config', withAuthorizedRendererPages(AUTHORIZED_RENDERER_PAGES.scraper, 'scraper:get-ollama-config', async () => ({
-    executable: getScraperOllamaExecutableFromEnv(),
-    host: getScraperOllamaHostFromEnv(),
-    port: getScraperOllamaPortFromEnv(),
-    model: getScraperOllamaModelFromEnv(),
-    baseUrl: getScraperOllamaApiBaseUrl()
+ipcMain.handle('scraper:get-llama-config', withAuthorizedRendererPages(AUTHORIZED_RENDERER_PAGES.scraper, 'scraper:get-llama-config', async () => ({
+    executable: getScraperLlamaExecutableFromEnv(),
+    host: getScraperLlamaHostFromEnv(),
+    port: getScraperLlamaPortFromEnv(),
+    modelsPath: getScraperLlamaModelsPathFromEnv(),
+    model: getScraperLlamaModelFromEnv(),
+    contextLength: getScraperLlamaContextLengthFromEnv(),
+    gpuLayers: getScraperLlamaGpuLayersFromEnv(),
+    threads: getScraperLlamaThreadsFromEnv(),
+    systemPrompt: getScraperLlamaSystemPromptFromEnv(),
+    baseUrl: getScraperLlamaApiBaseUrl()
 })));
 
-ipcMain.handle('scraper:ollama:generate', withAuthorizedRendererPages(AUTHORIZED_RENDERER_PAGES.scraper, 'scraper:ollama:generate', async (_event, payload = {}) => {
+ipcMain.handle('scraper:llama:session-start', withAuthorizedRendererPages(AUTHORIZED_RENDERER_PAGES.scraper, 'scraper:llama:session-start', async () => {
     try {
-        return await callScraperOllamaGenerate(payload || {});
+        return await startScraperLlamaSession();
     } catch (error) {
-        return { error: error?.message || 'Scraper Ollama request failed.' };
+        return { success: false, error: error?.message || 'Failed to start scraper llama.cpp session.' };
+    }
+}));
+
+ipcMain.handle('scraper:llama:session-stop', withAuthorizedRendererPages(AUTHORIZED_RENDERER_PAGES.scraper, 'scraper:llama:session-stop', async () => {
+    try {
+        return await stopScraperLlamaSession();
+    } catch (error) {
+        return { success: false, error: error?.message || 'Failed to stop scraper llama.cpp session.' };
+    }
+}));
+
+ipcMain.handle('scraper:llama:generate', withAuthorizedRendererPages(AUTHORIZED_RENDERER_PAGES.scraper, 'scraper:llama:generate', async (_event, payload = {}) => {
+    try {
+        return await callScraperLlamaGenerate(payload || {});
+    } catch (error) {
+        return { error: error?.message || 'Scraper llama.cpp request failed.' };
+    }
+}));
+
+ipcMain.handle('scraper:research-artifact-write', withAuthorizedRendererPages(AUTHORIZED_RENDERER_PAGES.scraper, 'scraper:research-artifact-write', async (_event, payload = {}) => {
+    try {
+        return await writeScraperResearchArtifact(payload || {});
+    } catch (error) {
+        return { success: false, error: error?.message || 'Failed to write scraper research artifact.' };
+    }
+}));
+
+ipcMain.handle('scraper:research-artifact-list', withAuthorizedRendererPages(AUTHORIZED_RENDERER_PAGES.scraper, 'scraper:research-artifact-list', async (_event, sessionId) => {
+    try {
+        return await listScraperResearchArtifacts(sessionId);
+    } catch (error) {
+        return { success: false, error: error?.message || 'Failed to list scraper research artifacts.', files: [] };
+    }
+}));
+
+ipcMain.handle('scraper:research-artifact-cleanup', withAuthorizedRendererPages(AUTHORIZED_RENDERER_PAGES.scraper, 'scraper:research-artifact-cleanup', async (_event, sessionId) => {
+    try {
+        return await cleanupScraperResearchArtifacts(sessionId);
+    } catch (error) {
+        return { success: false, error: error?.message || 'Failed to cleanup scraper research artifacts.' };
     }
 }));
 
