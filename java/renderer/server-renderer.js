@@ -124,6 +124,7 @@ function updateMcpRuntimeStatus(statusElementId, status) {
 
 class LlamaServerRenderer {
     constructor() {
+        this.defaultSystemPrompt = 'Answer the query. If you do not have real-time data, use the provided tools to answer the query.';
         this.isRunning = false;
         this.isStarting = false;
         this.llamaPath = null;
@@ -156,6 +157,7 @@ class LlamaServerRenderer {
         this.loadRuntimeState();
         this.updateGPUDisplay();
         this.updateAutoGpuLayersUI();
+        this.updateKvOptimizationUI();
         this.updateManualCommand();
         this.startGuardStatusPolling();
         this.log('Llama Server Manager initialized', 'info');
@@ -298,6 +300,7 @@ class LlamaServerRenderer {
         const inputs = [
             'context-length',
             'gpu-layers',
+            'llama-kv-cache-mode',
             'llama-port',
             'llama-threads',
             'llama-host',
@@ -312,12 +315,16 @@ class LlamaServerRenderer {
             const input = document.getElementById(id);
             if (input) {
                 input.addEventListener('change', () => {
+                    if (id === 'gpu-layers') {
+                        input.value = String(this.clampGpuLayersInput(input.value));
+                    }
                     this.saveSettings();
                     this.updateManualCommand();
                 });
                 input.addEventListener('input', () => {
                     if (id === 'gpu-layers' && input.matches(':focus')) {
                         this.setAutoGpuLayersEnabled(false);
+                        input.value = String(this.clampGpuLayersInput(input.value));
                     }
                     this.updateManualCommand();
                     if (id === 'llama-port' || id === 'llama-host') {
@@ -357,7 +364,13 @@ class LlamaServerRenderer {
     }
 
     getSystemPrompt() {
-        return String(document.getElementById('llama-system-prompt')?.value || '').trim();
+        const value = String(document.getElementById('llama-system-prompt')?.value || '').trim();
+        return value || this.defaultSystemPrompt;
+    }
+
+    getKvCacheMode() {
+        const value = String(document.getElementById('llama-kv-cache-mode')?.value || 'auto').trim().toLowerCase();
+        return ['auto', 'q8', 'q5', 'q4'].includes(value) ? value : 'auto';
     }
 
     getGuardSettings() {
@@ -441,6 +454,13 @@ class LlamaServerRenderer {
         if (!Number.isFinite(numeric) || numeric <= 0) return '0.00 GB';
         if (numeric < 10) return `${numeric.toFixed(2)} GB`;
         return `${numeric.toFixed(1)} GB`;
+    }
+
+    formatMemoryMB(value) {
+        const numeric = Number(value || 0);
+        if (!Number.isFinite(numeric) || numeric <= 0) return '--';
+        if (numeric >= 1024) return this.formatGB(numeric / 1024);
+        return `${Math.round(numeric)} MB`;
     }
 
     parseModelMetadata(modelName, info = null) {
@@ -555,6 +575,43 @@ class LlamaServerRenderer {
         return 32;
     }
 
+    getMaxSupportedGpuLayers() {
+        if (Number.isFinite(Number(this.latestCompatibility?.layers)) && Number(this.latestCompatibility.layers) > 0) {
+            return Math.round(Number(this.latestCompatibility.layers));
+        }
+        if (this.latestModelInfo || this.selectedModel) {
+            const metadata = this.parseModelMetadata(this.selectedModel || '', this.latestModelInfo || null);
+            return this.inferLayerCount(metadata);
+        }
+        return 0;
+    }
+
+    clampGpuLayersInput(rawValue) {
+        const numeric = Math.round(Number(rawValue));
+        const safeValue = Number.isFinite(numeric) ? Math.max(0, numeric) : 0;
+        const maxLayers = this.getMaxSupportedGpuLayers();
+        return maxLayers > 0 ? Math.min(safeValue, maxLayers) : safeValue;
+    }
+
+    applyGpuLayersBounds(options = {}) {
+        const input = document.getElementById('gpu-layers');
+        if (!input) return 0;
+        const maxLayers = this.getMaxSupportedGpuLayers();
+        input.min = '0';
+        if (maxLayers > 0) {
+            input.max = String(maxLayers);
+            if (options.clampValue !== false) {
+                const clamped = this.clampGpuLayersInput(input.value);
+                if (String(clamped) !== String(input.value)) {
+                    input.value = String(clamped);
+                }
+            }
+        } else {
+            input.removeAttribute('max');
+        }
+        return maxLayers;
+    }
+
     estimateModelMemory(modelName, contextLength, info = null) {
         const metadata = this.parseModelMetadata(modelName, info || null);
         const totalLayers = this.inferLayerCount(metadata);
@@ -590,7 +647,7 @@ class LlamaServerRenderer {
         }
 
         if (Number(modelSizeMB || 0) <= availableForWeightsMB) {
-            return -1;
+            return numericLayers;
         }
 
         const ratio = Math.max(0, Math.min(1, availableForWeightsMB / Math.max(1, Number(modelSizeMB || 0))));
@@ -614,12 +671,8 @@ class LlamaServerRenderer {
                 statusEl.textContent = 'Manual override active';
             } else if (message) {
                 statusEl.textContent = message;
-            } else if (detectedValue === -1) {
-                statusEl.textContent = 'Auto: full GPU offload';
-            } else if (Number.isFinite(Number(detectedValue))) {
-                statusEl.textContent = `Auto: ${detectedValue} GPU layer${Number(detectedValue) === 1 ? '' : 's'}`;
             } else {
-                statusEl.textContent = 'Auto: waiting for model';
+                statusEl.textContent = '';
             }
         }
     }
@@ -639,7 +692,7 @@ class LlamaServerRenderer {
             return null;
         }
         if (!this.selectedModel) {
-            this.updateAutoGpuLayersUI('Auto: waiting for model');
+            this.updateAutoGpuLayersUI('');
             return null;
         }
 
@@ -679,7 +732,8 @@ class LlamaServerRenderer {
         }
 
         gpuInput.value = String(recommendation.value);
-        this.updateAutoGpuLayersUI('', recommendation.value);
+        this.updateAutoGpuLayersUI('');
+        this.applyGpuLayersBounds();
         this.saveSettings();
         await this.updateCompatibilityCalculator(this.latestModelInfo);
         await this.updateManualCommand();
@@ -755,7 +809,9 @@ class LlamaServerRenderer {
         const layers = this.estimateLayers(metadata.paramsB, metadata.arch);
         const memory = this.estimateModelMemory(this.selectedModel, contextLength, info || null);
         const modelWeightsGB = memory.modelSizeMB / 1024;
-        const kvCacheGB = memory.kvCacheMB / 1024;
+        const kvCacheGB = this.latestPreparedLaunch?.estimatedKvCacheMB
+            ? Number(this.latestPreparedLaunch.estimatedKvCacheMB) / 1024
+            : memory.kvCacheMB / 1024;
         const overheadGB = memory.overheadMB / 1024;
         const totalRequiredGB = memory.totalMB / 1024;
 
@@ -801,10 +857,12 @@ class LlamaServerRenderer {
             gpuLayers
         };
 
+        this.applyGpuLayersBounds();
+
         setText('llama-compat-params', `${metadata.paramsB.toFixed(metadata.paramsB < 10 ? 1 : 0)}B`);
         setText('llama-compat-quant', `${metadata.quantName} (${metadata.bits}-bit)`);
         setText('llama-compat-mode', runMode === 'full' ? 'Full GPU' : runMode === 'partial' ? 'Hybrid' : runMode === 'cpu' ? 'CPU Only' : 'Insufficient');
-        setText('llama-compat-gpu-layers', gpuLayers === -1 ? `Full GPU / ${layers}` : `${gpuLayers} / ${layers}`);
+        setText('llama-compat-gpu-layers', `${gpuLayers} / ${layers}`);
         setText('llama-compat-weights', this.formatGB(modelWeightsGB));
         setText('llama-compat-kv', this.formatGB(kvCacheGB));
         
@@ -812,7 +870,8 @@ class LlamaServerRenderer {
         const kvIndicator = document.getElementById('kv-cache-indicator');
         if (kvIndicator) {
             kvIndicator.style.display = 'inline-block';
-            kvIndicator.title = `KV Cache: ${this.formatGB(kvCacheGB)} calculated`;
+            const kvMode = String(this.latestPreparedLaunch?.cacheTypeK || '').trim() || 'default';
+            kvIndicator.title = `KV Cache: ${this.formatGB(kvCacheGB)} (${kvMode})`;
         }
         
         setText('llama-compat-total', this.formatGB(totalRequiredGB));
@@ -869,7 +928,8 @@ class LlamaServerRenderer {
             modelsPath: this.modelsPath,
             modelPath: this.getSelectedModelPath(),
             contextLength: document.getElementById('context-length')?.value || '4096',
-            gpuLayers: document.getElementById('gpu-layers')?.value || '-1',
+            gpuLayers: document.getElementById('gpu-layers')?.value || '0',
+            kvCacheMode: this.getKvCacheMode(),
             port: document.getElementById('llama-port')?.value || '8080',
             threads: document.getElementById('llama-threads')?.value || '4',
             host: this.resolveBindHost(serverType),
@@ -881,6 +941,7 @@ class LlamaServerRenderer {
         if (!this.selectedModel || !window.browserAPI?.llama?.prepareLaunch) {
             this.latestPreparedLaunch = null;
             this.updateCapabilityUI();
+            this.updateKvOptimizationUI(null);
             return null;
         }
 
@@ -889,16 +950,45 @@ class LlamaServerRenderer {
             if (!result?.success) {
                 this.latestPreparedLaunch = null;
                 this.updateCapabilityUI(null, result?.error ? [result.error] : []);
+                this.updateKvOptimizationUI(null, result?.error || '');
                 return null;
             }
             this.latestPreparedLaunch = result;
             this.updateCapabilityUI(result);
+            this.updateKvOptimizationUI(result);
             return result;
         } catch (err) {
             console.error('[LlamaServer] Failed to prepare launch:', err);
             this.latestPreparedLaunch = null;
             this.updateCapabilityUI(null, [err?.message || String(err)]);
+            this.updateKvOptimizationUI(null, err?.message || String(err));
             return null;
+        }
+    }
+
+    updateKvOptimizationUI(launch = this.latestPreparedLaunch, overrideStatus = '') {
+        const estimateEl = document.getElementById('llama-kv-estimate');
+        const statusEl = document.getElementById('llama-kv-status');
+        const modeEl = document.getElementById('llama-kv-cache-mode');
+        if (modeEl && !modeEl.value) {
+            modeEl.value = 'auto';
+        }
+        if (estimateEl) {
+            estimateEl.textContent = launch?.estimatedKvCacheMB
+                ? this.formatMemoryMB(launch.estimatedKvCacheMB)
+                : '--';
+        }
+        if (statusEl) {
+            if (overrideStatus) {
+                statusEl.textContent = overrideStatus;
+            } else if (!this.selectedModel) {
+                statusEl.textContent = 'Waiting for model selection';
+            } else if (launch?.cacheTypeK || launch?.cacheTypeV) {
+                const modeLabel = String(launch.kvModeResolved || this.getKvCacheMode()).toUpperCase();
+                statusEl.textContent = `${launch.optimizationStatus || 'Auto'} (${modeLabel})`;
+            } else {
+                statusEl.textContent = this.getKvCacheMode() === 'auto' ? 'Auto' : 'Manual';
+            }
         }
     }
 
@@ -1015,6 +1105,37 @@ class LlamaServerRenderer {
 
         if (save) this.saveSettings();
         this.updateManualCommand();
+    }
+
+    async restoreTrustedServerPaths() {
+        if (!window.browserAPI?.files?.trustFolder) return;
+        const folderCandidates = new Set();
+        const addFolder = (targetPath, isDirectory = false) => {
+            const raw = String(targetPath || '').trim();
+            if (!raw) return;
+            const normalized = raw.replace(/[\\/]+$/, '');
+            if (!normalized) return;
+            if (isDirectory) {
+                folderCandidates.add(normalized);
+                return;
+            }
+            const lastSlash = Math.max(normalized.lastIndexOf('\\'), normalized.lastIndexOf('/'));
+            if (lastSlash > 0) {
+                folderCandidates.add(normalized.slice(0, lastSlash));
+            }
+        };
+
+        addFolder(this.llamaPath, false);
+        addFolder(this.llamaCliPath, false);
+        addFolder(this.modelsPath, true);
+
+        for (const folder of folderCandidates) {
+            try {
+                await window.browserAPI.files.trustFolder(folder);
+            } catch (error) {
+                console.warn('[LlamaServer] Failed to restore trusted folder:', folder, error);
+            }
+        }
     }
 
     async browseForLlamaExecutable() {
@@ -1245,8 +1366,9 @@ class LlamaServerRenderer {
 
                 this.models = models;
                 if (this.selectedModel && !models.some((entry) => entry?.name === this.selectedModel || entry?.path === this.selectedModel)) {
-                    this.selectedModel = null;
-                    this.selectedModelEntry = null;
+                    const selectedBaseName = String(this.selectedModel || '').split(/[/\\]/).at(-1);
+                    this.selectedModelEntry = models.find((entry) => String(entry?.name || '').split(/[/\\]/).at(-1) === selectedBaseName) || null;
+                    this.selectedModel = this.selectedModelEntry?.name || this.selectedModelEntry?.path || null;
                 } else {
                     this.selectedModelEntry = models.find((entry) => entry?.name === this.selectedModel || entry?.path === this.selectedModel) || null;
                 }
@@ -1296,6 +1418,9 @@ class LlamaServerRenderer {
     async onModelSelected(modelName) {
         this.selectedModel = modelName;
         this.selectedModelEntry = this.models.find((entry) => entry?.name === modelName || entry?.path === modelName) || null;
+        if (this.selectedModelEntry) {
+            this.selectedModel = this.selectedModelEntry.name || this.selectedModelEntry.path || modelName;
+        }
         this.saveSettings();
 
         if (!modelName) {
@@ -1507,7 +1632,8 @@ class LlamaServerRenderer {
         }
 
         const contextLength = document.getElementById('context-length').value || '4096';
-        const gpuLayers = document.getElementById('gpu-layers').value || '-1';
+        const gpuLayers = String(this.clampGpuLayersInput(document.getElementById('gpu-layers').value || '0'));
+        const kvCacheMode = this.getKvCacheMode();
         const port = document.getElementById('llama-port').value || '8080';
         const threads = document.getElementById('llama-threads').value || '4';
         const serverType = this.normalizeServerType(document.getElementById('llama-host').value || 'local');
@@ -1523,6 +1649,7 @@ class LlamaServerRenderer {
                     modelsPath: this.modelsPath,
                     contextLength,
                     gpuLayers,
+                    kvCacheMode,
                     port,
                     threads,
                     systemPrompt,
@@ -1535,12 +1662,20 @@ class LlamaServerRenderer {
                     this.latestPreparedLaunch = {
                         ...(preparedLaunch || this.latestPreparedLaunch || {}),
                         command: result.command || preparedLaunch?.command || this.latestPreparedLaunch?.command || '',
+                        cliCommand: result.cliCommand || preparedLaunch?.cliCommand || this.latestPreparedLaunch?.cliCommand || '',
                         mmprojPath: result.mmprojPath ?? preparedLaunch?.mmprojPath ?? null,
                         modelType: result.modelType || preparedLaunch?.modelType || 'text',
                         supportsVision: typeof result.supportsVision === 'boolean' ? result.supportsVision : Boolean(preparedLaunch?.supportsVision),
-                        warnings: Array.isArray(result.warnings) ? result.warnings : (preparedLaunch?.warnings || [])
+                        warnings: Array.isArray(result.warnings) ? result.warnings : (preparedLaunch?.warnings || []),
+                        kvCacheMode: result.kvCacheMode || preparedLaunch?.kvCacheMode || kvCacheMode,
+                        kvModeResolved: result.kvModeResolved || preparedLaunch?.kvModeResolved || '',
+                        cacheTypeK: result.cacheTypeK ?? preparedLaunch?.cacheTypeK ?? '',
+                        cacheTypeV: result.cacheTypeV ?? preparedLaunch?.cacheTypeV ?? '',
+                        estimatedKvCacheMB: Number(result.estimatedKvCacheMB ?? preparedLaunch?.estimatedKvCacheMB ?? 0),
+                        optimizationStatus: result.optimizationStatus || preparedLaunch?.optimizationStatus || ''
                     };
                     this.updateCapabilityUI();
+                    this.updateKvOptimizationUI();
                     this.isStarting = false;
                     this.isRunning = true;
                     this.startTime = Date.now();
@@ -1780,7 +1915,8 @@ class LlamaServerRenderer {
                 modelsPath: this.modelsPath,
                 selectedModel: this.selectedModel,
                 contextLength: document.getElementById('context-length')?.value || '4096',
-                gpuLayers: document.getElementById('gpu-layers')?.value || '-1',
+                gpuLayers: document.getElementById('gpu-layers')?.value || '0',
+                kvCacheMode: this.getKvCacheMode(),
                 port: document.getElementById('llama-port')?.value || '8080',
                 threads: document.getElementById('llama-threads')?.value || '4',
                 host: document.getElementById('llama-host')?.value || '127.0.0.1',
@@ -1826,6 +1962,8 @@ class LlamaServerRenderer {
                     modelEl.textContent = `Model: ${this.selectedModel}`;
                 }
 
+                void this.restoreTrustedServerPaths();
+
                 if (this.modelsPath) {
                     this.scanModelsFolder();
                 }
@@ -1838,6 +1976,13 @@ class LlamaServerRenderer {
                 if (settings.gpuLayers) {
                     const input = document.getElementById('gpu-layers');
                     if (input) input.value = settings.gpuLayers;
+                }
+
+                const kvModeInput = document.getElementById('llama-kv-cache-mode');
+                if (kvModeInput) {
+                    kvModeInput.value = ['auto', 'q8', 'q5', 'q4'].includes(String(settings.kvCacheMode || '').toLowerCase())
+                        ? String(settings.kvCacheMode).toLowerCase()
+                        : 'auto';
                 }
 
                 this.updateAutoGpuLayersUI();
@@ -1859,7 +2004,12 @@ class LlamaServerRenderer {
 
                 if (typeof settings.systemPrompt === 'string') {
                     const input = document.getElementById('llama-system-prompt');
-                    if (input) input.value = settings.systemPrompt;
+                    if (input) input.value = settings.systemPrompt.trim() || this.defaultSystemPrompt;
+                } else {
+                    const input = document.getElementById('llama-system-prompt');
+                    if (input && !String(input.value || '').trim()) {
+                        input.value = this.defaultSystemPrompt;
+                    }
                 }
 
                 if (settings.guardSettings && typeof settings.guardSettings === 'object') {
@@ -1876,6 +2026,14 @@ class LlamaServerRenderer {
                 });
             } else {
                 this.updateAutoGpuLayersUI();
+                const kvModeInput = document.getElementById('llama-kv-cache-mode');
+                if (kvModeInput && !String(kvModeInput.value || '').trim()) {
+                    kvModeInput.value = 'auto';
+                }
+                const input = document.getElementById('llama-system-prompt');
+                if (input && !String(input.value || '').trim()) {
+                    input.value = this.defaultSystemPrompt;
+                }
             }
         } catch (e) {
             console.error('Failed to load settings:', e);
@@ -1914,9 +2072,16 @@ class LlamaServerRenderer {
                     mmprojPath: status.config.mmprojPath || null,
                     warnings: Array.isArray(status.config.warnings) ? status.config.warnings : [],
                     command: status.config.command || '',
-                    cliCommand: this.latestPreparedLaunch?.cliCommand || ''
+                    cliCommand: this.latestPreparedLaunch?.cliCommand || '',
+                    kvCacheMode: status.config.kvCacheMode || 'auto',
+                    kvModeResolved: status.config.kvModeResolved || '',
+                    cacheTypeK: status.config.cacheTypeK || '',
+                    cacheTypeV: status.config.cacheTypeV || '',
+                    estimatedKvCacheMB: Number(status.config.estimatedKvCacheMB || 0),
+                    optimizationStatus: status.config.optimizationStatus || ''
                 } : this.latestPreparedLaunch;
                 this.updateCapabilityUI();
+                this.updateKvOptimizationUI();
 
                 const startBtn = document.getElementById('btn-start-llama');
                 const stopBtn = document.getElementById('btn-stop-llama');

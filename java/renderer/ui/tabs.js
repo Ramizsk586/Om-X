@@ -4139,6 +4139,7 @@ body[class*="overflow-hidden"]:not([data-legit]) {
       console.warn('[Adult Blocker] Failed to apply:', e?.message);
     }
   }
+
   // ── End Ad Blocker ────────────────────────────────────────────────────────
 
   // ── Adult Content Image Blocker ─────────────────────────────────────────
@@ -4342,6 +4343,7 @@ body[class*="overflow-hidden"]:not([data-legit]) {
 })();
     `;
   }
+
   // ── End Adult Content Blocker ───────────────────────────────────────────
 
   isYouTubeUrl(url = '') {

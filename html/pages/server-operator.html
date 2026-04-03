@@ -3174,8 +3174,18 @@
                                 </div>
                                 <div class="config-field">
                                     <div class="config-field-label">GPU Layers</div>
-                                    <input type="number" class="config-field-input" id="gpu-layers" value="-1" min="-1">
-                                    <div id="llama-auto-gpu-layers-status" style="margin-top: 10px; font-size: 12px; color: var(--text-dim);">Auto GPU layers enabled</div>
+                                    <input type="number" class="config-field-input" id="gpu-layers" value="0" min="0">
+                                    <div id="llama-auto-gpu-layers-status" style="margin-top: 10px; font-size: 12px; color: var(--text-dim);"></div>
+                                </div>
+                                <div class="config-field">
+                                    <div class="config-field-label">KV Cache Mode</div>
+                                    <select class="config-field-input" id="llama-kv-cache-mode">
+                                        <option value="auto">Auto</option>
+                                        <option value="q8">Q8</option>
+                                        <option value="q5">Q5</option>
+                                        <option value="q4">Q4</option>
+                                    </select>
+                                    <div class="config-help" style="margin-top: 10px;">Auto selects safe KV cache quantization for your current hardware.</div>
                                 </div>
                                 <div class="config-field">
                                     <div class="config-field-label">Port</div>
@@ -3184,6 +3194,14 @@
                                 <div class="config-field">
                                     <div class="config-field-label">Threads</div>
                                     <input type="number" class="config-field-input" id="llama-threads" value="4" min="1" max="32">
+                                </div>
+                                <div class="config-field">
+                                    <div class="config-field-label">Est. KV Memory</div>
+                                    <div style="font-size: 16px; font-weight: 600; color: var(--text);" id="llama-kv-estimate">--</div>
+                                </div>
+                                <div class="config-field">
+                                    <div class="config-field-label">KV Optimization</div>
+                                    <div style="font-size: 16px; font-weight: 600; color: var(--text-dim);" id="llama-kv-status">Waiting for model selection</div>
                                 </div>
                                 <div class="config-field full-width">
                                     <div class="config-field-label">Server Type</div>
@@ -3205,8 +3223,8 @@
                             </div>
                             <div class="config-field full-width">
                                 <div class="config-field-label">Default Guardrails</div>
-                                <textarea class="config-field-input" id="llama-system-prompt" rows="18" spellcheck="false" placeholder="Paste a default llama-server system prompt here. It will be passed with --system-prompt when the server starts." style="min-height: 320px; resize: vertical; font-family: 'JetBrains Mono', monospace; line-height: 1.55;"></textarea>
-                                <div class="config-help">Saved locally with your llama settings and applied on startup with the server launch command.</div>
+                                <textarea class="config-field-input" id="llama-system-prompt" rows="18" spellcheck="false" placeholder="Answer the query. If you do not have real-time data, use the provided tools to answer the query." style="min-height: 320px; resize: vertical; font-family: 'JetBrains Mono', monospace; line-height: 1.55;"></textarea>
+                                <div class="config-help">A simple default prompt is filled in automatically for first-time use. You can keep it or replace it with your own.</div>
                             </div>
                         </div>
 

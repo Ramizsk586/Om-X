@@ -747,6 +747,119 @@ document.addEventListener('DOMContentLoaded', async () => {
     return finalRes.text;
   };
 
+  const getScraperAgentExecutionProfile = ({ llmConfig, contextLength = 3000, evidenceCount = 0 } = {}) => {
+    const provider = String(llmConfig?.provider || '').trim().toLowerCase();
+    const safeContext = Math.max(1024, Number(contextLength) || 3000);
+    const sourceWeight = evidenceCount >= 32 ? 1 : 0;
+    if (provider === 'llama.cpp') {
+      return {
+        provider,
+        maxParallelBranches: 1,
+        cooldownMs: 280,
+        branchPromptBudget: Math.max(700, Math.floor(safeContext * 0.62)),
+        branchMaxTokens: Math.max(220, Math.min(900, Math.floor(safeContext * 0.22))),
+        summarizeThresholdTokens: Math.max(800, Math.floor(safeContext * 0.9))
+      };
+    }
+    return {
+      provider,
+      maxParallelBranches: Math.max(1, Math.min(2, 1 + sourceWeight)),
+      cooldownMs: 140,
+      branchPromptBudget: Math.max(900, Math.floor(safeContext * 0.7)),
+      branchMaxTokens: Math.max(280, Math.min(1200, Math.floor(safeContext * 0.26))),
+      summarizeThresholdTokens: Math.max(1000, Math.floor(safeContext * 0.9))
+    };
+  };
+
+  const runSpecializedLlmAgent = async ({ role = 'worker', label = '', prompt = '', systemInstruction = '', llmConfig, maxTokensOverride } = {}) => {
+    const effectiveConfig = {
+      ...(llmConfig || {}),
+      maxTokens: Number.isFinite(Number(maxTokensOverride))
+        ? Number(maxTokensOverride)
+        : llmConfig?.maxTokens
+    };
+    const res = await callLlmForDataWorkflow({
+      prompt,
+      systemInstruction,
+      llmConfig: effectiveConfig
+    });
+    return {
+      role,
+      label: label || role,
+      text: String(res?.text || '').trim(),
+      provider: String(res?.provider || effectiveConfig?.provider || '').trim()
+    };
+  };
+
+  const runBranchedAgentTasks = async ({ tasks = [], maxParallel = 1, cooldownMs = 0, worker }) => {
+    const queue = Array.isArray(tasks) ? tasks.slice() : [];
+    const results = new Array(queue.length);
+    let cursor = 0;
+    const runWorker = async () => {
+      while (cursor < queue.length) {
+        const currentIndex = cursor;
+        cursor += 1;
+        results[currentIndex] = await worker(queue[currentIndex], currentIndex);
+        if (cooldownMs > 0) {
+          await new Promise((resolve) => setTimeout(resolve, cooldownMs));
+        }
+      }
+    };
+
+    const workers = [];
+    const safeParallel = Math.max(1, Math.min(Number(maxParallel) || 1, queue.length || 1));
+    for (let i = 0; i < safeParallel; i++) {
+      workers.push(runWorker());
+    }
+    await Promise.all(workers);
+    return results;
+  };
+
+  const buildHeadResearchAgentPlan = async ({ query, wikiSummary = '', relatedTopics = [], llmConfig }) => {
+    const systemInstruction = [
+      'You are the head research coordinator for a small team of LLM workers.',
+      'Return JSON only.',
+      'Split the research into compact focus areas that extraction workers can follow.',
+      'Prefer 2 to 4 branches maximum.',
+      'Do not include URLs.'
+    ].join(' ');
+    const prompt = [
+      `Topic: ${query}`,
+      `Wikipedia baseline: ${cleanSnippet(wikiSummary || '').slice(0, 700) || 'None'}`,
+      `Related topics: ${(relatedTopics || []).slice(0, 10).join(', ') || 'None'}`,
+      'Return JSON with this exact shape:',
+      '{"focusAreas":[""],"branchGoals":[""],"reportAngle":"","riskNotes":[""]}'
+    ].join('\n');
+
+    try {
+      const res = await runSpecializedLlmAgent({
+        role: 'head',
+        label: 'Head Coordinator',
+        prompt,
+        systemInstruction,
+        llmConfig,
+        maxTokensOverride: Math.max(220, Math.min(700, Math.floor((Number(llmConfig?.maxTokens) || 3000) * 0.2)))
+      });
+      const parsed = tryParseJsonBlock(res.text) || {};
+      return {
+        focusAreas: Array.isArray(parsed?.focusAreas) ? parsed.focusAreas.map((item) => String(item || '').trim()).filter(Boolean).slice(0, 4) : [],
+        branchGoals: Array.isArray(parsed?.branchGoals) ? parsed.branchGoals.map((item) => String(item || '').trim()).filter(Boolean).slice(0, 4) : [],
+        reportAngle: String(parsed?.reportAngle || '').trim(),
+        riskNotes: Array.isArray(parsed?.riskNotes) ? parsed.riskNotes.map((item) => String(item || '').trim()).filter(Boolean).slice(0, 4) : [],
+        provider: res.provider || llmConfig?.provider || ''
+      };
+    } catch (err) {
+      console.warn('[Data Workflow] Head research agent planning failed:', err?.message || err);
+      return {
+        focusAreas: [],
+        branchGoals: [],
+        reportAngle: '',
+        riskNotes: [],
+        provider: ''
+      };
+    }
+  };
+
   const loadRateState = () => {
     const raw = window.localStorage?.getItem('__omx_rl_state_v1');
     if (!raw) {
@@ -1070,6 +1183,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     const evidenceRecords = [];
     const researchSessionId = buildResearchSessionId(query);
     const checkpointFiles = [];
+    const executionProfile = getScraperAgentExecutionProfile({
+      llmConfig,
+      contextLength: llmConfig?.maxTokens || aiReportSettings.contextLength,
+      evidenceCount: evidenceSources.length
+    });
 
     const writeArtifact = async (fileName, content) => {
       if (!window.browserAPI?.ai?.writeScraperResearchArtifact) return null;
@@ -1126,8 +1244,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     let checkpointIndex = 0;
     let llmCalls = 0;
     let llmProviderUsed = llmConfig.provider;
+    const agentRolesUsed = ['planner', 'head', 'extractor', 'summarizer', 'reporter'];
+    const headPlan = await buildHeadResearchAgentPlan({
+      query,
+      wikiSummary,
+      relatedTopics,
+      llmConfig
+    });
+    if (headPlan?.provider) {
+      llmCalls += 1;
+      llmProviderUsed = headPlan.provider || llmProviderUsed;
+    }
 
-    const checkpointThreshold = Math.max(800, Math.floor((Number(llmConfig?.maxTokens) || aiReportSettings.contextLength || 3000) * 0.9));
+    const checkpointThreshold = executionProfile.summarizeThresholdTokens;
 
     const flushRollingCheckpoint = async ({ force = false } = {}) => {
       if (!rollingPacketMarkdown.length) return;
@@ -1167,37 +1296,58 @@ document.addEventListener('DOMContentLoaded', async () => {
       'Do not include links or URLs.'
     ].join(' ');
 
-    for (let i = 0; i < evidenceChunks.length; i++) {
-      const chunk = evidenceChunks[i];
-      onStage?.(`Extract Evidence (${i + 1}/${evidenceChunks.length})`);
-      const prompt = [
-        `Topic: ${query}`,
-        `Wikipedia baseline: ${wikiSummary ? cleanSnippet(wikiSummary).slice(0, 700) : 'None'}`,
-        `Related topics: ${(relatedTopics || []).slice(0, 12).join(', ') || 'None'}`,
-        'Evidence records (JSON):',
-        JSON.stringify(chunk, null, 2),
-        '',
-        'Return JSON with this exact shape:',
-        '{"facts":[{"fact":"", "confidence":"high|medium|low", "sources":["id"]}],"themes":[""],"open_questions":[""],"contradictions":[""]}'
-      ].join('\n');
+    const extractionResults = await runBranchedAgentTasks({
+      tasks: evidenceChunks.map((chunk, index) => ({ chunk, index })),
+      maxParallel: executionProfile.maxParallelBranches,
+      cooldownMs: executionProfile.cooldownMs,
+      worker: async ({ chunk, index }) => {
+        onStage?.(`Extract Evidence (${index + 1}/${evidenceChunks.length})`);
+        const branchGoal = headPlan?.branchGoals?.[index % Math.max(1, headPlan.branchGoals.length)] || '';
+        const branchFocus = headPlan?.focusAreas?.[index % Math.max(1, headPlan.focusAreas.length)] || '';
+        const prompt = [
+          `Topic: ${query}`,
+          `Wikipedia baseline: ${wikiSummary ? cleanSnippet(wikiSummary).slice(0, 700) : 'None'}`,
+          `Related topics: ${(relatedTopics || []).slice(0, 12).join(', ') || 'None'}`,
+          `Head agent focus: ${branchFocus || 'General evidence extraction'}`,
+          `Branch goal: ${branchGoal || 'Pull the highest-value facts from this packet.'}`,
+          'Evidence records (JSON):',
+          JSON.stringify(chunk, null, 2),
+          '',
+          'Return JSON with this exact shape:',
+          '{"facts":[{"fact":"", "confidence":"high|medium|low", "sources":["id"]}],"themes":[""],"open_questions":[""],"contradictions":[""]}'
+        ].join('\n');
 
-      try {
-        const llmRes = await callLlmForDataWorkflow({ prompt, systemInstruction: extractorSystem, llmConfig });
-        llmCalls++;
-        llmProviderUsed = llmRes.provider || llmProviderUsed;
-        const parsed = tryParseJsonBlock(llmRes.text) || { facts: [], themes: [], open_questions: [], contradictions: [], raw: llmRes.text.slice(0, 1200) };
-        extractionNotes.push(parsed);
-        const markdown = extractionNoteToMarkdown(parsed, `Packet ${i + 1}`);
-        rollingPacketMarkdown.push(markdown);
-        rollingPacketTokens += estimateTokens(markdown);
-        await flushRollingCheckpoint();
-      } catch (err) {
-        console.warn('[Data Workflow] LLM extraction chunk failed:', err?.message || err);
-      } finally {
-        if (llmConfig.provider === 'groq') {
-          await new Promise((resolve) => setTimeout(resolve, 320));
+        try {
+          const llmRes = await runSpecializedLlmAgent({
+            role: 'extractor',
+            label: `Extractor ${index + 1}`,
+            prompt,
+            systemInstruction: extractorSystem,
+            llmConfig,
+            maxTokensOverride: executionProfile.branchMaxTokens
+          });
+          return {
+            ok: true,
+            provider: llmRes.provider || '',
+            parsed: tryParseJsonBlock(llmRes.text) || { facts: [], themes: [], open_questions: [], contradictions: [], raw: llmRes.text.slice(0, 1200) }
+          };
+        } catch (err) {
+          console.warn('[Data Workflow] LLM extraction chunk failed:', err?.message || err);
+          return { ok: false, error: err };
         }
       }
+    });
+
+    for (let index = 0; index < extractionResults.length; index++) {
+      const result = extractionResults[index];
+      if (!result?.ok || !result?.parsed) continue;
+      llmCalls += 1;
+      llmProviderUsed = result.provider || llmProviderUsed;
+      extractionNotes.push(result.parsed);
+      const markdown = extractionNoteToMarkdown(result.parsed, `Packet ${index + 1}`);
+      rollingPacketMarkdown.push(markdown);
+      rollingPacketTokens += estimateTokens(markdown);
+      await flushRollingCheckpoint();
     }
 
     await flushRollingCheckpoint({ force: true });
@@ -1244,6 +1394,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       `Topic: ${query}`,
       `Images collected: ${uniqueImages.length}`,
       `Evidence source count: ${evidenceSources.length}`,
+      `Head report angle: ${headPlan?.reportAngle || 'Balanced evidence-based report'}`,
       'Merged research summary (markdown):',
       trimPromptToTokenBudget(mergedResearchSummary || checkpointArtifacts.join('\n\n'), Math.max(900, Math.floor((Number(llmConfig?.maxTokens) || 3000) * 0.7))),
       'Top evidence sources (JSON array):',
@@ -1305,6 +1456,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       `Topic: ${query}`,
       `Wikipedia overview: ${wikiSummary ? cleanSnippet(wikiSummary).slice(0, 1000) : 'None'}`,
       `Related topics: ${(relatedTopics || []).slice(0, 15).join(', ') || 'None'}`,
+      `Head report angle: ${headPlan?.reportAngle || 'Balanced evidence-based report'}`,
+      headPlan?.riskNotes?.length ? `Head risk notes: ${headPlan.riskNotes.join('; ')}` : '',
       'Merged checkpoint summary (markdown):',
       trimPromptToTokenBudget(mergedResearchSummary || checkpointArtifacts.join('\n\n'), Math.max(900, Math.floor((Number(llmConfig?.maxTokens) || 3000) * 0.72))),
       'Curated source references (JSON array):',
@@ -1331,6 +1484,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       llmProviderUsed,
       llmCalls,
       extractionChunkCalls: extractionNotes.length,
+      agentRolesUsed,
+      maxParallelBranches: executionProfile.maxParallelBranches,
       researchSessionId,
       checkpointFiles: checkpointFiles.map((file) => file.filePath).filter(Boolean)
     };
@@ -1897,7 +2052,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         extractionChunkCalls: Number(llmSynth?.extractionChunkCalls || 0),
         fallbackUsed: !(llmSynth?.summaryStructured?.overview || llmSynth?.summaryText || llmSynth?.detailedNarrative),
         researchSessionId: String(llmSynth?.researchSessionId || '').trim(),
-        checkpointFiles: Array.isArray(llmSynth?.checkpointFiles) ? llmSynth.checkpointFiles : []
+        checkpointFiles: Array.isArray(llmSynth?.checkpointFiles) ? llmSynth.checkpointFiles : [],
+        agentRolesUsed: Array.isArray(llmSynth?.agentRolesUsed) ? llmSynth.agentRolesUsed : [],
+        maxParallelBranches: Number(llmSynth?.maxParallelBranches || 1)
       };
       setStepLabel('report', originalReportLabel);
       setLiveStatus(
@@ -1942,6 +2099,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         llmExtractionChunkCalls: llmDiagnostics.extractionChunkCalls,
         llmResearchSessionId: llmDiagnostics.researchSessionId || '',
         llmCheckpointFiles: Array.isArray(llmDiagnostics.checkpointFiles) ? llmDiagnostics.checkpointFiles : [],
+        llmAgentRolesUsed: Array.isArray(llmDiagnostics.agentRolesUsed) ? llmDiagnostics.agentRolesUsed : [],
+        llmMaxParallelBranches: Number(llmDiagnostics.maxParallelBranches || 1),
         llmFallbackUsed: llmDiagnostics.fallbackUsed,
         webSourcesRaw: collectedWebSources.length,
         sourcesRanked: normalizedSources.length,

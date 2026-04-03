@@ -31,6 +31,7 @@ const SERVER_OPERATOR_URL = new URL('../../html/pages/server-operator.html',   i
 const DOWNLOADS_URL       = new URL('../../html/pages/downloads.html',         import.meta.url).href;
 const SCRABER_URL         = new URL('../../html/pages/scraper.html',           import.meta.url).href;
 const SITE_SETTINGS_URL   = new URL('../../html/pages/site-settings.html',     import.meta.url).href;
+const VISION_CHAT_URL     = new URL('../../html/pages/vision-chat.html',       import.meta.url).href;
 const BOOKMARK_FALLBACK_ICON = new URL('../../assets/icons/app.ico',           import.meta.url).href;
 const GOOGLE_ICON_URL     = new URL('../../assets/icons/google.svg',           import.meta.url).href;
 const GOOGLE_GMAIL_ICON_URL = new URL('../../assets/icons/gmail.svg',          import.meta.url).href;
@@ -1889,6 +1890,37 @@ document.addEventListener('DOMContentLoaded', async () => {
         return candidates[0] || '';
     };
 
+    const resolveVisionChatCapability = async () => {
+        try {
+            const statusRes = await window.browserAPI?.servers?.getStatus?.('llama');
+            if (statusRes?.success && statusRes.status?.config) {
+                const cfg = statusRes.status.config;
+                return Boolean(cfg.supportsVision || cfg.mmprojPath || String(cfg.modelType || '').toLowerCase() === 'vision');
+            }
+        } catch (_) {}
+
+        try {
+            const raw = localStorage.getItem('llama-server-settings');
+            if (!raw || !window.browserAPI?.llama?.prepareLaunch) return false;
+            const settings = JSON.parse(raw);
+            if (!settings?.modelsPath || !settings?.selectedModel) return false;
+            const launch = await window.browserAPI.llama.prepareLaunch({
+                model: settings.selectedModel,
+                modelsPath: settings.modelsPath,
+                contextLength: settings.contextLength || '4096',
+                gpuLayers: settings.gpuLayers || '0',
+                port: settings.port || '8080',
+                threads: settings.threads || '4',
+                host: settings.host || '127.0.0.1',
+                systemPrompt: settings.systemPrompt || ''
+            });
+            if (launch?.success) {
+                return Boolean(launch.supportsVision || launch.mmprojPath || String(launch.modelType || '').toLowerCase() === 'vision');
+            }
+        } catch (_) {}
+        return false;
+    };
+
     const getAiChatTargetUrl = async () => {
         try {
             const statusRes = await window.browserAPI?.servers?.getStatus?.('llama');
@@ -1910,6 +1942,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const openAiChatTarget = async () => {
         hideFeaturesHomePopup();
+        const isVision = await resolveVisionChatCapability();
+        if (isVision) {
+            openAppTab(VISION_CHAT_URL);
+            return;
+        }
         const targetUrl = String(await getAiChatTargetUrl() || '').trim();
         if (!targetUrl) return;
         const llamaUrl = String(llamaWebUiTabUrl || getLlamaServerUrl() || '').trim();

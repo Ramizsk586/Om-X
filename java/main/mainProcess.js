@@ -10,7 +10,8 @@ const { pathToFileURL, fileURLToPath } = require('url');
 const dotenv = require('dotenv');
 const {
   normalizeModelEntry,
-  prepareLlamaLaunch
+  prepareLlamaLaunch,
+  buildLlamaServerCommand
 } = require('../utils/llama-models');
 
 function getBundledOmxEnvCandidates() {
@@ -2325,30 +2326,54 @@ async function listSiblingFilesForModel(modelPath) {
     .map((entry) => path.join(modelDir, entry.name));
 }
 
+async function listFilesRecursive(rootDir) {
+  const absRoot = path.resolve(String(rootDir || '').trim());
+  if (!absRoot) return [];
+
+  const results = [];
+  const queue = [absRoot];
+
+  while (queue.length) {
+    const currentDir = queue.shift();
+    const entries = await fs.promises.readdir(currentDir, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(currentDir, entry.name);
+      if (entry.isDirectory()) {
+        queue.push(fullPath);
+      } else if (entry.isFile()) {
+        results.push(fullPath);
+      }
+    }
+  }
+
+  return results;
+}
+
 async function buildLlamaModelEntries(modelsPath) {
   const abs = path.resolve(String(modelsPath || '').trim());
   if (!abs) {
     throw new Error('Invalid models path.');
   }
+  addTrustedFolderPath(abs);
   if (!isPathInSafeDirectories(abs)) {
     throw new Error('Access denied: Path outside allowed directories');
   }
 
-  const entries = await fs.promises.readdir(abs, { withFileTypes: true });
-  const siblingFiles = entries
-    .filter((entry) => entry.isFile())
-    .map((entry) => path.join(abs, entry.name));
+  const allFiles = await listFilesRecursive(abs);
 
-  return siblingFiles
+  return allFiles
     .filter((filePath) => /\.gguf$/i.test(filePath))
     .filter((filePath) => !/^mmproj[-_]?.+\.gguf$/i.test(path.basename(filePath)))
     .map((filePath) => {
+      const modelDir = path.dirname(filePath);
+      const siblingFiles = allFiles.filter((candidatePath) => path.dirname(candidatePath) === modelDir);
+      const relativeName = path.relative(abs, filePath) || path.basename(filePath);
       const launch = prepareLlamaLaunch({
         modelPath: filePath,
         siblingFiles
       });
       return normalizeModelEntry({
-        name: path.basename(filePath),
+        name: relativeName,
         path: filePath,
         type: launch.modelType,
         mmprojPath: launch.mmprojPath,
@@ -2381,7 +2406,13 @@ function syncLlamaServerConfig(config = {}) {
     warnings: Array.isArray(config.warnings) ? config.warnings : (serverConfigs.llama?.warnings || []),
     command: String(config.command || serverConfigs.llama?.command || ''),
     contextLength: String(config.contextLength || serverConfigs.llama?.contextLength || '4096'),
-    gpuLayers: String(config.gpuLayers || serverConfigs.llama?.gpuLayers || '-1'),
+    gpuLayers: String(config.gpuLayers || serverConfigs.llama?.gpuLayers || '0'),
+    kvCacheMode: String(config.kvCacheMode || serverConfigs.llama?.kvCacheMode || 'auto'),
+    kvModeResolved: String(config.kvModeResolved || serverConfigs.llama?.kvModeResolved || 'q8'),
+    cacheTypeK: String(config.cacheTypeK || serverConfigs.llama?.cacheTypeK || ''),
+    cacheTypeV: String(config.cacheTypeV || serverConfigs.llama?.cacheTypeV || ''),
+    estimatedKvCacheMB: Number(config.estimatedKvCacheMB || serverConfigs.llama?.estimatedKvCacheMB || 0),
+    optimizationStatus: String(config.optimizationStatus || serverConfigs.llama?.optimizationStatus || ''),
     threads: String(config.threads || serverConfigs.llama?.threads || '4'),
     systemPrompt: String(config.systemPrompt ?? serverConfigs.llama?.systemPrompt ?? ''),
     guardSettings: normalizeLlamaGuardSettings(config.guardSettings || serverConfigs.llama?.guardSettings || {}),
@@ -2910,6 +2941,19 @@ function buildMcpRuntimeConfig(config = {}) {
   const port = Number.isFinite(rawPort) ? Math.min(65535, Math.max(1, Math.round(rawPort))) : 3000;
   const enabledTools = resolveMcpEnabledTools(config?.enabledTools || existingConfig?.enabledTools || {});
   return { host, port, enabledTools };
+}
+
+function stripKvCacheArgs(args = []) {
+  const cleaned = [];
+  for (let i = 0; i < args.length; i += 1) {
+    const current = String(args[i] || '');
+    if (current === '--cache-type-k' || current === '--cache-type-v') {
+      i += 1;
+      continue;
+    }
+    cleaned.push(args[i]);
+  }
+  return cleaned;
 }
 
 async function startMcpBackground(config = {}) {
@@ -3481,7 +3525,7 @@ function startLlamaMemoryGuard() {
 
       if (warning && !critical) {
         if ((now - Number(llamaMemoryGuardState.lastWarningAt || 0)) >= 15000) {
-          const warningMessage = `Llama protection warning: system RAM is at ${sample.usedPercent}% used with ${sample.freeMB} MB free. Om-X is watching to avoid a freeze.`;
+          const warningMessage = `[WARN] Memory pressure high: system RAM is at ${sample.usedPercent}% used with ${sample.freeMB} MB free. Om-X is watching to avoid a freeze.`;
           llamaMemoryGuardState.lastWarningAt = now;
           llamaMemoryGuardState.lastAction = warningMessage;
           pushServerLog('llama', 'warning', warningMessage);
@@ -3514,6 +3558,20 @@ function startLlamaMemoryGuard() {
 // Temporary debugging aid for main window only.
 const TEMP_MAIN_AUTO_OPEN_DEVTOOLS = false;
 const trustedFolders = new Set();  // Track user-selected trusted folders
+
+function addTrustedFolderPath(folderPath) {
+  const abs = path.resolve(String(folderPath || ''));
+  if (!abs) return '';
+  trustedFolders.add(abs);
+  return abs;
+}
+
+function trustPathForServerOperator(targetPath, options = {}) {
+  const abs = path.resolve(String(targetPath || ''));
+  if (!abs) return '';
+  const folderPath = options.directoryOnly ? abs : path.dirname(abs);
+  return addTrustedFolderPath(folderPath);
+}
 
 function getEventBrowserWindow(event) {
   try {
@@ -3552,7 +3610,8 @@ const AUTHORIZED_RENDERER_PAGES = Object.freeze({
   ]),
   mainOrServerOperator: Object.freeze([
     '/html/windows/main.html',
-    '/html/pages/server-operator.html'
+    '/html/pages/server-operator.html',
+    '/html/pages/vision-chat.html'
   ])
 });
 
@@ -5911,27 +5970,38 @@ ipcMain.handle('llama:prepare-launch', withAuthorizedRendererPages(AUTHORIZED_RE
   try {
     const model = String(config.model || '').trim();
     const modelsPath = String(config.modelsPath || '').trim();
+    if (modelsPath) {
+      addTrustedFolderPath(modelsPath);
+    }
     const modelPath = path.isAbsolute(model) ? model : path.join(modelsPath || '', model);
     if (!modelPath) {
       return { success: false, error: 'Model path is required.' };
     }
     const resolvedModelPath = path.resolve(modelPath);
+    trustPathForServerOperator(resolvedModelPath);
     if (!isPathInSafeDirectories(resolvedModelPath)) {
       return { success: false, error: 'Access denied: Path outside allowed directories.' };
     }
-    await fs.promises.stat(resolvedModelPath);
+    const stat = await fs.promises.stat(resolvedModelPath);
     const siblingFiles = await listSiblingFilesForModel(resolvedModelPath);
+    const gpuInfo = await getCachedGpuInfoPayload().catch(() => ({ availableMemory: 0, isIntegrated: false }));
+    const memorySample = llamaMemoryGuardState?.lastSample || sampleLlamaMemoryGuard();
     const launch = prepareLlamaLaunch({
       executable: config.executable,
       cliPath: config.cliPath,
       modelPath: resolvedModelPath,
       contextLength: config.contextLength,
       gpuLayers: config.gpuLayers,
+      kvCacheMode: config.kvCacheMode,
       port: config.port,
       threads: config.threads,
       host: config.host,
       systemPrompt: config.systemPrompt,
-      siblingFiles
+      siblingFiles,
+      fileSizeMB: Math.max(1, Math.round(Number(stat.size || 0) / (1024 * 1024))),
+      availableVramMB: Number(gpuInfo?.availableMemory || 0),
+      availableRamMB: Number(memorySample?.freeMB || 0),
+      memoryPressure: String(llamaMemoryGuardState?.pressure || 'safe').trim().toLowerCase()
     });
     return { success: true, ...launch };
   } catch (error) {
@@ -5950,9 +6020,17 @@ ipcMain.handle('llama:start-server', withAuthorizedRendererPages(AUTHORIZED_REND
     return { success: false, error: 'Executable and model are required.' };
   }
 
+  if (modelsPath) {
+    addTrustedFolderPath(modelsPath);
+  }
+  if (executable) {
+    trustPathForServerOperator(executable);
+  }
+
   const modelPath = path.isAbsolute(model) ? model : path.join(modelsPath || '', model);
   const contextLength = String(config.contextLength || existingConfig.contextLength || '4096');
-  const gpuLayers = String(config.gpuLayers || existingConfig.gpuLayers || '-1');
+  const gpuLayers = String(config.gpuLayers || existingConfig.gpuLayers || '0');
+  const kvCacheMode = String(config.kvCacheMode || existingConfig.kvCacheMode || 'auto').trim().toLowerCase() || 'auto';
   const port = Number(config.port || existingConfig.port || 8080);
   const threads = String(config.threads || existingConfig.threads || '4');
   const systemPrompt = String(config.systemPrompt ?? existingConfig.systemPrompt ?? '').trim();
@@ -5963,6 +6041,7 @@ ipcMain.handle('llama:start-server', withAuthorizedRendererPages(AUTHORIZED_REND
     : '127.0.0.1';
   const launchHost = ['0.0.0.0', '::'].includes(host) ? '127.0.0.1' : host;
   const resolvedModelPath = path.resolve(modelPath);
+  trustPathForServerOperator(resolvedModelPath);
 
   if (!isPathInSafeDirectories(resolvedModelPath)) {
     return { success: false, error: 'Access denied: Path outside allowed directories.' };
@@ -5976,22 +6055,30 @@ ipcMain.handle('llama:start-server', withAuthorizedRendererPages(AUTHORIZED_REND
       return { success: false, error: 'Selected model file is missing or invalid.' };
     }
     siblingFiles = await listSiblingFilesForModel(resolvedModelPath);
+    const gpuInfo = await getCachedGpuInfoPayload().catch(() => ({ availableMemory: 0, isIntegrated: false }));
+    const memorySample = llamaMemoryGuardState?.lastSample || sampleLlamaMemoryGuard();
     launch = prepareLlamaLaunch({
       executable,
       modelPath: resolvedModelPath,
       contextLength,
       gpuLayers,
+      kvCacheMode,
       port,
       threads,
       host,
       systemPrompt,
-      siblingFiles
+      siblingFiles,
+      fileSizeMB: Math.max(1, Math.round(Number(modelStat.size || 0) / (1024 * 1024))),
+      availableVramMB: Number(gpuInfo?.availableMemory || 0),
+      availableRamMB: Number(memorySample?.freeMB || 0),
+      memoryPressure: String(llamaMemoryGuardState?.pressure || 'safe').trim().toLowerCase()
     });
   } catch (error) {
     return { success: false, error: error?.message || 'Selected model file is missing or invalid.' };
   }
 
   if (isServerProcessActive(llamaServerProcess)) {
+    const effectiveContextLength = String(launch.adjustedContextLength || contextLength);
     const syncedConfig = syncLlamaServerConfig({
       executable,
       modelPath: launch.modelPath,
@@ -6000,8 +6087,14 @@ ipcMain.handle('llama:start-server', withAuthorizedRendererPages(AUTHORIZED_REND
       mmprojPath: launch.mmprojPath,
       warnings: launch.warnings,
       command: launch.command,
-      contextLength,
+      contextLength: effectiveContextLength,
       gpuLayers,
+      kvCacheMode: launch.kvCacheMode,
+      kvModeResolved: launch.kvModeResolved,
+      cacheTypeK: launch.cacheTypeK,
+      cacheTypeV: launch.cacheTypeV,
+      estimatedKvCacheMB: launch.estimatedKvCacheMB,
+      optimizationStatus: launch.optimizationStatus,
       port,
       threads,
       systemPrompt,
@@ -6032,6 +6125,12 @@ ipcMain.handle('llama:start-server', withAuthorizedRendererPages(AUTHORIZED_REND
       mmprojPath: syncedConfig.mmprojPath,
       warnings: syncedConfig.warnings,
       command: syncedConfig.command,
+      kvCacheMode: syncedConfig.kvCacheMode,
+      kvModeResolved: syncedConfig.kvModeResolved,
+      cacheTypeK: syncedConfig.cacheTypeK,
+      cacheTypeV: syncedConfig.cacheTypeV,
+      estimatedKvCacheMB: syncedConfig.estimatedKvCacheMB,
+      optimizationStatus: syncedConfig.optimizationStatus,
       localUrl: syncedConfig.localUrl,
       publicUrl: syncedConfig.publicUrl || '',
       url: syncedConfig.url,
@@ -6044,27 +6143,62 @@ ipcMain.handle('llama:start-server', withAuthorizedRendererPages(AUTHORIZED_REND
     return { success: false, alreadyStarting: true, error: 'Llama server is already starting. Please wait.' };
   }
 
-  const args = Array.isArray(launch?.args) ? launch.args : [];
+  let args = Array.isArray(launch?.args) ? launch.args : [];
+  let activeLaunch = {
+    ...launch
+  };
 
   llamaServerStartInProgress = true;
   invalidateServerStatusCache('llama');
   try {
-    llamaServerProcess = spawn(executable, args, {
+    const attachLlamaProcessListeners = (proc) => {
+      proc.stdout.on('data', (data) => {
+        pushServerLog('llama', 'info', data.toString());
+        mainWindow?.webContents?.send('llama-server-output', { type: 'stdout', data: data.toString() });
+      });
+      proc.stderr.on('data', (data) => {
+        pushServerLog('llama', 'warning', data.toString());
+        mainWindow?.webContents?.send('llama-server-output', { type: 'stderr', data: data.toString() });
+      });
+      proc.on('error', (err) => {
+        pushServerLog('llama', 'error', err?.message || String(err));
+        mainWindow?.webContents?.send('llama-server-output', { type: 'error', data: err?.message || String(err) });
+      });
+      proc.on('exit', (code, signal) => {
+        llamaServerStartInProgress = false;
+        invalidateServerStatusCache('llama');
+        clearLlamaMemoryGuard();
+        serverStarts.llama = null;
+        mainWindow?.webContents?.send('llama-server-exit', { code, signal });
+        llamaServerProcess = null;
+        void stopLlamaNgrokTunnelInternal().catch(() => {});
+        serverConfigs.llama = null;
+      });
+    };
+    const spawnLlamaProcess = (spawnArgs) => spawn(executable, spawnArgs, {
       cwd: path.dirname(executable),
       stdio: 'pipe'
     });
+    llamaServerProcess = spawnLlamaProcess(args);
+    attachLlamaProcessListeners(llamaServerProcess);
     startLlamaMemoryGuard();
     serverStarts.llama = Date.now();
     syncLlamaServerConfig({
       executable,
-      modelPath: launch.modelPath,
-      modelType: launch.modelType,
-      supportsVision: launch.supportsVision,
-      mmprojPath: launch.mmprojPath,
-      warnings: launch.warnings,
-      command: launch.command,
-      contextLength,
+      modelPath: activeLaunch.modelPath,
+      modelType: activeLaunch.modelType,
+      supportsVision: activeLaunch.supportsVision,
+      mmprojPath: activeLaunch.mmprojPath,
+      warnings: activeLaunch.warnings,
+      command: activeLaunch.command,
+      contextLength: String(activeLaunch.adjustedContextLength || contextLength),
       gpuLayers,
+      kvCacheMode: activeLaunch.kvCacheMode,
+      kvModeResolved: activeLaunch.kvModeResolved,
+      cacheTypeK: activeLaunch.cacheTypeK,
+      cacheTypeV: activeLaunch.cacheTypeV,
+      estimatedKvCacheMB: activeLaunch.estimatedKvCacheMB,
+      optimizationStatus: activeLaunch.optimizationStatus,
       port,
       threads,
       systemPrompt,
@@ -6072,33 +6206,16 @@ ipcMain.handle('llama:start-server', withAuthorizedRendererPages(AUTHORIZED_REND
       host,
       serverType
     });
-    launch.warnings.forEach((warning) => {
+    activeLaunch.warnings.forEach((warning) => {
       pushServerLog('llama', 'warning', warning);
       mainWindow?.webContents?.send('llama-server-output', { type: 'stderr', data: `${warning}\n` });
     });
+    if (activeLaunch.cacheTypeK || activeLaunch.cacheTypeV) {
+      const kvMessage = `[AUTO] KV cache optimized: ${activeLaunch.cacheTypeK || 'default'} / ${activeLaunch.cacheTypeV || 'default'} (${activeLaunch.optimizationStatus || 'Auto'}). Estimated KV memory: ${activeLaunch.estimatedKvCacheMB || 0} MB.`;
+      pushServerLog('llama', 'info', kvMessage);
+      mainWindow?.webContents?.send('llama-server-output', { type: 'stdout', data: `${kvMessage}\n` });
+    }
 
-    llamaServerProcess.stdout.on('data', (data) => {
-      pushServerLog('llama', 'info', data.toString());
-      mainWindow?.webContents?.send('llama-server-output', { type: 'stdout', data: data.toString() });
-    });
-    llamaServerProcess.stderr.on('data', (data) => {
-      pushServerLog('llama', 'warning', data.toString());
-      mainWindow?.webContents?.send('llama-server-output', { type: 'stderr', data: data.toString() });
-    });
-    llamaServerProcess.on('error', (err) => {
-      pushServerLog('llama', 'error', err?.message || String(err));
-      mainWindow?.webContents?.send('llama-server-output', { type: 'error', data: err?.message || String(err) });
-    });
-    llamaServerProcess.on('exit', (code, signal) => {
-      llamaServerStartInProgress = false;
-      invalidateServerStatusCache('llama');
-      clearLlamaMemoryGuard();
-      serverStarts.llama = null;
-      mainWindow?.webContents?.send('llama-server-exit', { code, signal });
-      llamaServerProcess = null;
-      void stopLlamaNgrokTunnelInternal().catch(() => {});
-      serverConfigs.llama = null;
-    });
     const spawnedProcess = llamaServerProcess;
     const startupState = await Promise.race([
       new Promise((resolve) => {
@@ -6113,6 +6230,83 @@ ipcMain.handle('llama:start-server', withAuthorizedRendererPages(AUTHORIZED_REND
     ]);
 
     if (!startupState?.ok) {
+      if (activeLaunch?.hasKvCacheOverrides) {
+        const fallbackArgs = stripKvCacheArgs(args);
+        const fallbackMessage = 'KV flags may be unsupported by this llama.cpp build. Retrying launch without KV cache flags.';
+        pushServerLog('llama', 'warning', fallbackMessage);
+        mainWindow?.webContents?.send('llama-server-output', { type: 'stderr', data: `${fallbackMessage}\n` });
+        clearLlamaMemoryGuard();
+        if (llamaServerProcess === spawnedProcess) {
+          llamaServerProcess = null;
+        }
+        serverStarts.llama = null;
+        llamaServerProcess = spawnLlamaProcess(fallbackArgs);
+        attachLlamaProcessListeners(llamaServerProcess);
+        args = fallbackArgs;
+        startLlamaMemoryGuard();
+        serverStarts.llama = Date.now();
+        activeLaunch = {
+          ...activeLaunch,
+          cacheTypeK: '',
+          cacheTypeV: '',
+          estimatedKvCacheMB: 0,
+          kvModeResolved: 'fallback-default',
+          optimizationStatus: 'Fallback: Unsupported KV Flags',
+          hasKvCacheOverrides: false,
+          warnings: Array.from(new Set([...(Array.isArray(activeLaunch.warnings) ? activeLaunch.warnings : []), fallbackMessage])),
+          command: buildLlamaServerCommand({
+            executable,
+            modelPath: activeLaunch.modelPath,
+            contextLength: activeLaunch.adjustedContextLength || contextLength,
+            gpuLayers,
+            port,
+            threads,
+            host,
+            mmprojPath: activeLaunch.mmprojPath || '',
+            cacheTypeK: '',
+            cacheTypeV: ''
+          })
+        };
+        syncLlamaServerConfig({
+          executable,
+          modelPath: activeLaunch.modelPath,
+          modelType: activeLaunch.modelType,
+          supportsVision: activeLaunch.supportsVision,
+          mmprojPath: activeLaunch.mmprojPath,
+          warnings: activeLaunch.warnings,
+          command: activeLaunch.command,
+          contextLength: String(activeLaunch.adjustedContextLength || contextLength),
+          gpuLayers,
+          kvCacheMode: activeLaunch.kvCacheMode,
+          kvModeResolved: activeLaunch.kvModeResolved,
+          cacheTypeK: activeLaunch.cacheTypeK,
+          cacheTypeV: activeLaunch.cacheTypeV,
+          estimatedKvCacheMB: activeLaunch.estimatedKvCacheMB,
+          optimizationStatus: activeLaunch.optimizationStatus,
+          port,
+          threads,
+          systemPrompt,
+          guardSettings,
+          host,
+          serverType
+        });
+        const retryProcess = llamaServerProcess;
+        const retryState = await Promise.race([
+          new Promise((resolve) => {
+            retryProcess.once('error', (err) => resolve({ ok: false, error: err?.message || 'Failed to launch llama server.' }));
+            retryProcess.once('exit', (code, signal) => resolve({ ok: false, error: `Llama server exited early (code: ${code ?? 'null'}, signal: ${signal ?? 'none'}).` }));
+          }),
+          wait(1200).then(() => ({ ok: isServerProcessActive(retryProcess) }))
+        ]);
+        if (!retryState?.ok) {
+          clearLlamaMemoryGuard();
+          if (llamaServerProcess === retryProcess) llamaServerProcess = null;
+          serverStarts.llama = null;
+          await stopLlamaNgrokTunnelInternal().catch(() => {});
+          serverConfigs.llama = null;
+          return { success: false, error: retryState?.error || startupState?.error || 'Llama server failed to stay running.' };
+        }
+      } else {
       clearLlamaMemoryGuard();
       if (llamaServerProcess === spawnedProcess) {
         llamaServerProcess = null;
@@ -6121,12 +6315,13 @@ ipcMain.handle('llama:start-server', withAuthorizedRendererPages(AUTHORIZED_REND
       await stopLlamaNgrokTunnelInternal().catch(() => {});
       serverConfigs.llama = null;
       return { success: false, error: startupState?.error || 'Llama server failed to stay running.' };
+      }
     }
 
     const ready = await waitForServerReady({
       host: launchHost,
       port,
-      proc: spawnedProcess,
+      proc: llamaServerProcess,
       timeoutMs: 60000
     });
 
@@ -6135,8 +6330,8 @@ ipcMain.handle('llama:start-server', withAuthorizedRendererPages(AUTHORIZED_REND
       pushServerLog('llama', 'error', error);
       mainWindow?.webContents?.send('llama-server-output', { type: 'error', data: `${error}\n` });
       clearLlamaMemoryGuard();
-      await terminateManagedChildProcess(spawnedProcess);
-      if (llamaServerProcess === spawnedProcess) {
+      await terminateManagedChildProcess(llamaServerProcess);
+      if (llamaServerProcess) {
         llamaServerProcess = null;
       }
       serverStarts.llama = null;
@@ -6147,14 +6342,20 @@ ipcMain.handle('llama:start-server', withAuthorizedRendererPages(AUTHORIZED_REND
 
     let syncedConfig = syncLlamaServerConfig({
       executable,
-      modelPath: launch.modelPath,
-      modelType: launch.modelType,
-      supportsVision: launch.supportsVision,
-      mmprojPath: launch.mmprojPath,
-      warnings: launch.warnings,
-      command: launch.command,
-      contextLength,
+      modelPath: activeLaunch.modelPath,
+      modelType: activeLaunch.modelType,
+      supportsVision: activeLaunch.supportsVision,
+      mmprojPath: activeLaunch.mmprojPath,
+      warnings: activeLaunch.warnings,
+      command: activeLaunch.command,
+      contextLength: String(activeLaunch.adjustedContextLength || contextLength),
       gpuLayers,
+      kvCacheMode: activeLaunch.kvCacheMode,
+      kvModeResolved: activeLaunch.kvModeResolved,
+      cacheTypeK: activeLaunch.cacheTypeK,
+      cacheTypeV: activeLaunch.cacheTypeV,
+      estimatedKvCacheMB: activeLaunch.estimatedKvCacheMB,
+      optimizationStatus: activeLaunch.optimizationStatus,
       port,
       threads,
       systemPrompt,
@@ -6175,8 +6376,8 @@ ipcMain.handle('llama:start-server', withAuthorizedRendererPages(AUTHORIZED_REND
         const tunnelError = error?.message || 'Failed to start llama ngrok tunnel.';
         pushServerLog('llama', 'error', tunnelError);
         clearLlamaMemoryGuard();
-        await terminateManagedChildProcess(spawnedProcess);
-        if (llamaServerProcess === spawnedProcess) {
+        await terminateManagedChildProcess(llamaServerProcess);
+        if (llamaServerProcess) {
           llamaServerProcess = null;
         }
         serverStarts.llama = null;
@@ -6190,7 +6391,7 @@ ipcMain.handle('llama:start-server', withAuthorizedRendererPages(AUTHORIZED_REND
 
     return {
       success: true,
-      pid: spawnedProcess?.pid || null,
+      pid: llamaServerProcess?.pid || null,
       serverType: syncedConfig.serverType,
       host: syncedConfig.host,
       launchHost: syncedConfig.launchHost,
@@ -6201,6 +6402,12 @@ ipcMain.handle('llama:start-server', withAuthorizedRendererPages(AUTHORIZED_REND
       mmprojPath: syncedConfig.mmprojPath,
       warnings: syncedConfig.warnings,
       command: syncedConfig.command,
+      kvCacheMode: syncedConfig.kvCacheMode,
+      kvModeResolved: syncedConfig.kvModeResolved,
+      cacheTypeK: syncedConfig.cacheTypeK,
+      cacheTypeV: syncedConfig.cacheTypeV,
+      estimatedKvCacheMB: syncedConfig.estimatedKvCacheMB,
+      optimizationStatus: syncedConfig.optimizationStatus,
       localUrl: syncedConfig.localUrl,
       publicUrl: syncedConfig.publicUrl || '',
       url: syncedConfig.url,
@@ -8040,13 +8247,24 @@ const performAITask = async (event, params) => {
                 };
             }
 
+            const llamaRuntime = serverConfigs.llama
+                ? {
+                    modelPath: serverConfigs.llama.modelPath || '',
+                    modelType: serverConfigs.llama.modelType || '',
+                    supportsVision: Boolean(serverConfigs.llama.supportsVision),
+                    mmprojPath: serverConfigs.llama.mmprojPath || ''
+                }
+                : null;
             const result = await aiProvider.performTask(promptInput, {
                 provider: targetProvider,
                 model: resolvedConfig.model,
                 keyOverride: resolvedConfig.key || '',
                 tools: params.tools,
                 systemInstruction: params.systemInstruction,
-                aiConfig: aiConfig,
+                aiConfig: {
+                    ...aiConfig,
+                    llama: llamaRuntime
+                },
                 temperature: resolvedConfig.temperature,
                 maxTokens: resolvedConfig.maxTokens,
                 baseUrl: resolvedConfig.baseUrl || ''
@@ -8481,7 +8699,7 @@ ipcMain.handle('fs-trust-folder', withAuthorizedRendererPages(AUTHORIZED_RENDERE
         const stat = await fs.promises.stat(abs);
         if (!stat.isDirectory()) throw new Error('Path is not a directory');
         
-        trustedFolders.add(abs);
+        addTrustedFolderPath(abs);
         return { success: true, path: abs };
     } catch(e) {
         console.warn('[Security] fs-trust-folder failed:', e?.message);

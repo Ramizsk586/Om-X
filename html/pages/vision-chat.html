@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Vision Chat</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0b0c10;
+      --panel: #13151b;
+      --panel-2: #1a1d24;
+      --border: rgba(255,255,255,0.08);
+      --text: #f1f3f7;
+      --muted: #a0a6b4;
+      --accent: #1dbf73;
+      --accent-2: #20242d;
+      --bubble-user: #1f3c2f;
+      --bubble-assistant: #15171d;
+      --bubble-border: rgba(255,255,255,0.06);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      height: 100vh;
+      font-family: "JetBrains Mono", "Segoe UI", system-ui, sans-serif;
+      background: radial-gradient(circle at 50% -20%, #1c2029 0%, #0b0c10 60%);
+      color: var(--text);
+      display: grid;
+      grid-template-columns: 1fr;
+    }
+    .main {
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      height: 100vh;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 48px 24px 18px;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .logo {
+      font-size: 30px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+    }
+    .subtitle {
+      font-size: 14px;
+      color: var(--muted);
+    }
+    .chat-area {
+      padding: 0 24px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .chat-bubble {
+      max-width: 72%;
+      padding: 12px 16px;
+      border-radius: 16px;
+      font-size: 14px;
+      line-height: 1.55;
+      background: var(--bubble-assistant);
+      border: 1px solid var(--bubble-border);
+      position: relative;
+    }
+    .chat-bubble.user {
+      align-self: flex-end;
+      background: var(--bubble-user);
+      border-color: rgba(29,191,115,0.18);
+    }
+    .chat-bubble.user::after {
+      content: "";
+      position: absolute;
+      right: -6px;
+      bottom: 10px;
+      border-width: 6px 0 6px 8px;
+      border-style: solid;
+      border-color: transparent transparent transparent var(--bubble-user);
+    }
+    .chat-bubble.assistant::after {
+      content: "";
+      position: absolute;
+      left: -6px;
+      bottom: 10px;
+      border-width: 6px 8px 6px 0;
+      border-style: solid;
+      border-color: transparent var(--bubble-assistant) transparent transparent;
+    }
+    .typing {
+      display: inline-flex;
+      gap: 4px;
+      align-items: center;
+    }
+    .typing span {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #6b7280;
+      animation: pulse 1.2s infinite ease-in-out;
+    }
+    .typing span:nth-child(2) { animation-delay: 0.2s; }
+    .typing span:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes pulse {
+      0%, 100% { transform: scale(0.8); opacity: 0.5; }
+      50% { transform: scale(1.2); opacity: 1; }
+    }
+    .composer-wrap {
+      padding: 20px 24px 32px;
+      display: flex;
+      justify-content: center;
+    }
+    .composer {
+      width: min(820px, 100%);
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 28px;
+      padding: 14px 16px;
+      display: grid;
+      grid-template-columns: auto auto 1fr auto;
+      align-items: center;
+      gap: 12px;
+    }
+    .upload-btn {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      border: 1px solid var(--border);
+      background: #1b1e25;
+      color: var(--text);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+    .prompt-input {
+      background: transparent;
+      border: none;
+      color: var(--text);
+      font-size: 14px;
+      outline: none;
+    }
+    .send-btn {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      border: none;
+      background: var(--accent);
+      color: #0a0a0c;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .preview-chip {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: #1a1d23;
+      color: var(--muted);
+      font-size: 12px;
+      max-width: 220px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .preview-chip img {
+      width: 24px;
+      height: 24px;
+      border-radius: 6px;
+      object-fit: cover;
+    }
+    .status-row {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      justify-content: center;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .warning {
+      color: #ffcf66;
+    }
+    #vision-history {
+      display: none;
+    }
+    @media (max-width: 920px) {
+      .composer { grid-template-columns: auto 1fr auto; }
+      .preview-chip { display: none; }
+    }
+  </style>
+  <script type="module" src="../../java/renderer/visionChatRenderer.js"></script>
+</head>
+<body>
+  <main class="main">
+    <div class="header">
+      <div class="logo">llama.cpp</div>
+      <div class="subtitle">Type a message or upload files to get started</div>
+      <div class="status-row">
+        <span id="vision-status">Detecting model capability...</span>
+        <span id="vision-server-status">Server: --</span>
+        <span id="vision-model-chip">Vision model</span>
+      </div>
+      <div class="warning" id="vision-warning"></div>
+    </div>
+    <div class="chat-area" id="vision-chat"></div>
+    <div class="composer-wrap">
+      <div class="composer">
+        <label class="upload-btn" for="vision-file">+</label>
+        <input id="vision-file" type="file" accept="image/*" multiple hidden />
+        <div class="preview-chip" id="vision-preview">No image</div>
+        <input class="prompt-input" id="vision-prompt" placeholder="Type a message..." />
+        <button class="send-btn" id="vision-send">^</button>
+      </div>
+    </div>
+  </main>
+  <div id="vision-history"></div>
+</body>
+</html>
